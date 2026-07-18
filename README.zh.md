@@ -26,7 +26,6 @@
 | **召回** | 4 路混合：`vector + graph + meta + entity` → RRF 融合 |
 | **协议** | MCP over SSE（127.0.0.1:8086） |
 | **延迟（warm）** | p50 = **12.5 ms**，p95 = **36 ms**（4 路并发） |
-| **吞吐** | 24 小时 1530 次召回（单 MacBook） |
 | **代码量** | 约 3000 行 Python |
 | **依赖** | 3 个 pip install：`mcp[cli]`、`sqlite-vec`、`fastembed` |
 | **国际化** | 英文 + 中文双版本，locale 自动检测 |

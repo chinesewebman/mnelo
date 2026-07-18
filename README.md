@@ -26,7 +26,6 @@ A drop-in memory layer for [Hermes Agent](https://nousresearch.com/hermes), [Cla
 | **Recall** | 4-way hybrid: `vector + graph + meta + entity` → RRF fusion |
 | **Protocol** | MCP over SSE (127.0.0.1:8086) |
 | **Latency (warm)** | p50 = **12.5 ms**, p95 = **36 ms** (4-way concurrent) |
-| **Throughput** | 1530 recalls / 24h on a single MacBook |
 | **LOC** | ~3000 lines of Python (memory.py + scripts + client + tests) |
 | **Dependencies** | 3 pip installs: `mcp[cli]`, `sqlite-vec`, `fastembed` |
 | **i18n** | English + 中文 first-class, locale auto-detect |
