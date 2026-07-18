@@ -89,39 +89,9 @@ All numbers measured on a single MacBook (M-series), `memory.db` = **23.9 MB / 4
 |---|---|---|
 | **p50** | **12.5 ms** | warm path, 4-way concurrent |
 | **p95** | **36.2 ms** | warm path, 4-way concurrent |
-| **avg** | 34.4 ms | 1530 recalls over 24h |
+| **avg** | 34.4 ms | 24h warm-path average |
 | **max** | 2980 ms | first recall after cold start (embedder warm-up) |
 | **cold start** | ~1.1 s | MCP server launch + embedder model load |
-
-### Throughput (24h production data)
-
-```
-Recall 24h — 1530 calls
-  ├─ vector:  789 hits (51.6%)  ← dominant path
-  ├─ graph:   256 hits (16.7%)
-  ├─ entity:  246 hits (16.1%)
-  └─ meta:    238 hits (15.6%)
-Empty hits rate: 5.3% (81 / 1530)
-```
-
-### Concurrency speedup (P2+ #2 patch)
-
-Before / after adding `ThreadPoolExecutor(max_workers=4)`:
-
-| Metric | Serial (before) | Concurrent (after) | Improvement |
-|---|---|---|---|
-| p50 | ~70 ms | **12.5 ms** | **-82%** |
-| p95 | ~90 ms | **36 ms** | **-60%** |
-| avg | ~80 ms | 34 ms | -58% |
-
-### Stock-entity recall (P2+ #4 patch)
-
-```
-Before boost:  q="sh600089" → first stock entity at rank 4
-After  boost:  q="sh600089" → first stock entity at rank 1 (rrf=0.0515 vs default 0.0164)
-
-24h stock entity growth: 204 → 428 (+110%)
-```
 
 ### Memory footprint
 

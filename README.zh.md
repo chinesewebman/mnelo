@@ -89,39 +89,9 @@ query → RRF ──→ ├─ meta（LIKE 搜索）
 |---|---|---|
 | **p50** | **12.5 ms** | warm path，4 路并发 |
 | **p95** | **36.2 ms** | warm path，4 路并发 |
-| **avg** | 34.4 ms | 24h 共 1530 次 |
+| **avg** | 34.4 ms | 24h warm-path 平均 |
 | **max** | 2980 ms | 冷启动后首次 recall（embedder warm-up） |
 | **冷启动** | ~1.1 s | MCP server 启动 + embedder 模型加载 |
-
-### 吞吐（24h 生产数据）
-
-```
-Recall 24h — 1530 calls
-  ├─ vector:  789 hits (51.6%)  ← 主路径
-  ├─ graph:   256 hits (16.7%)
-  ├─ entity:  246 hits (16.1%)
-  └─ meta:    238 hits (15.6%)
-空 hits 率: 5.3% (81 / 1530)
-```
-
-### 并发加速（P2+ #2 patch）
-
-加 `ThreadPoolExecutor(max_workers=4)` 前后对比：
-
-| 指标 | 串行（前） | 并发（后） | 提升 |
-|---|---|---|---|
-| p50 | ~70 ms | **12.5 ms** | **-82%** |
-| p95 | ~90 ms | **36 ms** | **-60%** |
-| avg | ~80 ms | 34 ms | -58% |
-
-### 股票实体召回（P2+ #4 patch）
-
-```
-Boost 前:  q="sh600089" → 第一个股票实体在 rank 4
-Boost 后:  q="sh600089" → 第一个股票实体在 rank 1 (rrf=0.0515 vs 默认 0.0164)
-
-24h 股票实体增长: 204 → 428 (+110%)
-```
 
 ### 内存占用
 
