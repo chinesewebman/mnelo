@@ -290,19 +290,6 @@ Set `HERMES_MEMORY_LANG=ja` to test. Locale miss falls back to `en`, then to `ms
 
 ---
 
-## 🔍 Independent audit / 第三方审计
-
-Two independent audits were conducted before this public release:
-
-| Audit | Verdict | Highlights |
-|---|---|---|
-| **Audit v1** (full audit, AUDIT-REPORT.md) | **B+** | 架构清晰、7 表规范、但 Chinese embedding 问题未解决、文档空白 |
-| **Audit v2** (post-patches, AUDIT-REPORT-v2.md) | **A-** | "上次搞错数据库那次不算" 😏 — DB 健康, MCP RSS 254MB, WAL 已开, 搜索策略达到最佳实践 |
-
-Both audits are included in this repo as evidence of pre-release review.
-
----
-
 ## 🚧 Known limitations / 局限
 
 | Limit | Workaround |
