@@ -1,0 +1,6 @@
+# Test-only requirements (add on top of requirements.txt)
+#
+# pip install -r requirements.txt -r requirements-dev.txt
+
+# Test runner
+pytest>=8.0

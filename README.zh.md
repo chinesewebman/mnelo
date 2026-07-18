@@ -199,7 +199,7 @@ mnelo/
 ```bash
 # 安装
 git clone https://github.com/chinesewebman/mnelo
-pip install "mcp[cli]==1.26.0" "sqlite-vec==0.1.9" "fastembed==0.8.0"
+pip install -r requirements.txt
 
 # 初始化 db
 cd mnelo && python3 scripts/init_db.py

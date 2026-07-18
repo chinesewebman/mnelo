@@ -35,10 +35,8 @@ sqlite3       built-in (≥3.35)
 python3 -m venv ~/hermes-agent/venv
 source ~/hermes-agent/venv/bin/activate
 
-# 2. 安装依赖 (一一实战)
-pip install "mcp[cli]==1.26.0"        # MCP SDK
-pip install "sqlite-vec==0.1.9"        # SQLite 向量扩展
-pip install "fastembed==0.8.0"        # bge-small-zh embedder
+# 2. 安装依赖 (用 requirements.txt 实战列出实战真正需要的)
+pip install -r requirements.txt
 ```
 
 > ⚠️ **不要**装 `sentence-transformers` — 我们故意用 fastembed，体积小 ~10 倍、快 ~3 倍。

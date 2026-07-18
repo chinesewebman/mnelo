@@ -1,0 +1,23 @@
+# mnelo runtime requirements
+#
+# Minimum dependencies to run the memory system.
+# Versions are pinned to the ones we test against; bump as needed.
+
+# Vector search extension (Python bindings for sqlite-vec)
+sqlite-vec>=0.1.9,<0.2.0
+
+# Embedder (BAAI/bge-small-zh-v1.5, CN-native)
+fastembed>=0.8.0,<0.9.0
+
+# MCP server (Model Context Protocol over SSE)
+mcp[cli]>=1.26.0,<2.0.0
+
+# ASGI server for the SSE transport (transitive dep of mcp; pinned here for explicitness)
+uvicorn>=0.30.0
+
+# ASGI framework (transitive dep of mcp; pinned for explicitness)
+starlette>=0.36.0
+
+# TOML config loader — only needed on Python <3.11.
+# On 3.11+ the stdlib `tomllib` is used instead.
+tomli>=2.0; python_version<"3.11"
