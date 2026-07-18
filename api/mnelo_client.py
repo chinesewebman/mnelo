@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger('hermes_memory_client')
+logger = logging.getLogger('mnelo_client')
 logger.setLevel(logging.INFO)
 if not logger.handlers:
     handler = logging.StreamHandler()

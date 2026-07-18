@@ -20,7 +20,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict
 
-logger = logging.getLogger('hermes_memory')
+logger = logging.getLogger('mnelo')
 if not logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter(

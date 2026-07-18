@@ -48,7 +48,7 @@ DB_PATH = Path("/Users/apple/.hermes/memory/memory.db")
 MCP_PORT = 8086
 MCP_HOST = "127.0.0.1"
 OUTPUT_DIR = Path("/Users/apple/.hermes/cron/output")
-JOB_ID = "hermes_memory_daily_check"
+JOB_ID = "mnelo_daily_check"
 BJT = timezone(timedelta(hours=8))
 
 

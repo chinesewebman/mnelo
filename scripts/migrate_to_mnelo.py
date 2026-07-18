@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-migrate_to_hermes_memory.py — 从旧 Mnemosyne 导出文件迁数据到 hermes-memory
+migrate_to_mnelo.py — 从旧 Mnemosyne 导出文件迁数据到 mnelo
 
-[实战]
-- 主人口中 7/17 拍板: 自建 hermes-memory 替换 Mnemosyne
-- 输入: mnemosyne-export-*.jsonl (53MB, 实战保留在 migration/)
-- 输出: hermes-memory.db 全量数据 (entities + chunks + relations + vectors)
+[7/17]
+- 主人口中 7/17 拍板: 自建 mnelo (当时叫 hermes-memory) 替换 Mnemosyne
+- 输入: mnemosyne-export-*.jsonl (53MB, 保留在 migration/)
+- 输出: mnelo DB 全量数据 (entities + chunks + relations + vectors)
 
-[实战 source 标签]
-- 实战保留 'mnemosyne-import' 作为 source 字段值, 便于数据溯源 (实战中能区分"原始从 Mnemosyne 迁入的"vs"7/18 之后新增的")
-- 注释中 "mnemosyne" 保留, 表示数据来源是旧系统, 实战审计/追溯用
+[source 标签]
+- 保留 'mnemosyne-import' 作为 source 字段值, 便于数据溯源 (能区分"原始从 Mnemosyne 迁入的"vs"7/18 之后新增的")
+- 注释中 "mnemosyne" 保留, 表示数据来源是旧系统, 审计/追溯用
 
 [转换规则]
 - mnemosyne.working_memory (3560) → chunks (importance=importance)

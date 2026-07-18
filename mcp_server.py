@@ -11,8 +11,8 @@ mcp_server.py — hermes-memory MCP Server (实战: 替代 Mnemosyne MCP)
 - SSE transport on 127.0.0.1:8086 (与 Mnemosyne 同端口, 实战无缝替换)
 
 [运行]
-    /Users/apple/hermes-agent/venv/bin/python3 -m hermes_memory.mcp_server
-    或直接: /Users/apple/hermes-agent/venv/bin/python3 mcp_server.py
+    cd ~/.hermes/memory && python3 mcp_server.py --transport sse
+    (port 走 config: env HERMES_MEMORY_SERVER_PORT > toml [server].port > 8086)
 """
 import sys
 import os
@@ -30,7 +30,7 @@ from config import config  # [Round 2] server host/port 配置
 # 路径
 sys.path.insert(0, '/Users/apple/.hermes/memory')
 
-logger = logging.getLogger('hermes_memory.mcp')
+logger = logging.getLogger('mnelo.mcp')
 logger.setLevel(logging.INFO)
 if not logger.handlers:
     handler = logging.StreamHandler()
