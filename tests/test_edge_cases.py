@@ -429,14 +429,28 @@ class TestVec0RowFactory(unittest.TestCase):
         print(f'  ✅ rrf vector hits 有 distance → {len(vector_hits)} vector hits')
 
     def test_03_mcp_recall_full_path(self):
-        """实战: MCP 客户端 recall 全路径实战 (实战覆盖 mcp_server 段)."""
+        """实战: MCP 客户端 recall 全路径实战 (实战覆盖 mcp_server 段).
+
+        [7/19 P0-2] Bearer token: 从 ~/.config/mnelo/auth_token 读, 加 Authorization header.
+        """
         import asyncio
         import json
         from mcp import ClientSession
         from mcp.client.sse import sse_client
 
+        # [7/19 P0-2] 加载 live token (mode 600 文件)
+        from pathlib import Path
+        _token_path = Path.home() / '.config' / 'mnelo' / 'auth_token'
+        if not _token_path.exists():
+            self.skipTest('mnelo auth_token file not present; skipping MCP e2e test')
+        _live_token = _token_path.read_text().strip()
+
         async def _recall():
-            async with sse_client('http://127.0.0.1:8086/sse', timeout=10) as (r, w):
+            async with sse_client(
+                'http://127.0.0.1:8086/sse',
+                headers={'Authorization': f'Bearer {_live_token}'},
+                timeout=10,
+            ) as (r, w):
                 async with ClientSession(r, w) as s:
                     await s.initialize()
                     r1 = await s.call_tool('memory_recall', {
