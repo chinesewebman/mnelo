@@ -20,6 +20,10 @@ import glob
 import sqlite3
 from pathlib import Path
 
+# [7/19 P1-5] import validation
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from validation import validate_holding_payload, ValidationError
+
 DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')
 STATE_DIR = Path('/Users/apple/.hermes/state')
 
@@ -121,14 +125,38 @@ def main(dry_run: bool = False):
     for fp in files:
         with open(fp) as f:
             data = json.load(f)
-        asof = data['asof']
+
+        # [7/19 P1-5] JSON schema 验证: 必须有 asof(str) + holdings(list)
+        # 否则 malicious JSON 可以注入任意内容进 entities.summary / properties_json
+        if not isinstance(data, dict):
+            print(f'  ⚠️  {Path(fp).name}: 顶层不是 dict, 跳过')
+            stats['files_skipped'] = stats.get('files_skipped', 0) + 1
+            continue
+        asof = data.get('asof')
+        if not isinstance(asof, str) or not asof:
+            print(f'  ⚠️  {Path(fp).name}: asof 缺失或不是 str, 跳过')
+            stats['files_skipped'] = stats.get('files_skipped', 0) + 1
+            continue
         holdings = data.get('holdings', [])
+        if not isinstance(holdings, list):
+            print(f'  ⚠️  {Path(fp).name}: holdings 不是 list, 跳过')
+            stats['files_skipped'] = stats.get('files_skipped', 0) + 1
+            continue
+
         print(f'\n--- {Path(fp).name} asof={asof} ({len(holdings)} 标的) ---')
 
         for h in holdings:
-            print(f'  {h["symbol_code"]} ({h["name"]}) {h["quantity"]}股 '
-                  f'成本{h["cost_price"]} 现价{h["current_price"]} '
-                  f'盈亏{h["pnl_pct"]:+.2f}%')
+            # [7/19 P1-5] 每个 holding 也走 schema 验证, 防单条恶意 JSON
+            try:
+                h = validate_holding_payload(h)
+            except ValidationError as ve:
+                print(f'  ⚠️  holding validation fail: {ve.field} - {ve.reason}, skip')
+                stats['holdings_skipped'] = stats.get('holdings_skipped', 0) + 1
+                continue
+
+            print(f'  {h.get("symbol_code", "?")} ({h.get("name", "?")}) '
+                  f'{h.get("quantity", "?")}股 成本{h.get("cost_price", "?")} '
+                  f'现价{h.get("current_price", "?")} 盈亏{h.get("pnl_pct", 0):+.2f}%')
 
             if dry_run:
                 continue

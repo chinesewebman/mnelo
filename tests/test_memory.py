@@ -41,7 +41,13 @@ class TestMemoryCRUD(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.mem = Memory()
-        cls.test_id_prefix = 'test_crud_' + datetime.now().strftime('%H%M%S')
+        # [7/19 patch] 加 microseconds + class counter, 防同一分钟内连跑触发 UNIQUE 冲突
+        # (pre-existing bug: HHMMSS 分辨率不够, 之前 49/50 测试通过是因为通常间隔 > 1min)
+        cls.test_id_prefix = (
+            'test_crud_'
+            + datetime.now().strftime('%H%M%S_%f')
+            + f'_{cls.__name__}'
+        )
         print(f'\n--- {cls.test_id_prefix} ---')
 
     def test_01_remember_basic(self):
@@ -184,10 +190,23 @@ class TestMemoryCRUD(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         # 清理测试数据
+        # [7/19 fix] 必须先删 vectors 再删 chunks — vec0 表的 rowid = chunks.rowid,
+        # 没有 ON DELETE 触发器级联, chunks 删除后 vectors 留下 → 下次 INSERT 撞 UNIQUE
         with cls.mem._conn:
-            cls.mem._conn.execute(
-                "DELETE FROM chunks WHERE source = 'test_crud'"
-            )
+            # 1. 删 test_crud 的 chunks (通过 JOIN 拿 rowid 再删 vectors)
+            rows = cls.mem._conn.execute(
+                "SELECT rowid FROM chunks WHERE source = 'test_crud'"
+            ).fetchall()
+            if rows:
+                rowids = [r['rowid'] for r in rows]
+                placeholders = ','.join('?' * len(rowids))
+                cls.mem._conn.execute(
+                    f"DELETE FROM vectors WHERE rowid IN ({placeholders})", rowids
+                )
+                cls.mem._conn.execute(
+                    "DELETE FROM chunks WHERE source = 'test_crud'"
+                )
+            # 2. entities + relations (按 prefix 清)
             cls.mem._conn.execute(
                 "DELETE FROM entities WHERE id LIKE ?",
                 (f'{cls.test_id_prefix}%',)
@@ -360,7 +379,28 @@ class TestP0BoundsCheck(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.mem.close()
+        # [7/19 fix] TestP0BoundsCheck 用 source='test', 必须在 tearDown 清物理数据
+        # (老代码只 cls.mem.close() → forget() 留下的 vectors 污染下个 class)
+        try:
+            rows = cls.mem._conn.execute(
+                "SELECT rowid FROM chunks WHERE source = 'test'"
+            ).fetchall()
+            if rows:
+                rowids = [r['rowid'] for r in rows]
+                placeholders = ','.join('?' * len(rowids))
+                cls.mem._conn.execute(
+                    f"DELETE FROM vectors WHERE rowid IN ({placeholders})", rowids
+                )
+                cls.mem._conn.execute("DELETE FROM chunks WHERE source = 'test'")
+            cls.mem._conn.execute(
+                "DELETE FROM entities WHERE id LIKE 'test_%' AND source = 'test'"
+            )
+            cls.mem._conn.execute(
+                "DELETE FROM relations WHERE relation = 'clamp_test'"
+            )
+            cls.mem._conn.commit()
+        finally:
+            cls.mem.close()
 
     def test_01_clamp01_positive_overflow(self):
         from memory import clamp01

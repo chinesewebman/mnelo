@@ -15,12 +15,15 @@ mcp_server.py — hermes-memory MCP Server (实战: 替代 Mnemosyne MCP)
     或直接: /Users/apple/hermes-agent/venv/bin/python3 mcp_server.py
 """
 import sys
+import os
 import json
 import sqlite3
 import asyncio
+import socket
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from validation import ValidationError
 
 # 路径
 sys.path.insert(0, '/Users/apple/.hermes/memory')
@@ -215,6 +218,30 @@ TOOLS = [
 # 现在抽 TOOL_REGISTRY: 简单委托走通用 wrapper, 自定义逻辑走 _custom_handlers.
 # 减 ~50 行, 加 ~5 行.
 
+# [7/19 P2-3] 简易 in-memory rate limit (防 runaway loop / 滥用)
+# key=tool 名, value=[window_start_ts, count_in_window]
+_RATE_LIMIT_WINDOW_SEC = 60
+_RATE_LIMIT_MAX_REQS = 60  # 每分钟每 tool 最多 60 次 (实测 recall ~50ms, 足够人用)
+
+
+def _rate_limit_check(tool_name: str) -> None:
+    """In-process sliding-window rate limit. 超限抛 ValidationError."""
+    import time as _time
+    now_ts = _time.time()
+    bucket = _RATE_BUCKETS.get(tool_name)
+    if bucket is None or now_ts - bucket[0] > _RATE_LIMIT_WINDOW_SEC:
+        _RATE_BUCKETS[tool_name] = [now_ts, 1]
+        return
+    bucket[1] += 1
+    if bucket[1] > _RATE_LIMIT_MAX_REQS:
+        raise ValidationError(
+            tool_name,
+            f'rate limit: {_RATE_LIMIT_MAX_REQS} reqs / {_RATE_LIMIT_WINDOW_SEC}s exceeded'
+        )
+
+
+_RATE_BUCKETS: Dict[str, list] = {}
+
 _TOOL_REGISTRY = {
     # name -> (mem method attr, response id field name or None)
     'memory_remember': ('remember', 'chunk_id'),
@@ -328,17 +355,41 @@ _CUSTOM_HANDLERS = {
 
 
 def _call_tool(name: str, args: Dict) -> str:
-    """统一处理 10 个工具调用, 返回 JSON 字符串."""
+    """统一处理 10 个工具调用, 返回 JSON 字符串.
+
+    [7/19 P1-3] except 返回 type name + 简短 reason, 不带原始 str(e)
+    (避免泄露内部路径 / SQL 错误细节 / stack hint 给 MCP client).
+    logger.exception 仍保留全 traceback 给 operator (操作员查 ~/.hermes/logs/).
+    """
     mem = _get_mem()
+    # [7/19 P2-3] rate limit 在 dispatch 前, 防 owner infinite loop 拖死 MCP server
+    try:
+        _rate_limit_check(name)
+    except ValidationError as ve:
+        logger.warning(f'call_tool {name} rate-limited')
+        return json.dumps({'error': str(ve), 'tool': name, 'type': 'rate_limit'},
+                          ensure_ascii=False)
     try:
         if name in _TOOL_REGISTRY:
             return _handle_simple(mem, name, args)
         if name in _CUSTOM_HANDLERS:
             return _CUSTOM_HANDLERS[name](mem, args)
         return json.dumps({'error': f'unknown tool: {name}'}, ensure_ascii=False)
+    except ValidationError as ve:
+        # validation 错误是 user-facing 的, message 安全 (不带原始 input)
+        logger.warning(f'call_tool {name} validation: {ve.field}: {ve.reason}')
+        return json.dumps({'error': str(ve), 'tool': name, 'type': 'validation'},
+                          ensure_ascii=False)
     except Exception as e:
         logger.exception(f'call_tool {name} failed')
-        return json.dumps({'error': str(e), 'tool': name}, ensure_ascii=False)
+        # 只返 type name (e.g. "ValueError", "sqlite3.OperationalError"), 不带 str(e)
+        return json.dumps({
+            'error': type(e).__name__,
+            'tool': name,
+            'type': 'internal',
+            # 'detail' 字段只在调试模式 (HERMES_MEMORY_DEBUG=1) 暴露
+            'detail': str(e) if os.environ.get('HERMES_MEMORY_DEBUG') == '1' else None,
+        }, ensure_ascii=False)
 
 
 # === MCP server ===
@@ -367,9 +418,32 @@ async def run_stdio() -> None:
 
 
 def run_sse(host: str = '127.0.0.1', port: int = 8086) -> None:
-    """实战: SSE transport (与 launchd 兼容)."""
+    """实战: SSE transport (与 launchd 兼容).
+
+    [7/19 P2-1] host 只接受 loopback (127.x / ::1 / localhost), 拒绝 0.0.0.0 / LAN IP
+    防止误传把整个 LAN 暴露出去 (本地任何端口暴露都是 P0 风险)
+    """
     if not _MCP_AVAILABLE:
         raise RuntimeError('MCP/Starlette not available')
+
+    # [7/19 P2-1] host 白名单
+    if host != '127.0.0.1' and host != 'localhost' and not host.startswith('127.'):
+        raise ValueError(
+            f'--host {host!r} not allowed. mnelo SSE is loopback-only for security. '
+            f'Pass 127.0.0.1 or localhost. For LAN access, '
+            f'use SSH tunnel or VPN instead.'
+        )
+
+    # [7/19 P2-2] 启动前试 bind 端口, 占用就优雅退出 (避免 cron 重启循环)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind((host, port))
+    except OSError as e:
+        sock.close()
+        logger.warning(f'port {port} already in use on {host}: {e}; exiting cleanly')
+        return  # 不抛错 — 让 launchd KeepAlive 自然接管
+    sock.close()
 
     sse = SseServerTransport('/messages/')
 

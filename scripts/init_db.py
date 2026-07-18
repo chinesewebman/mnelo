@@ -19,8 +19,9 @@ SCHEMA_PATH = Path('/Users/apple/.hermes/memory/schema.sql')
 
 def init():
     if DB_PATH.exists():
-        print(f'⚠️  memory.db 已存在: {DB_PATH}')
-        print(f'   如要重置, 请先删: rm {DB_PATH}')
+        # [7/19 P2-7] 只打印 basename, 不暴露绝对路径 (cron 输出可能 world-readable log)
+        print(f'⚠️  memory.db 已存在: {DB_PATH.name}')
+        print(f'   如要重置, 请先删: rm {DB_PATH.name}')
         sys.exit(1)
 
     # 读 embedder config — 失败回落到默认 (bge-small-zh, 512d)
@@ -54,7 +55,13 @@ def init():
     # 占位符替换 — 必须跟 schema.sql 里的 {EMBED_DIM}/{EMBED_MODEL} 一致
     sql = sql.replace('{EMBED_DIM}', str(embed_dim))
     sql = sql.replace('{EMBED_MODEL}', embed_model.replace("'", "''"))  # SQL 单引号转义
-    conn.executescript(sql)
+    # [7/19 P2-8 fix] executescript 接受任意 ; 串接, 改用 split + execute per stmt
+    # 防止恶意 schema.sql 注入额外 SQL (embed_model escape 防 SQL 单引号注入,
+    # 但 ; 分隔符之前没有防御)
+    for stmt in sql.split(';'):
+        stmt = stmt.strip()
+        if stmt and not stmt.startswith('--'):
+            conn.execute(stmt)
     conn.commit()
 
     print(f'=== 4. 验证表 ===')

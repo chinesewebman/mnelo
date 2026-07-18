@@ -31,6 +31,12 @@ if not logger.handlers:
 
 sys.path.insert(0, '/Users/apple/.hermes/memory')
 from embedder import embed_bytes, get_embedder
+# validation 模块在 repo 里, live 里通过 post-commit hook 自动 sync — 此处放 embedder 之后,
+# 因为 live embedder 内部会触发 from config import, 而 config 也依赖同一组 path 操作
+from validation import (
+    validate_chunk_content, validate_query, validate_id, validate_entity_payload,
+    ValidationError,
+)
 
 DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')
 # 注: embedding 模型 + dim 不再在此处硬编码 — 见 embedder.py 从 config 读 (config.toml [embedder])
@@ -213,6 +219,10 @@ class Memory:
         ts = timestamp or now()
         chunk_id = generate_id('chunk')
 
+        # [7/19 P0-3] chunk content 大小 + 控制字符 + bidi override 验证
+        content = validate_chunk_content(content)
+        # [7/19 P1-1] id 来源 = generate_id (服务端生成), 无需 validate_id
+
         # 1. 写 chunk
         self._conn.execute("""
             INSERT INTO chunks (id, content, source, session_id, timestamp, importance, metadata_json, valid_until)
@@ -269,6 +279,11 @@ class Memory:
         properties: Dict = None,
     ) -> int:
         """新建一条关系."""
+        # [7/19 P1-1] id 格式验证 (白名单正则)
+        source_id = validate_id(source_id, 'source_id')
+        target_id = validate_id(target_id, 'target_id')
+        if evidence_chunk_id is not None:
+            evidence_chunk_id = validate_id(evidence_chunk_id, 'evidence_chunk_id')
         cur = self._conn.execute("""
             INSERT INTO relations (source_id, target_id, relation, weight, properties_json,
                                    valid_from, valid_until, source, confidence, evidence_chunk_id)
@@ -288,9 +303,11 @@ class Memory:
         new_importance: float = None,
     ) -> str:
         """Update by creating new chunk version + superseding old (immutable history).
-
         老 chunk 不直接覆盖, 而是标 superseded_by + valid_until=now, 触发器自动级联:
         所有引用老 chunk 的边 valid_until = now. 历史完整保留.
+
+        [7/19 P0-3] 新 content 也走 sanitize (None = 保留老内容, 跳过)
+        [7/19 P1-1] id 格式验证
 
         Args:
             old_id: 要更新的 chunk id (active 的, 否则 ValueError)
@@ -302,6 +319,12 @@ class Memory:
         Returns:
             新 chunk id (新版本 id)
         """
+        # [7/19 P1-1] id 格式验证
+        old_id = validate_id(old_id, 'old_id')
+        # [7/19 P0-3] 新 content 也走 sanitize (None = 保留老内容, 跳过)
+        if new_content is not None:
+            new_content = validate_chunk_content(new_content)
+
         old = self._conn.execute(
             "SELECT * FROM chunks WHERE id = ? AND valid_until IS NULL", (old_id,)
         ).fetchone()
@@ -344,6 +367,8 @@ class Memory:
         """软删除: valid_until = now, cascade 级联失效引用边.
         主人口中实战"删除无用知识" — 不直接物理删, 30 天后 worker 物理清理.
         """
+        # [7/19 P1-1] id 格式验证
+        target_id = validate_id(target_id, 'target_id')
         if target_kind == 'chunk':
             self._conn.execute(
                 "UPDATE chunks SET valid_until = ? WHERE id = ? AND valid_until IS NULL",
@@ -392,6 +417,7 @@ class Memory:
         asof: str = None,
     ) -> List[Dict]:
         """4 路召回 + RRF 融合 (实战 7/18 加 entity 路).
+        [7/19 P1-4] query 大小 + 控制字符 + bidi 验证
 
         strategy: 'rrf' / 'vector_only' / 'graph_only' / 'meta_only' / 'entity_only'
         asof: 时间切片查询 (实战: '2026-07-17T15:00:00')
@@ -401,6 +427,9 @@ class Memory:
         # 这些 query 没实战意义, 不应该污染 recall_log / recall_count / last_recalled
         if not query or not query.strip():
             return []
+        # [7/19 P1-4] query 验证 (sanitize + size cap) — 必须在 empty check 之后,
+        # 否则空 query 会被 validation 拒掉而不是返 []
+        query = validate_query(query)
         clean = query.strip()
         # 占位符白名单 (case insensitive)
         _PLACEHOLDER_QUERIES = {'anything', 'something', 'test', 'foo', 'bar',
@@ -901,6 +930,8 @@ class Memory:
         asof: str = None,
     ) -> Dict:
         """实战子图: start_node 起, max_hops 跳内的所有节点 + 边."""
+        # [7/19 P1-1] start_node 格式验证
+        start_node = validate_id(start_node, 'start_node')
         asof = asof or now()
         # BFS: 拿 max_hops 跳内的所有节点
         visited = {start_node}
@@ -980,11 +1011,24 @@ class Memory:
                 - source (str, optional): defaults to 'manual'
                 - importance (float, optional): defaults to 0.5, clamped
         """
+        # [7/19 P1-1 + P1-2 + P1-5] entity 整体清洗 (id 验证 + name/summary/kind 剥离控制 + bidi)
+        ent = validate_entity_payload(ent)
         existing = self._conn.execute(
             "SELECT id FROM entities WHERE id = ? AND valid_until IS NULL",
             (ent['id'],)
         ).fetchone()
         if existing:
+            # [7/19 P1-2] identity_fact 类实体拒绝覆盖 name/aliases/properties (防伪造主人身份)
+            # 只能新增 (valid_until 旧版 + 新版)
+            existing_kind = self._conn.execute(
+                "SELECT kind FROM entities WHERE id = ? AND valid_until IS NULL",
+                (ent['id'],)
+            ).fetchone()
+            if existing_kind and existing_kind['kind'] == 'identity_fact':
+                raise ValidationError(
+                    'entity.identity_fact',
+                    'identity_fact entities are immutable; create a new version instead'
+                )
             # 更新 fields
             self._conn.execute("""
                 UPDATE entities
@@ -1016,10 +1060,13 @@ class Memory:
 
     # === 统计 ====================
 
+    # [7/19 P2-4] 显式白名单, 防止以后误把 user input 传进来 → SQL injection
+    _ALLOWED_TABLES = frozenset({'entities', 'chunks', 'relations'})
+
     def stats(self) -> Dict:
         """实战统计."""
         stats = {}
-        for t in ['entities', 'chunks', 'relations']:
+        for t in self._ALLOWED_TABLES:  # 永远是 3 个白名单字符串
             total = self._conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
             active = self._conn.execute(
                 f"SELECT count(*) FROM {t} WHERE valid_until IS NULL"

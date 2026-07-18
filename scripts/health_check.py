@@ -23,6 +23,9 @@ Exit codes:
 """
 import json
 import os
+
+# [7/19 P1-6] health_check report 文件默认 0600, 不让其他本地 user 看 DB stats
+os.umask(0o077)
 import sqlite3
 import subprocess
 import sys
@@ -118,6 +121,7 @@ def db_stats(db_path):
         con.row_factory = sqlite3.Row
         out = {}
         # Regular tables — count + active count
+        # [7/19 P2-4] 显式白名单, 防止以后误把 user input 传进来 → SQL injection
         for table in ("entities", "chunks", "relations"):
             try:
                 row = con.execute(

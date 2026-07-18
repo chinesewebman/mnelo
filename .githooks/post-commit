@@ -14,6 +14,9 @@
 
 set -euo pipefail
 
+# [7/19 P0-1 fix] 文件默认 0600/0700, 防止其他本地 user 读 KG / config / schema
+umask 077
+
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 LIVE_ROOT="/Users/apple/.hermes/memory"
 LIVE_API="$LIVE_ROOT/api"
@@ -38,9 +41,10 @@ if [ ! -d "$LIVE_ROOT" ]; then
     exit 0  # 不算失败 — 可能在 CI / 测试环境跑
 fi
 
-# 2. 跳过 sync hook 自身 (避免无限循环)
+# 3. 跳过 sync hook 自身 (避免无限循环)
 LAST_COMMIT_MSG="$(git log -1 --pretty=%s)"
-if [[ "$LAST_COMMIT_MSG" == *"[skip-sync]"* ]]; then
+# [7/19 P2-5 fix] case-insensitive, 防止 "[Skip-Sync]" / "[skip-sync ]" 之类绕过
+if [[ "${LAST_COMMIT_MSG,,}" == *"[skip-sync]"* ]]; then
     log "commit message 含 [skip-sync], 跳过"
     exit 0
 fi
@@ -85,14 +89,18 @@ if [ ${#SYNC_TARGETS[@]} -eq 0 ]; then
 fi
 
 # 6. Backup live 文件 (按 mtime 排序, 保留最近 5 份, 避免无限堆积)
-BACKUP_DIR="$LIVE_ROOT/.sync-backups/$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD)"
+BACKUP_DIR="$LIVE_ROOT/.sync-backups/$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD)-$$"
 mkdir -p "$BACKUP_DIR"
+# [7/19 P0-1 fix] backup dir 也只 owner 可见, 防止 ls 看历史 commit 时间线
+chmod 700 "$BACKUP_DIR"
 BACKED_UP=0
 for target in "${SYNC_TARGETS[@]}"; do
     if [ -f "$target" ]; then
         rel="${target#$LIVE_ROOT/}"
         mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
         cp -p "$target" "$BACKUP_DIR/$rel"
+        # [7/19 P0-1 fix] backup 文件也 0600, 不让 group/other 看
+        chmod 600 "$BACKUP_DIR/$rel"
         BACKED_UP=$((BACKED_UP + 1))
     fi
 done
@@ -121,11 +129,13 @@ for src in $CHANGED_FILES; do
     esac
 
     # 保留 .py 的可执行位 (live 的 mcp_server.py 是 +x 的)
+    # [7/19 P2-9 fix] quote $REPO_ROOT 防 symlink-with-spaces edge case
     src_mode=$(stat -f '%p' "$REPO_ROOT/$src" 2>/dev/null || echo "100644")
     if [ -x "$REPO_ROOT/$src" ]; then
         install -m 0755 "$REPO_ROOT/$src" "$dst.tmp"
     else
-        install -m 0644 "$REPO_ROOT/$src" "$dst.tmp"
+        # [7/19 P0-1 fix] 0644 → 0600: live code 不该对其他本地 user 可见
+        install -m 0600 "$REPO_ROOT/$src" "$dst.tmp"
     fi
 
     # 原子替换 (mv 覆盖)
