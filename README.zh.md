@@ -197,6 +197,47 @@ export HUGGINGFACE_HUB_CACHE=/srv/cache/huggingface/hub
 
 **跟其他工具共享模型**：任何用 fastembed / sentence-transformers / HuggingFace transformers 的工具都会在默认路径找到同一份缓存，不会重复下载。
 
+### 🌐 多语种模型
+
+默认的 `bge-small-zh-v1.5` 是**中文原生**（C-MTEB 强），对英文和 100+ 其他语言也凑合能用——非中文文本质量会下降。如果工作负载偏另一种语言，通过 `config.toml` 切换 embedder：
+
+```toml
+[embedder]
+model = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
+dim = 384
+```
+
+或者用环境变量（不改 config）：
+
+```bash
+export HERMES_MEMORY_EMBEDDER_MODEL='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
+export HERMES_MEMORY_EMBEDDER_DIM=384
+launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
+```
+
+**推荐模型矩阵**（都在 [fastembed-supported list](https://qdrant.github.io/fastembed/examples/Supported_Models/) 上，license 全是 MIT 或 Apache-2.0）：
+
+| 用途 | 模型 | dim | 磁盘大小 | License |
+|---|---|---|---|---|
+| 中文（默认）| [BAAI/bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5) | 512 | 92 MB | MIT |
+| 英文 | [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5) | 384 | 67 MB | MIT |
+| **多语种（50+ 语种：日本語 / 한국어 / Español / Français / Deutsch / 中文 / English / …）** | [paraphrase-multilingual-MiniLM-L12-v2](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2) | 384 | 220 MB | Apache-2.0 |
+
+**为什么是这 3 个？**
+
+- **bge-small-zh-v1.5** —— 中文最佳（C-MTEB top-3，90 MB），英文也能凑合
+- **bge-small-en-v1.5** —— 纯英文最佳，67 MB；如果根本不存中文就选它
+- **paraphrase-multilingual-MiniLM-L12-v2** —— 一个模型覆盖 50+ 语种（含最常被问到的日本語 / 한국어 / Español / Français / Deutsch / 中文 / English），220 MB。在 fastembed 支持的模型里 MTEB multilingual-retrieval benchmark top-3。**语料混合或想一个模型走天下的场景，就选它。**
+
+⚠️ **切换模型必须重新初始化数据库** —— `sqlite-vec` schema 把 `dim` 烤进表定义了。老的 embedding 跟新 dim 不兼容。
+
+```bash
+# 改完 config.toml 后:
+rm ~/.hermes/memory/memory.db        # 有重要数据先备份
+python3 scripts/init_db.py
+launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
+```
+
 ### 测试覆盖
 
 ```

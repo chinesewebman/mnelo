@@ -197,6 +197,47 @@ The env var must be set **before** the MCP server starts (launchd plist inherits
 
 **Sharing the model with other tools**: any other tool that uses fastembed / sentence-transformers / HuggingFace transformers will find the same cached files at the default path. No duplicate downloads.
 
+### 🌐 Multilingual models
+
+The default `bge-small-zh-v1.5` is **Chinese-native** (C-MTEB strong) but works for English and 100+ other languages too — just with degraded quality on non-Chinese text. For workloads heavy in another language, swap the embedder via `config.toml`:
+
+```toml
+[embedder]
+model = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
+dim = 384
+```
+
+Or via env var (no config edit):
+
+```bash
+export HERMES_MEMORY_EMBEDDER_MODEL='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
+export HERMES_MEMORY_EMBEDDER_DIM=384
+launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
+```
+
+**Recommended model matrix** (all on the [fastembed-supported list](https://qdrant.github.io/fastembed/examples/Supported_Models/), all MIT or Apache-2.0):
+
+| Use case | Model | dim | Size on disk | License |
+|---|---|---|---|---|
+| Chinese (default) | [BAAI/bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5) | 512 | 92 MB | MIT |
+| English | [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5) | 384 | 67 MB | MIT |
+| **Multilingual (50+ languages: 日本語 / 한국어 / Español / Français / Deutsch / 中文 / English / …)** | [paraphrase-multilingual-MiniLM-L12-v2](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2) | 384 | 220 MB | Apache-2.0 |
+
+**Why these three?**
+
+- **bge-small-zh-v1.5** — best for Chinese text (C-MTEB top-3 at 90 MB), acceptable for English
+- **bge-small-en-v1.5** — best English-only at 67 MB; pick if you never store Chinese
+- **paraphrase-multilingual-MiniLM-L12-v2** — covers 50+ languages including the ones most commonly requested (日本語 / 한국어 / Español / Français / Deutsch / 中文 / English) at one model, 220 MB. Top-3 in MTEB multilingual-retrieval benchmarks among fastembed-supported models. **This is the right pick if your corpus is mixed-language or you want one model for everything.**
+
+⚠️ **Switching models requires re-initializing the database** — the `sqlite-vec` schema bakes `dim` into the table definition. Old embeddings are not portable across dims.
+
+```bash
+# After editing config.toml:
+rm ~/.hermes/memory/memory.db        # backup first if you have data you care about
+python3 scripts/init_db.py
+launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
+```
+
 ### Test coverage
 
 ```
