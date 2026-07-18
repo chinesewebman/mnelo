@@ -21,17 +21,30 @@ import unittest
 from pathlib import Path
 from datetime import datetime
 
-# [7/19 patch] 优先用 repo 本地代码, 再回落 ~/.hermes/memory/ (live server 副本)
-# 这样 pytest 跑的是 git HEAD 当前代码, 不是 live running copy
-_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+# [7/19 patch] 强制从 repo 本地代码 import (绕过 pytest 改 sys.path + memory.py 污染)
+# 用 importlib 精确加载, 不依赖 sys.path 顺序
+import importlib.util as _ilu
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+def _load_from_repo(mod_name: str):
+    """强制从 _REPO_ROOT 加载模块, 跳过 sys.path 中的 live / tests 干扰."""
+    spec = _ilu.spec_from_file_location(mod_name, _REPO_ROOT / f'{mod_name}.py')  # type: ignore[arg-type]
+    mod = _ilu.module_from_spec(spec)  # type: ignore[arg-type]
+    sys.modules[mod_name] = mod  # 提前占位, 防 memory.py 内 from config import 等内部 import 拿到 live
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+# 按依赖顺序加载: config → embedder (内部 from config) → memory (内部 from embedder)
+_load_from_repo('config')
+_load_from_repo('embedder')
+_load_from_repo('memory')
+# memory.py line 32 会把 /Users/apple/.hermes/memory 塞 sys.path[0], undo 它
 _LIVE_ROOT = '/Users/apple/.hermes/memory'
-sys.path.insert(0, _REPO_ROOT)         # repo 代码优先
-if _LIVE_ROOT not in sys.path:
-    sys.path.append(_LIVE_ROOT)        # fallback: live server 副本 (仅当 repo import 失败时)
-sys.path.insert(0, '/Users/apple/.hermes/memory/api')
+if sys.path and sys.path[0] == _LIVE_ROOT:
+    sys.path.pop(0)
 
 from memory import Memory, generate_id, now
-from embedder import get_embedder, EMBED_DIM, EMBED_MODEL_NAME
+from embedder import get_embedder, EMBED_MODEL_NAME, EMBED_DIM
 
 
 DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')  # intentionally points at live DB — 实战测试 against real data
@@ -345,17 +358,18 @@ class TestEmbedder(unittest.TestCase):
 
     def test_01_embedder_loaded(self):
         """embedder 已从 config 加载, model_name + dim 都是合法值."""
+        import embedder as _embed_mod  # 用模块 attr, 不要 import 局部名 (Python import 是值快照)
         from config import config as _config
         # 先实例化 Embedder — 它在 __new__/_init() 时把模块常量从 config 同步过来
-        _ = get_embedder()  # 触发 _init(), 同步 EMBED_MODEL_NAME/EMBED_DIM
+        _ = _embed_mod.get_embedder()  # 触发 _init(), 同步 EMBED_MODEL_NAME/EMBED_DIM
         # 模块常量应该跟 config 一致 (Embedder._init() 时同步过)
-        self.assertIsNotNone(EMBED_MODEL_NAME, 'EMBED_MODEL_NAME 应该是 None 之外的 str')
-        self.assertIsNotNone(EMBED_DIM, 'EMBED_DIM 应该是 None 之外的 int')
-        self.assertEqual(EMBED_MODEL_NAME, _config.embedder_model)
-        self.assertEqual(EMBED_DIM, _config.embedder_dim)
+        self.assertIsNotNone(_embed_mod.EMBED_MODEL_NAME, 'EMBED_MODEL_NAME 应该是 None 之外的 str')
+        self.assertIsNotNone(_embed_mod.EMBED_DIM, 'EMBED_DIM 应该是 None 之外的 int')
+        self.assertEqual(_embed_mod.EMBED_MODEL_NAME, _config.embedder_model)
+        self.assertEqual(_embed_mod.EMBED_DIM, _config.embedder_dim)
         # dim 必须是 fastembed 接受的合法值 (BGE / MiniLM 系列都用 256/384/512/768/1024)
-        self.assertIn(EMBED_DIM, (256, 384, 512, 768, 1024),
-                      f'dim={EMBED_DIM} 不在 fastembed 常见输出维度集合里')
+        self.assertIn(_embed_mod.EMBED_DIM, (256, 384, 512, 768, 1024),
+                      f'dim={_embed_mod.EMBED_DIM} 不在 fastembed 常见输出维度集合里')
         print(f'  ✅ embedder ← {_config.describe()}')
 
     def test_02_embedder_consistency(self):
