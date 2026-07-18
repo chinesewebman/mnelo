@@ -14,6 +14,8 @@
 
 A drop-in memory layer for [Hermes Agent](https://nousresearch.com/hermes), [Claude Desktop](https://claude.ai/download), [Cursor](https://cursor.sh), or any MCP client. Stores vectors, knowledge graph, and metadata in one SQLite file. Hybrid recall (vector + graph + meta + entity) with RRF fusion. **Zero cloud dependency**.
 
+**Why 4-way recall wins**: each lane catches what the others miss — vector misses literal terms (stock codes, ticker symbols), meta misses semantic paraphrases, graph misses orphaned chunks with no entity links, entity misses long-form prose. Four lanes run in parallel (WAL-mode concurrent reads, p50 = **12.5 ms** / p95 = **36 ms**), and RRF fuses their ranks without any score normalization — so you get high recall without per-lane threshold tuning. See [🔀 What is RRF?](#-what-is-rrf) below for the math, and [At a glance](#-at-a-glance) for the latency numbers.
+
 ---
 
 ## ⚡ At a glance
@@ -29,6 +31,36 @@ A drop-in memory layer for [Hermes Agent](https://nousresearch.com/hermes), [Cla
 | **LOC** | ~3000 lines of Python (memory.py + scripts + client + tests) |
 | **Dependencies** | 3 pip installs: `mcp[cli]`, `sqlite-vec`, `fastembed` |
 | **i18n** | English + 中文 first-class, locale auto-detect |
+
+---
+
+### 🔀 What is RRF?
+
+**RRF = Reciprocal Rank Fusion** ([Cormack et al., 2009](https://dl.acm.org/doi/10.1145/1571941.1572114)). The simplest recipe that actually beats weighted-score tuning when you're fusing results from heterogeneous search lanes.
+
+The core idea: each lane ranks results independently; you then merge by summing `1 / (k + rank_i)` across lanes, where `k=60` is the standard damping constant.
+
+```
+Lane A (vector):   doc1=1, doc2=3, doc5=2
+Lane B (graph):    doc2=1, doc1=2, doc7=3
+Lane C (meta):     doc5=1, doc1=3, doc9=2
+
+Final score = Σ_lanes 1 / (60 + rank_in_lane)
+→ doc1: 1/61 + 1/62 + 1/63 = 0.0483   ← wins
+→ doc2: 1/63 + 1/61       = 0.0321
+→ doc5: 1/62 + 1/61       = 0.0321
+```
+
+**Why RRF over weighted-score fusion?**
+
+|                          | RRF                                          | Weighted score fusion                       |
+| ------------------------ | -------------------------------------------- | ------------------------------------------- |
+| Needs score normalization? | **No** — rank-only                          | Yes (each lane's score scale must be calibrated) |
+| Robust to one lane going wild? | **Yes** — outlier ranks only contribute `1/(60+rank)` | No — a single lane with skewed scores can dominate |
+| New lane added?          | Just add it                                  | Re-tune all weights                         |
+| Implementation cost      | ~5 lines                                     | Score calibration + weight grid search      |
+
+mnelo uses the canonical `k=60` for the 4 lanes (vector / graph / meta / entity), plus a small `0.05/sqrt(rank)` boost when a stock-code entity matches — that's the only per-domain tweak. Everything else is textbook RRF.
 
 ---
 
@@ -197,18 +229,22 @@ mnelo/
 ## 🚀 Quick start
 
 ```bash
-# Install
-git clone https://github.com/chinesewebman/mnelo
+# 1. Clone
+git clone https://github.com/chinesewebman/mnelo.git
+cd mnelo
+
+# 2. Install (Python 3.9+, virtualenv recommended)
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Init DB
-cd mnelo && python3 scripts/init_db.py
+# 3. Init DB
+python3 scripts/init_db.py
 
-# Start MCP server
+# 4. Start MCP server
 launchctl load ~/Library/LaunchAgents/ai.hermes-memory.mcp.plist
 # (or: python3 mcp_server.py --transport sse --port 8086)
 
-# Use from Python
+# 5. Use from Python
 python3 -c "
 import sys; sys.path.insert(0, 'api')
 from mnelo_client import MneloClient
@@ -227,6 +263,14 @@ python3 scripts/health_check.py
 ```
 
 Full deployment & operations → [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
+
+### 🤖 One-line agent install
+
+Skip all five steps — just hand the URL to an AI agent (Hermes / Claude / Cursor / Codex / any coding agent):
+
+> **Install and start mnelo from https://github.com/chinesewebman/mnelo — clone it, set up the venv, run `scripts/init_db.py`, launch the MCP server on port 8086, and verify with `scripts/health_check.py`. Report back when `🟢 MCP server ready` is in the log.**
+
+The agent handles venv creation, `pip install -r requirements.txt`, plist install, and the health probe. Typical install takes ~90s (the bge-small-zh model download is the slow part — ~95 MB).
 
 ---
 
@@ -266,7 +310,7 @@ Set `HERMES_MEMORY_LANG=ja` to test. Locale miss falls back to `en`, then to `ms
 | **~500K vectors** @ 512-dim on a single MacBook | [`sqlite-vec` v0.1 benchmarks](https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html#benchmarks): vec0 returns 33 ms at 1M × 128-dim (sift1m) and < 100 ms at 500K × 960-dim (gist1m). Latency scales with `dim × log(n)`. At 512-dim, ~500K vectors stays under the [100 ms responsiveness goal](https://developer.mozilla.org/en-US/docs/Web/Performance/How_long_is_too_long#responsiveness_goal) | Switch to HNSW-backed Qdrant/Milvus at >1M vectors |
 | Single-user (no multi-tenant) | One SQLite file, no row-level isolation | Don't expose port 8086 to LAN |
 | No PII auto-detection | Not yet implemented (P1-5) | Don't store passwords / tokens / credit cards |
-| bge-small-zh is CN-tuned (works for EN but suboptimal) | C-MTEB benchmark ranking | Swap to bge-small-en-v1.5 if your workload is mostly English |
+| bge-small-zh is CN-tuned (works for EN but suboptimal) | C-MTEB benchmark ranking | Swap to [bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5) if your workload is mostly English |
 
 ### Basis for the limits
 
@@ -330,7 +374,8 @@ MIT. See [`LICENSE`](LICENSE).
 
 - [sqlite-vec](https://github.com/asg017/sqlite-vec) — vector extension
 - [fastembed](https://qdrant.github.io/fastembed) — embedder wrapper
-- [BAAI/bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5) — CN embedding model
+- [BAAI/bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5) — CN embedding model (default, 512-dim)
+- [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5) — EN embedding model (swap if your workload is mostly English)
 - [MCP](https://modelcontextprotocol.io) — protocol spec
 - [Hermes Agent](https://nousresearch.com/hermes) — primary integration target
 

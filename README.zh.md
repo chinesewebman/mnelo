@@ -14,6 +14,8 @@
 
 一个 drop-in 记忆层，给 [Hermes Agent](https://nousresearch.com/hermes)、[Claude Desktop](https://claude.ai/download)、[Cursor](https://cursor.sh) 或任何 MCP 客户端用。向量、知识图谱、元数据存到一个 SQLite 文件。混合召回（向量 + 图 + 元数据 + 实体）+ RRF 融合。**零云端依赖**。
 
+**为什么是 4 路召回**：每条通道都补上别的通道漏掉的东西——向量漏字面（股票代码、ticker），元数据漏语义改写，图漏没挂实体的孤立 chunk，实体漏长篇散文。四路并发跑（WAL 模式下并发读，p50 = **12.5 ms** / p95 = **36 ms**），再用 RRF 按排名融合——不用做任何分数归一化，就能拿到高召回率，省掉各通道阈值调参。数学细节看 [🔀 什么是 RRF？](#-什么是-rrf)，延迟数字看 [⚡ 一瞥](#-一瞥)。
+
 ---
 
 ## ⚡ 一瞥
@@ -29,6 +31,36 @@
 | **代码量** | 约 3000 行 Python |
 | **依赖** | 3 个 pip install：`mcp[cli]`、`sqlite-vec`、`fastembed` |
 | **国际化** | 英文 + 中文双版本，locale 自动检测 |
+
+---
+
+### 🔀 什么是 RRF？
+
+**RRF = Reciprocal Rank Fusion**（[Cormack 等，2009](https://dl.acm.org/doi/10.1145/1571941.1572114)）。在融合异构搜索通道时，最朴素的方案反而吊打加权打分调参。
+
+核心思路：每个通道独立排序，再把 `1 / (k + rank_i)` 跨通道累加，`k=60` 是标准阻尼常数。
+
+```
+通道 A（向量）:   doc1=1, doc2=3, doc5=2
+通道 B（图）:     doc2=1, doc1=2, doc7=3
+通道 C（meta）:   doc5=1, doc1=3, doc9=2
+
+最终分数 = Σ_通道 1 / (60 + 该通道内的排名)
+→ doc1: 1/61 + 1/62 + 1/63 = 0.0483   ← 胜
+→ doc2: 1/63 + 1/61       = 0.0321
+→ doc5: 1/62 + 1/61       = 0.0321
+```
+
+**为什么用 RRF 而不是加权打分？**
+
+|                          | RRF                                          | 加权打分融合                                |
+| ------------------------ | -------------------------------------------- | ------------------------------------------- |
+| 需要分数归一化？         | **不需要** — 只看排名                        | 需要（每个通道的分数尺度必须校准）          |
+| 某个通道抽风时是否鲁棒？  | **鲁棒** — 异常排名只贡献 `1/(60+rank)`      | 不鲁棒 — 单通道分数畸变即可主导整体         |
+| 新增一个通道？            | 直接加进去                                   | 全部权重要重新调                            |
+| 实现成本                 | ~5 行                                        | 分数校准 + 权重网格搜索                     |
+
+mnelo 用教科书写法的 `k=60`，覆盖 4 个通道（vector / graph / meta / entity），再加上一个小小的 `0.05/sqrt(rank)` boost 用于股票代码命中——这是唯一的领域定制。除此之外全是 RRF 原版。
 
 ---
 
@@ -197,12 +229,16 @@ mnelo/
 ## 🚀 快速开始
 
 ```bash
-# 安装
-git clone https://github.com/chinesewebman/mnelo
+# 克隆
+git clone https://github.com/chinesewebman/mnelo.git
+cd mnelo
+
+# 安装（需要 Python 3.9+，推荐 venv）
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # 初始化 db
-cd mnelo && python3 scripts/init_db.py
+python3 scripts/init_db.py
 
 # 启动 MCP server
 launchctl load ~/Library/LaunchAgents/ai.hermes-memory.mcp.plist
@@ -230,6 +266,14 @@ python3 scripts/health_check.py
 ```
 
 完整部署运维 → [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
+
+### 🤖 一句话让 agent 装
+
+跳过上面所有步骤——把下面这条**直接复制粘贴**给任意 AI agent（Hermes / Claude / Cursor / Codex 等）即可：
+
+> **请从 https://github.com/chinesewebman/mnelo 帮我安装并启动 mnelo：克隆仓库、建 venv、跑 `scripts/init_db.py`、把 MCP server 启动到 8086 端口，最后跑 `scripts/health_check.py` 验证。看到日志里出现 `🟢 MCP server ready` 再回我。**
+
+agent 会自动处理 venv 创建、`pip install -r requirements.txt`、plist 安装、健康探针。典型安装耗时 ~90s（bge-small-zh 模型下载是慢的那段，约 95 MB）。
 
 ---
 
@@ -269,7 +313,7 @@ python3 scripts/health_check.py
 | **~50 万向量** @ 512 维，单 MacBook | [`sqlite-vec` v0.1 实测](https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html#benchmarks)：vec0 在 1M × 128 维（sift1m）返回 33 ms，在 500K × 960 维（gist1m）< 100 ms。延迟按 `dim × log(n)` 缩放。512 维下 ~50 万向量可维持在 [100 ms 响应目标](https://developer.mozilla.org/en-US/docs/Web/Performance/How_long_is_too_long#responsiveness_goal) 内 | >1M 向量时换 HNSW 后端的 Qdrant / Milvus |
 | 单用户（无多租户） | 单 SQLite 文件，无行级隔离 | 不要把 8086 端口暴露到内网 |
 | 无 PII 自动检测 | 未实现（P1-5） | 不要存密码 / token / 信用卡 |
-| bge-small-zh 是中文优化（英文也能用但次优） | C-MTEB 评测排名 | 英文为主时换 bge-small-en-v1.5 |
+| bge-small-zh 是中文优化（英文也能用但次优） | C-MTEB 评测排名 | 英文为主时换 [bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5) |
 
 ### 阈值的依据
 
@@ -333,7 +377,8 @@ MIT. 见 [`LICENSE`](LICENSE)。
 
 - [sqlite-vec](https://github.com/asg017/sqlite-vec) — 向量扩展
 - [fastembed](https://qdrant.github.io/fastembed) — embedder wrapper
-- [BAAI/bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5) — 中文 embedding 模型
+- [BAAI/bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5) — 中文 embedding 模型（默认，512 维）
+- [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5) — 英文 embedding 模型（工作负载以英文为主时替换）
 - [MCP](https://modelcontextprotocol.io) — 协议规范
 - [Hermes Agent](https://nousresearch.com/hermes) — 主集成目标
 
