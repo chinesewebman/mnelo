@@ -269,7 +269,6 @@ python3 scripts/health_check.py
 | **~50 万向量** @ 512 维，单 MacBook | [`sqlite-vec` v0.1 实测](https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html#benchmarks)：vec0 在 1M × 128 维（sift1m）返回 33 ms，在 500K × 960 维（gist1m）< 100 ms。延迟按 `dim × log(n)` 缩放。512 维下 ~50 万向量可维持在 [100 ms 响应目标](https://developer.mozilla.org/en-US/docs/Web/Performance/How_long_is_too_long#responsiveness_goal) 内 | >1M 向量时换 HNSW 后端的 Qdrant / Milvus |
 | 单用户（无多租户） | 单 SQLite 文件，无行级隔离 | 不要把 8086 端口暴露到内网 |
 | 无 PII 自动检测 | 未实现（P1-5） | 不要存密码 / token / 信用卡 |
-| `hermes chat` CLI 有 pre-existing import bug | /opt/anaconda3 下 Python `cli/` 包冲突 | 用 Python fallback 或直接调 gateway |
 | bge-small-zh 是中文优化（英文也能用但次优） | C-MTEB 评测排名 | 英文为主时换 bge-small-en-v1.5 |
 
 ### 阈值的依据

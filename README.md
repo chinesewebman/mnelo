@@ -266,7 +266,6 @@ Set `HERMES_MEMORY_LANG=ja` to test. Locale miss falls back to `en`, then to `ms
 | **~500K vectors** @ 512-dim on a single MacBook | [`sqlite-vec` v0.1 benchmarks](https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html#benchmarks): vec0 returns 33 ms at 1M × 128-dim (sift1m) and < 100 ms at 500K × 960-dim (gist1m). Latency scales with `dim × log(n)`. At 512-dim, ~500K vectors stays under the [100 ms responsiveness goal](https://developer.mozilla.org/en-US/docs/Web/Performance/How_long_is_too_long#responsiveness_goal) | Switch to HNSW-backed Qdrant/Milvus at >1M vectors |
 | Single-user (no multi-tenant) | One SQLite file, no row-level isolation | Don't expose port 8086 to LAN |
 | No PII auto-detection | Not yet implemented (P1-5) | Don't store passwords / tokens / credit cards |
-| `hermes chat` CLI has a pre-existing import bug on this machine | Python `cli/` package collision in /opt/anaconda3 | Use Python fallback or call gateway directly |
 | bge-small-zh is CN-tuned (works for EN but suboptimal) | C-MTEB benchmark ranking | Swap to bge-small-en-v1.5 if your workload is mostly English |
 
 ### Basis for the limits
