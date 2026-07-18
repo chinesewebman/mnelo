@@ -3,6 +3,8 @@
 > **mnelo** = μνήμη + λόγος (Greek: *memory* + *reason*).
 > Local-first, single-file, knowledge-graph memory layer for AI agents.
 
+> **中文用户**: [README.zh.md](README.zh.md) 提供中文版。
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
 [![MCP](https://img.shields.io/badge/MCP-1.26-green)](https://modelcontextprotocol.io)
@@ -14,7 +16,7 @@ A drop-in memory layer for [Hermes Agent](https://nousresearch.com/hermes), [Cla
 
 ---
 
-## ⚡ At a glance / 一瞥
+## ⚡ At a glance
 
 | | |
 |---|---|
@@ -33,7 +35,7 @@ A drop-in memory layer for [Hermes Agent](https://nousresearch.com/hermes), [Cla
 
 ## 🆚 Why mnelo?
 
-The MCP-for-memory landscape (调研 July 2026):
+The MCP-for-memory landscape (surveyed July 2026):
 
 | Project | Stars | Vector | Graph | Local | Bilingual | RRF | Single-file |
 |---|---|---|---|---|---|---|---|
@@ -48,7 +50,7 @@ mnelo is the only one that combines **all seven** axes in a **single-file SQLite
 
 ---
 
-## ✨ Features / 特色
+## ✨ Features
 
 ### 🧠 Knowledge-graph aware
 Not just RAG. Every chunk can link to typed entities (`stock`, `concept`, `person`, `canonical_fact`) and the relations graph is queryable. `memory_graph_query` returns 2-hop neighbors for navigation.
@@ -78,7 +80,7 @@ Exposes 7 tools (`memory_remember`, `memory_recall`, `memory_relate`, `memory_fo
 
 ---
 
-## 📊 Benchmark results / 测评结果
+## 📊 Benchmark results
 
 All numbers measured on a single MacBook (M-series), `memory.db` = **23.9 MB / 4,606 entities / 4,186 chunks / 15,749 relations / 4,484 vectors**.
 
@@ -146,11 +148,12 @@ $ python3 -m pytest tests/ -q
 
 ---
 
-## 🏗 Architecture / 项目结构
+## 🏗 Architecture / Project structure
 
 ```
 mnelo/
-├── README.md                       ← you are here
+├── README.md                       ← you are here (English)
+├── README.zh.md                    ← 中文版 (Simplified Chinese)
 ├── LICENSE                         ← MIT
 ├── .gitignore                      ← excludes memory.db, *.pyc, .env, *.bak*
 │
@@ -222,7 +225,7 @@ mnelo/
 
 ---
 
-## 🚀 Quick start / 快速开始
+## 🚀 Quick start
 
 ```bash
 # Install
@@ -247,21 +250,18 @@ for h in c.recall('sh600089 建仓', top_k=5):
 "
 ```
 
-中文用户：
+For Chinese locale:
 
 ```bash
 export HERMES_MEMORY_LANG=zh
 python3 scripts/health_check.py
-# mnelo daily check — 2026-07-18 18:30:00
-# ✅ MCP server alive — PID 19408, 启动 1.5h
-# 📈 Recall 24h — 1530 次, 空 hits 81 (5%), latency p50=12.5ms p95=36.2ms
 ```
 
-完整部署运维 → [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
+Full deployment & operations → [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
 
 ---
 
-## 🌐 i18n / 国际化
+## 🌐 i18n
 
 Add a new locale (e.g. Japanese) — 1 edit, no code change:
 
@@ -278,7 +278,7 @@ Set `HERMES_MEMORY_LANG=ja` to test. Locale miss falls back to `en`, then to `ms
 
 ---
 
-## 🛡 Design tenets / 设计原则
+## 🛡 Design tenets
 
 1. **Local first.** No cloud API calls, ever. The embedder model can be pre-downloaded, then runs offline.
 2. **Single file.** SQLite. `cp memory.db` = full backup.
@@ -290,7 +290,7 @@ Set `HERMES_MEMORY_LANG=ja` to test. Locale miss falls back to `en`, then to `ms
 
 ---
 
-## 🚧 Known limitations / 局限
+## 🚧 Known limitations
 
 | Limit | Workaround |
 |---|---|
@@ -302,7 +302,7 @@ Set `HERMES_MEMORY_LANG=ja` to test. Locale miss falls back to `en`, then to `ms
 
 ---
 
-## 🔗 Integrations / 集成
+## 🔗 Integrations
 
 - **Hermes Agent** (primary) — `~/.hermes/plugins/mnelo/` symlink + `mcp_servers.mnelo.url: http://127.0.0.1:8086/sse` in config
 - **Claude Desktop** — add MCP server in `claude_desktop_config.json`
@@ -327,7 +327,7 @@ MIT. See [`LICENSE`](LICENSE).
 
 ---
 
-## 🙏 Acknowledgements / 致谢
+## 🙏 Acknowledgements
 
 - [sqlite-vec](https://github.com/asg017/sqlite-vec) — vector extension
 - [fastembed](https://qdrant.github.io/fastembed) — embedder wrapper
