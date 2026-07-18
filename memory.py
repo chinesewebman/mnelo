@@ -33,7 +33,7 @@ sys.path.insert(0, '/Users/apple/.hermes/memory')
 from embedder import embed_bytes, get_embedder
 
 DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')
-EMBED_DIM = 512
+# 注: embedding 模型 + dim 不再在此处硬编码 — 见 embedder.py 从 config 读 (config.toml [embedder])
 
 
 def now(tz: str = None) -> str:

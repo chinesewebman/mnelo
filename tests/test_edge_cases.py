@@ -21,14 +21,20 @@ import unittest
 from pathlib import Path
 from datetime import datetime
 
-sys.path.insert(0, '/Users/apple/.hermes/memory')
+# [7/19 patch] 优先用 repo 本地代码, 再回落 ~/.hermes/memory/ (live server 副本)
+# 这样 pytest 跑的是 git HEAD 当前代码, 不是 live running copy
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+_LIVE_ROOT = '/Users/apple/.hermes/memory'
+sys.path.insert(0, _REPO_ROOT)         # repo 代码优先
+if _LIVE_ROOT not in sys.path:
+    sys.path.append(_LIVE_ROOT)        # fallback: live server 副本 (仅当 repo import 失败时)
 sys.path.insert(0, '/Users/apple/.hermes/memory/api')
 
 from memory import Memory, generate_id, now
 from embedder import get_embedder, EMBED_DIM, EMBED_MODEL_NAME
 
 
-DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')
+DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')  # intentionally points at live DB — 实战测试 against real data
 
 
 class TestRelateEdgeCases(unittest.TestCase):
@@ -331,13 +337,26 @@ class TestStatsIntegrity(unittest.TestCase):
 
 
 class TestEmbedder(unittest.TestCase):
-    """实战: embedder 行为."""
+    """实战: embedder 行为.
 
-    def test_01_embedder_dim(self):
-        """实战: bge-small-zh-v1.5 应是 512d."""
-        self.assertEqual(EMBED_DIM, 512)
-        self.assertEqual(EMBED_MODEL_NAME, 'BAAI/bge-small-zh-v1.5')
-        print(f'  ✅ embedder → {EMBED_MODEL_NAME}, dim={EMBED_DIM}')
+    [7/19] embedding 模型从 config 读 — 测试不再硬编码 assert 固定模型名
+    只校验 (a) 模型已加载、(b) dim 是 fastembed 接受的合法值、(c) embed 一致性
+    """
+
+    def test_01_embedder_loaded(self):
+        """embedder 已从 config 加载, model_name + dim 都是合法值."""
+        from config import config as _config
+        # 先实例化 Embedder — 它在 __new__/_init() 时把模块常量从 config 同步过来
+        _ = get_embedder()  # 触发 _init(), 同步 EMBED_MODEL_NAME/EMBED_DIM
+        # 模块常量应该跟 config 一致 (Embedder._init() 时同步过)
+        self.assertIsNotNone(EMBED_MODEL_NAME, 'EMBED_MODEL_NAME 应该是 None 之外的 str')
+        self.assertIsNotNone(EMBED_DIM, 'EMBED_DIM 应该是 None 之外的 int')
+        self.assertEqual(EMBED_MODEL_NAME, _config.embedder_model)
+        self.assertEqual(EMBED_DIM, _config.embedder_dim)
+        # dim 必须是 fastembed 接受的合法值 (BGE / MiniLM 系列都用 256/384/512/768/1024)
+        self.assertIn(EMBED_DIM, (256, 384, 512, 768, 1024),
+                      f'dim={EMBED_DIM} 不在 fastembed 常见输出维度集合里')
+        print(f'  ✅ embedder ← {_config.describe()}')
 
     def test_02_embedder_consistency(self):
         """实战: 同 query 多次嵌入应结果一致 (deterministic)."""

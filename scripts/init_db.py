@@ -6,6 +6,7 @@ init_db.py — 初始化 ~/.hermes/memory/memory.db
 [7/18 自建]
 - 主人口中 7/18 拍板自建 KG, 替换 Mnemosyne
 - WAL mode + busy_timeout=30s 防止 lock 复发
+- [7/19] embedding 模型 + dim 从 config 读 (config.toml [embedder] 或 env override)
 """
 import sqlite3
 import sqlite_vec
@@ -22,6 +23,18 @@ def init():
         print(f'   如要重置, 请先删: rm {DB_PATH}')
         sys.exit(1)
 
+    # 读 embedder config — 失败回落到默认 (bge-small-zh, 512d)
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    try:
+        from config import config as _config
+        embed_model = _config.embedder_model
+        embed_dim = _config.embedder_dim
+        print(f'=== 0. Embedder config: {embed_model} ({embed_dim}d) ===')
+    except Exception as e:
+        print(f'⚠️  config 加载失败 ({e}), 回落默认 bge-small-zh-v1.5/512d')
+        embed_model = 'BAAI/bge-small-zh-v1.5'
+        embed_dim = 512
+
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     print(f'=== 1. 创建 memory.db ===')
@@ -35,9 +48,12 @@ def init():
     conn.execute('PRAGMA busy_timeout = 30000')
     conn.execute('PRAGMA foreign_keys = ON')
 
-    print(f'=== 3. 执行 schema.sql ===')
+    print(f'=== 3. 执行 schema.sql (含 dim 占位符替换) ===')
     with open(SCHEMA_PATH) as f:
         sql = f.read()
+    # 占位符替换 — 必须跟 schema.sql 里的 {EMBED_DIM}/{EMBED_MODEL} 一致
+    sql = sql.replace('{EMBED_DIM}', str(embed_dim))
+    sql = sql.replace('{EMBED_MODEL}', embed_model.replace("'", "''"))  # SQL 单引号转义
     conn.executescript(sql)
     conn.commit()
 
@@ -57,8 +73,8 @@ def init():
     for k, v in conn.execute("SELECT key, value FROM meta").fetchall():
         print(f'  {k} = {v}')
 
-    print(f'=== 7. 验证 vec0 可用 ===')
-    test_emb = [0.0] * 512
+    print(f'=== 7. 验证 vec0 可用 (dim={embed_dim}) ===')
+    test_emb = [0.0] * embed_dim  # dim 从 config 读, 不再硬编码 512
     test_bytes = sqlite_vec.serialize_float32(test_emb)
     conn.execute("INSERT INTO vectors (rowid, embedding) VALUES (?, ?)", (1, test_bytes))
     conn.execute("DELETE FROM vectors WHERE rowid = 1")
@@ -69,6 +85,7 @@ def init():
     size_kb = DB_PATH.stat().st_size / 1024
     print()
     print(f'✅ 初始化完成: {DB_PATH} ({size_kb:.1f} KB)')
+    print(f'   Embedder: {embed_model} ({embed_dim}d)')
 
 
 if __name__ == '__main__':

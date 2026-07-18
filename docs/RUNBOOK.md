@@ -13,7 +13,7 @@
 | Python | 3.9+ | 3.11+ (实测) |
 | OS | macOS / Linux | macOS 14+ (launchd 守护) |
 | 磁盘 | 100 MB | 1 GB (留 growth 余量) |
-| 内存 | 4 GB | 8 GB (bge-small-zh embedder ~500 MB) |
+| 内存 | 4 GB | 8 GB (bge-small-zh embedder ~200 MB RSS + Python + mcp + SQLite overhead，总进程 RSS 实测 ~270 MB) |
 | 网络 | 仅首次拉模型 | 同上 |
 
 ### 已实测依赖版本 (本仓库写于 2026-07-18)
@@ -401,7 +401,7 @@ sqlite3 ~/.hermes/memory/memory.db 'PRAGMA wal_checkpoint(PASSIVE);'
 | **MCP startup** | ~1.1s | 含 Embedder warm-up |
 | **DB size** | 23.7 MB | 4500 entities + 4500 chunks |
 | **WAL size** | 5.7 MB | 1 天数据 |
-| **Memory RAM** | ~700 MB | mcp + embedder |
+| **Memory RAM** | ~270 MB RSS | mcp + embedder（实测 PID 39344，macOS M-series） |
 
 性能上限：单一 macbook + SQLite WAL mode + sqlite-vec，**~50 万向量 (512 维) 之内可保持在 100 ms 响应目标内**。依据是 [sqlite-vec v0.1.0 作者实测](https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html#benchmarks)：1M × 128 维 33 ms、500K × 960 维 < 100 ms，延迟按 `dim × log(n)` 缩放。超过 50 万向量后建议迁 Qdrant / Milvus（带 HNSW 索引）。详见 [README.md §Known limitations](../../README.md#-known-limitations)。
 

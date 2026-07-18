@@ -72,8 +72,9 @@ CREATE INDEX idx_relations_evidence ON relations(evidence_chunk_id);
 
 -- 4. VECTORS (向量索引, sqlite-vec 0.1.x) ----------
 -- vec0 是单列虚拟表: embedding + rowid, 与 chunks.id 1:1 映射 (rowid -> chunk_id)
+-- dim 在 init_db.py 运行时从 config.toml 读 (默认 512) — 切 embedding 模型必须重新 init_db
 CREATE VIRTUAL TABLE vectors USING vec0(
-    embedding float[512]
+    embedding float[{EMBED_DIM}]
 );
 
 -- 5. META (系统元数据) -------------------------------
@@ -140,11 +141,12 @@ END;
 
 -- ========================================
 -- 初始化 meta (schema_version + embedding 模型)
+-- model + dim 占位符在 init_db.py 运行时替换 (env > config.toml > default)
 -- ========================================
 INSERT INTO meta (key, value) VALUES
     ('schema_version', '1.0'),
-    ('embedding_model', 'BAAI/bge-small-zh-v1.5'),
-    ('embedding_dim', '512'),
+    ('embedding_model', '{EMBED_MODEL}'),
+    ('embedding_dim', '{EMBED_DIM}'),
     ('created_at', datetime('now', 'localtime')),
     ('created_by', 'hermes-memory v1.0');
 

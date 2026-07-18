@@ -11,7 +11,13 @@ hermes-memory config — load settings from environment variables or config file
 - timezone: 'local' / 'utc' / 'Asia/Shanghai' (任意 IANA tz)
   默认 'local' (用系统本地时区)
 - warm_up_embedder: bool
-  默认 True (Memory 启动时加载 bge-small-zh, 避免首次 recall 1s 冷启动)
+  默认 True (Memory 启动时加载 embedding 模型, 避免首次 recall 1s 冷启动)
+- embedder_model: str
+  默认 'BAAI/bge-small-zh-v1.5' (中文原生, 512d)
+  切换: 'BAAI/bge-small-en-v1.5' (英文, 384d)
+       | 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2' (50+ 语种, 384d, 含日/韩/西/法)
+- embedder_dim: int
+  默认 512. 必须与模型实际输出维度一致 (mnelo 用它建 sqlite-vec 表 schema)
 """
 import os
 import sys
@@ -85,6 +91,31 @@ class Config:
                     str(self._raw.get('warm_up_embedder', True)))
         self.warm_up_embedder = warm_str.lower() not in ('false', '0', 'no', 'off')
 
+        # Embedder model: env > file > default (bge-small-zh-v1.5, 512d)
+        # 允许 env override (e.g. HERMES_MEMORY_EMBEDDER_MODEL=BAAI/bge-small-en-v1.5)
+        # TOML key: embedder.model (嵌套 section)
+        embedder_section = self._raw.get('embedder', {}) if isinstance(self._raw.get('embedder'), dict) else {}
+        self.embedder_model = (
+            os.environ.get('HERMES_MEMORY_EMBEDDER_MODEL')
+            or embedder_section.get('model')
+            or self._raw.get('embedder_model')  # 兼容旧扁平 key
+            or 'BAAI/bge-small-zh-v1.5'
+        )
+
+        # Embedder dim: env > file > default (512)
+        # 必须与 model 实际输出维度一致 — 错配会让 sqlite-vec insert 失败
+        dim_str = (
+            os.environ.get('HERMES_MEMORY_EMBEDDER_DIM')
+            or str(embedder_section.get('dim', ''))
+            or str(self._raw.get('embedder_dim', ''))
+            or '512'
+        )
+        try:
+            self.embedder_dim = int(dim_str)
+        except ValueError:
+            print(f'[config] WARN: embedder_dim "{dim_str}" 不是整数, 回落 512', file=sys.stderr)
+            self.embedder_dim = 512
+
     @classmethod
     def load(cls) -> 'Config':
         """Get the loaded config singleton."""
@@ -99,7 +130,8 @@ class Config:
 
     def describe(self) -> str:
         """One-line summary for startup banner."""
-        return f'tz={self.timezone} warm_up={self.warm_up_embedder}'
+        return (f'tz={self.timezone} warm_up={self.warm_up_embedder} '
+                f'embedder={self.embedder_model}/{self.embedder_dim}d')
 
 
 # Eager load on import

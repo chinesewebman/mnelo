@@ -12,7 +12,7 @@
 [![Bilingual](https://img.shields.io/badge/i18n-EN%20%2B%20中文-blueviolet)](#-i18n)
 [![Local-first](https://img.shields.io/badge/local--first-100%25-brightgreen)](#-design-tenets)
 
-A drop-in memory layer for [Hermes Agent](https://nousresearch.com/hermes), [Claude Desktop](https://claude.ai/download), [Cursor](https://cursor.sh), or any MCP client. Stores vectors, knowledge graph, and metadata in one SQLite file. Hybrid recall (vector + graph + meta + entity) with RRF fusion. **Zero cloud dependency**.
+A memory layer for AI agents. Remembers across **4 dimensions** — vector semantics, knowledge graph, full-text metadata, and entity identity — so every decision can be traced back to the conditions that produced it. One local SQLite file, shared by every local MCP client. **Zero cloud, zero lock-in.**
 
 **Why 4-way recall wins**: each lane catches what the others miss — vector misses literal terms (stock codes, ticker symbols), meta misses semantic paraphrases, graph misses orphaned chunks with no entity links, entity misses long-form prose. Four lanes run in parallel (WAL-mode concurrent reads, p50 = **12.5 ms** / p95 = **36 ms**), and RRF fuses their ranks without any score normalization — so you get high recall without per-lane threshold tuning. See [🔀 What is RRF?](#-what-is-rrf) below for the math, and [At a glance](#-at-a-glance) for the latency numbers.
 
@@ -127,12 +127,75 @@ All numbers measured on a single MacBook (M-series), `memory.db` = **23.9 MB / 4
 
 ### Memory footprint
 
-| Component | RAM |
-|---|---|
-| MCP server process | ~150 MB |
-| Embedder (bge-small-zh, in-memory) | ~500 MB |
-| SQLite + WAL buffers | ~50 MB |
-| **Total** | **~700 MB** |
+Measured on macOS M-series (Apple Silicon), one MCP server process, idle:
+
+| Component | RAM | Measured? |
+|---|---|---|
+| MCP server process (Python + mcp + SQLite + onnxruntime + embedder + bge model) | **~270 MB** | ✅ RSS, PID 39344 |
+| └─ Embedder (bge-small-zh, weights + onnx session + tokenizer + pooling) | ~200 MB of the above | inferred from baseline |
+| └─ Python interpreter + mcp server + sqlite-vec + chunked buffer | ~70 MB of the above | inferred from baseline |
+| OS page cache for `memory.db` | OS-managed, free on macOS | — |
+| **Total practical RSS** | **~270 MB** | ✅ |
+
+#### Why the embedder uses ~3× its file size in RAM
+
+The bge-small-zh-v1.5 model file is **92 MB** on disk (`model.safetensors` only is **91.4 MB**; full snapshot in `~/.cache/huggingface/hub/models--BAAI--bge-small-zh-v1.5/` is **92 MB** including tokenizer + config). But the embedder holds roughly **200 MB** resident. The ~110 MB gap is **runtime overhead**, not the model itself:
+
+| Source | Approx. RAM | What it is |
+|---|---|---|
+| `model.safetensors` loaded into float32 | ~120 MB | BGE 6-layer transformer + token embeddings, weights stored as float32 in RAM even though the .safetensors file is ~half that on disk |
+| onnxruntime session workspace | ~40-60 MB | Pre-allocated memory arena for intermediate tensors during forward passes |
+| Tokenizer (Fast + vocab) | ~10-15 MB | XLM-R tokenizer table for Chinese, loaded once and held in memory |
+| sentence-transformers pooling module | ~5-10 MB | Mean-pooling wrapper + its config |
+
+**Key takeaway**: file size ≠ RAM cost. The 92 MB download inflates to ~200 MB at runtime; the remaining ~70 MB of the 270 MB process RSS is everything else (Python + mcp + SQLite + sqlite-vec). This is constant — it does NOT scale with how many chunks you store.
+
+### 📁 Where does the model live?
+
+fastembed uses the **HuggingFace Hub cache**, not a mnelo-private directory:
+
+```
+~/.cache/huggingface/hub/
+└── models--BAAI--bge-small-zh-v1.5/       # 92 MB on disk
+    ├── blobs/                                # actual files (deduped by SHA)
+    │   ├── 354763...d61d5a026  ← model.safetensors (91.4 MB)
+    │   ├── cdb3043...8f88747   ← tokenizer.json (429 KB)
+    │   └── ...
+    ├── snapshots/                             # symlinks → blobs, with friendly names
+    └── refs/main                              # current commit hash
+```
+
+**Auto-download** happens on first call to `mcp_server.py` / `scripts/init_db.py` / `scripts/health_check.py` — no manual step needed. Typical download: ~90s on a fast connection.
+
+**Manual pre-download** (offline install, CI, or air-gapped environments):
+
+```bash
+# Option A: huggingface-cli (official)
+pip install -U "huggingface_hub[cli]"
+huggingface-cli download BAAI/bge-small-zh-v1.5 \
+  --local-dir ~/.cache/huggingface/hub/models--BAAI--bge-small-zh-v1.5/
+
+# Option B: hf (newer CLI)
+hf download BAAI/bge-small-zh-v1.5 \
+  --local-dir ~/.cache/huggingface/hub/models--BAAI--bge-small-zh-v1.5/
+
+# Then point mnelo at it (optional — default already points there):
+export HF_HOME=/path/to/your/cache
+python3 scripts/init_db.py
+```
+
+**Relocate the cache** (e.g. on a sandboxed machine with `/home` mounted read-only):
+
+```bash
+# Pick one — both work, HUGGINGFACE_HUB_CACHE is more specific
+export HF_HOME=/srv/cache/huggingface
+# or
+export HUGGINGFACE_HUB_CACHE=/srv/cache/huggingface/hub
+```
+
+The env var must be set **before** the MCP server starts (launchd plist inherits it via `EnvironmentVariables` if you set it there).
+
+**Sharing the model with other tools**: any other tool that uses fastembed / sentence-transformers / HuggingFace transformers will find the same cached files at the default path. No duplicate downloads.
 
 ### Test coverage
 
@@ -146,6 +209,51 @@ $ python3 -m pytest tests/ -q
 - 30 CRUD + recall (with various top_k / filters / strategy)
 - 12 edge cases (placeholder filter, special chars, FTS performance)
 - 8 bounds checks (`importance ∈ [0, 1]`, `latency ≥ 0`, `valid_until` chain)
+
+---
+
+## 🔄 Repo ↔ live sync (post-commit hook)
+
+mnelo has two copies of every `.py` / `.sql` file:
+
+| Location | Role |
+|---|---|
+| `~/projects/mnelo/` | Source of truth (git HEAD) |
+| `~/.hermes/memory/` | The MCP server actually running on port 8086 |
+
+Without a sync mechanism, tests run against `memory.py` in live but assertions are written against the repo version — false positives, false negatives, and lots of head-scratching. The repo ships a **post-commit hook** that copies edited files to live on every commit:
+
+```bash
+# One-time install (after clone):
+cd ~/projects/mnelo
+git config core.hooksPath .githooks
+```
+
+What it does on every commit:
+
+- Diffs HEAD~1..HEAD, picks `.py` / `.sql` / `.sh` files
+- Maps `scripts/init_db.py` → `~/.hermes/memory/scripts/init_db.py`, `api/*.py` → `~/.hermes/memory/api/`, top-level → `~/.hermes/memory/`
+- **Backs up the live version** first to `~/.hermes/memory/.sync-backups/<timestamp>-<sha>/` (keeps last 5)
+- Atomic `mv` overwrite — partial writes can't corrupt live
+- Runs `scripts/health_check.py` after sync to catch regressions early
+- Prints a one-shot hint if live server needs a restart (changing `memory.py` / `embedder.py` / `config.py` invalidates Python's import cache)
+
+**Skip on a specific commit**: append `[skip-sync]` to the commit message.
+
+**Don't sync on this commit**: `git commit -m "docs: ... [skip-sync]"`.
+
+What it does **NOT** touch (by design):
+
+- `memory.db` — your data, never auto-modified
+- `config.toml` — may contain personal overrides you don't want blown away
+- `*.md` — docs don't need to be in live
+- `tests/` — tests don't run in live
+
+**Restart after sync** (when memory.py / embedder.py / config.py changed):
+
+```bash
+launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
+```
 
 ---
 
@@ -270,7 +378,7 @@ Skip all five steps — just hand the URL to an AI agent (Hermes / Claude / Curs
 
 > **Install and start mnelo from https://github.com/chinesewebman/mnelo — clone it, set up the venv, run `scripts/init_db.py`, launch the MCP server on port 8086, and verify with `scripts/health_check.py`. Report back when `🟢 MCP server ready` is in the log.**
 
-The agent handles venv creation, `pip install -r requirements.txt`, plist install, and the health probe. Typical install takes ~90s (the bge-small-zh model download is the slow part — ~95 MB).
+The agent handles venv creation, `pip install -r requirements.txt`, plist install, and the health probe. Typical install takes ~90s (the bge-small-zh model download is the slow part — **92 MB** of `model.safetensors` + tokenizer + config in `~/.cache/huggingface/hub/`).
 
 ---
 
@@ -333,13 +441,13 @@ What this means for mnelo:
 | **vec0 chunked storage** | ~9 MB (4487 × 2 KB, fits in 1 of 8192-row chunks) | ~2 GB across 122 chunks, but only ~1 chunk is hot per query |
 | **SQLite page cache** (`PRAGMA cache_size`) | 64 MB (set at startup) | Same default; bump to fit working set |
 | **OS page cache** for `memory.db` | OS-managed, free on macOS | OS-managed, evicted under memory pressure |
-| **Embedder** (bge-small-zh, the actual RAM hog) | ~500 MB | ~500 MB (constant) |
+| **Embedder** (bge-small-zh, the constant RAM cost) | ~200 MB | ~200 MB (constant; ~3× its 92 MB file size due to float32 load + onnxruntime workspace + tokenizer — see [Memory footprint](#-memory-footprint)) |
 
 The **real bottleneck on a single MacBook** is:
 
 1. **Disk random-read latency** for cold chunks — mitigated by OS page cache, but first access to a cold chunk costs ~1 SSD seek (~100 µs)
 2. **SQLite `cache_size`** — set to `-64000` (64 MB) at startup so the working set fits without re-fetching from OS page cache
-3. **Embedder RAM** (~500 MB) — does NOT scale with data size; this is the only fixed RAM cost
+3. **Embedder RAM** (~200 MB) — does NOT scale with data size; this is the only fixed RAM cost (~3× its 92 MB file size — see [Memory footprint](#-memory-footprint))
 
 In short: **vec0 is designed for disk-first storage, not RAM-resident**. Past 1M vectors, the disk-IOPS budget becomes the constraint, not RAM. Use HNSW-backed Qdrant/Milvus only if you need (a) ANN with sub-10 ms latency at >10M vectors, or (b) distributed shards.
 

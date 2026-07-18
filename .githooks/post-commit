@@ -1,0 +1,180 @@
+#!/bin/bash
+# mnelo post-commit hook — sync repo → live ~/.hermes/memory/
+# 让 repo HEAD 跟 live MCP server 代码永远一致 (root cause fix for "tests
+# 跑 live 而不是 repo" 类问题).
+#
+# 安装 (一次性):
+#   git config core.hooksPath .githooks
+#
+# 安全:
+#   - 只同步 .py / .sql / .sh 文件, 不碰 db/config/数据
+#   - sync 前自动 backup live 文件, 出错可回滚
+#   - 跳过 hook 自身 (避免 commit hook 触发 sync hook)
+#   - sync 后通过 health_check 验证 live server 还能跑 (可选, 默认开)
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+LIVE_ROOT="/Users/apple/.hermes/memory"
+LIVE_API="$LIVE_ROOT/api"
+LIVE_SCRIPTS="$LIVE_ROOT/scripts"
+LOG_PREFIX="[mnelo sync hook]"
+
+# 颜色 (CI 环境没 TTY 时自动降级)
+if [ -t 1 ]; then
+    RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+else
+    RED=''; GREEN=''; YELLOW=''; NC=''
+fi
+
+log()  { echo -e "$LOG_PREFIX $*"; }
+warn() { echo -e "$LOG_PREFIX ${YELLOW}WARN${NC}: $*"; }
+err()  { echo -e "$LOG_PREFIX ${RED}ERROR${NC}: $*" >&2; }
+ok()   { echo -e "$LOG_PREFIX ${GREEN}OK${NC}: $*"; }
+
+# 1. 防御性检查: live 目录存在吗
+if [ ! -d "$LIVE_ROOT" ]; then
+    err "live 目录不存在: $LIVE_ROOT (跳过 sync)"
+    exit 0  # 不算失败 — 可能在 CI / 测试环境跑
+fi
+
+# 2. 跳过 sync hook 自身 (避免无限循环)
+LAST_COMMIT_MSG="$(git log -1 --pretty=%s)"
+if [[ "$LAST_COMMIT_MSG" == *"[skip-sync]"* ]]; then
+    log "commit message 含 [skip-sync], 跳过"
+    exit 0
+fi
+
+# 3. 准备 live 子目录
+mkdir -p "$LIVE_API" "$LIVE_SCRIPTS"
+
+# 4. 收集本次 commit 改动的 Python/SQL/shell 文件
+#    - 只看 staged content + working tree 的差异 (跟最新 commit 比)
+#    - 包括新增 + 修改, 不包括删除 (live 删除文件留个备份再说)
+CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -E '\.(py|sql|sh)$' || true)
+
+if [ -z "$CHANGED_FILES" ]; then
+    log "本次 commit 没改 .py/.sql/.sh 文件, 无需 sync"
+    exit 0
+fi
+
+# 5. 分类: 顶层 vs api/ vs scripts/
+SYNC_TARGETS=()
+SKIP_FILES=()
+for f in $CHANGED_FILES; do
+    case "$f" in
+        api/*.py)
+            SYNC_TARGETS+=("$LIVE_API/$(basename "$f")")
+            ;;
+        scripts/*.py|scripts/*.sh)
+            SYNC_TARGETS+=("$LIVE_SCRIPTS/$(basename "$f")")
+            ;;
+        *.py|*.sql|*.sh)
+            # 顶层 (config.py, memory.py, embedder.py, mcp_server.py, schema.sql)
+            SYNC_TARGETS+=("$LIVE_ROOT/$(basename "$f")")
+            ;;
+        *)
+            SKIP_FILES+=("$f")
+            ;;
+    esac
+done
+
+if [ ${#SYNC_TARGETS[@]} -eq 0 ]; then
+    log "无可同步目标 (跳过: ${SKIP_FILES[*]:-})"
+    exit 0
+fi
+
+# 6. Backup live 文件 (按 mtime 排序, 保留最近 5 份, 避免无限堆积)
+BACKUP_DIR="$LIVE_ROOT/.sync-backups/$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD)"
+mkdir -p "$BACKUP_DIR"
+BACKED_UP=0
+for target in "${SYNC_TARGETS[@]}"; do
+    if [ -f "$target" ]; then
+        rel="${target#$LIVE_ROOT/}"
+        mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
+        cp -p "$target" "$BACKUP_DIR/$rel"
+        BACKED_UP=$((BACKED_UP + 1))
+    fi
+done
+
+# 7. 同步 (用 install -m 保留可执行位 + 原子 mv)
+ok "开始 sync ${#SYNC_TARGETS[@]} 个文件 (backup 了 $BACKED_UP 个 live 副本到 $BACKUP_DIR)"
+SYNCED=0
+FAILED=0
+for src in $CHANGED_FILES; do
+    case "$src" in
+        api/*.py)
+            dst="$LIVE_API/$(basename "$src")"
+            ;;
+        scripts/*.py|scripts/*.sh)
+            dst="$LIVE_SCRIPTS/$(basename "$src")"
+            ;;
+        *.py|*.sql)
+            dst="$LIVE_ROOT/$(basename "$src")"
+            ;;
+        *.sh)
+            dst="$LIVE_ROOT/$(basename "$src")"
+            ;;
+        *)
+            continue
+            ;;
+    esac
+
+    # 保留 .py 的可执行位 (live 的 mcp_server.py 是 +x 的)
+    src_mode=$(stat -f '%p' "$REPO_ROOT/$src" 2>/dev/null || echo "100644")
+    if [ -x "$REPO_ROOT/$src" ]; then
+        install -m 0755 "$REPO_ROOT/$src" "$dst.tmp"
+    else
+        install -m 0644 "$REPO_ROOT/$src" "$dst.tmp"
+    fi
+
+    # 原子替换 (mv 覆盖)
+    if mv "$dst.tmp" "$dst"; then
+        log "  ✓ $src → $dst"
+        SYNCED=$((SYNCED + 1))
+    else
+        err "  ✗ sync 失败: $src → $dst"
+        FAILED=$((FAILED + 1))
+        # 出错立刻 rollback
+        if [ -f "$BACKUP_DIR/${dst#$LIVE_ROOT/}" ]; then
+            cp -p "$BACKUP_DIR/${dst#$LIVE_ROOT/}" "$dst"
+            warn "  ↩ 已 rollback: $dst"
+        fi
+    fi
+done
+
+# 8. 清理旧 backup (>5 份)
+if [ -d "$LIVE_ROOT/.sync-backups" ]; then
+    cd "$LIVE_ROOT/.sync-backups"
+    ls -1t | tail -n +6 | xargs -I{} rm -rf "{}" 2>/dev/null || true
+    cd - >/dev/null
+fi
+
+# 9. Live server 健康检查 (可选, 默认开启, owner override: --no-health)
+HEALTH_CHECK=1
+for arg in "$@"; do
+    case "$arg" in
+        --no-health) HEALTH_CHECK=0 ;;
+    esac
+done
+
+if [ "$HEALTH_CHECK" -eq 1 ] && [ -f "$LIVE_SCRIPTS/health_check.py" ]; then
+    log "运行 health_check.py 验证 live server 还能跑..."
+    if /Users/apple/hermes-agent/venv/bin/python3 "$LIVE_SCRIPTS/health_check.py" 2>&1 | tail -5; then
+        ok "health_check 通过 ✓"
+    else
+        err "health_check 失败 — live server 可能有回归"
+        err "rollback 提示: 对比 $BACKUP_DIR/ 和当前 live 文件"
+        exit 1
+    fi
+fi
+
+# 10. 总结
+echo ""
+ok "sync 完成: $SYNCED 成功, $FAILED 失败"
+if [ $SYNCED -gt 0 ]; then
+    log "⚠️  live server 还跑着旧的 import 缓存 — 改 memory.py/embedder.py/config.py 后必须重启:"
+    log "    launchctl kickstart -k gui/\$(id -u)/ai.hermes-memory.mcp"
+fi
+
+exit $FAILED

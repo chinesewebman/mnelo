@@ -3,6 +3,8 @@
 # 或用环境变量覆盖 (优先级高):
 #   HERMES_MEMORY_TIMEZONE=utc
 #   HERMES_MEMORY_WARM_UP_EMBEDDER=false
+#   HERMES_MEMORY_EMBEDDER_MODEL=BAAI/bge-small-en-v1.5
+#   HERMES_MEMORY_EMBEDDER_DIM=384
 
 [main]
 # 时区选项 (实战默认 'local', 即系统本地时区):
@@ -15,3 +17,17 @@ timezone = 'local'
 # True (推荐): 启动慢 1s, 避免首次 recall 冷启动 1s
 # False: 启动快, 首次 recall 慢 1s (only do this in CI / 测试场景)
 warm_up_embedder = true
+
+[embedder]
+# 切换 embedding 模型 — model + dim 必须严格匹配, 错配 sqlite-vec insert 会失败
+#
+# 选项:
+#   中文 (默认):        'BAAI/bge-small-zh-v1.5',                                dim=512
+#   英文:               'BAAI/bge-small-en-v1.5',                                dim=384
+#   多语种 (50+):       'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', dim=384
+#                       覆盖: 日本語 / 한국어 / Español / Français / Deutsch / 中文 / English …
+#
+# 实战: 切语言前必须重新 `python3 scripts/init_db.py` — sqlite-vec 表 schema 绑死 dim
+#       (历史 chunk 的 embedding 维度跟新 dim 不一致会冲突, 见 RUNBOOK § migration)
+model = 'BAAI/bge-small-zh-v1.5'
+dim = 512
