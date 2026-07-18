@@ -29,10 +29,9 @@ if not logger.handlers:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
-sys.path.insert(0, '/Users/apple/.hermes/memory')
 from embedder import embed_bytes, get_embedder
-# validation 模块在 repo 里, live 里通过 post-commit hook 自动 sync — 此处放 embedder 之后,
-# 因为 live embedder 内部会触发 from config import, 而 config 也依赖同一组 path 操作
+# validation 模块从 conftest/repo 加载 (live == repo via hook sync).
+# 注意: memory.py 不再硬编码 /Users/apple/.hermes/memory path — repo 自身是 single source of truth.
 from validation import (
     validate_chunk_content, validate_query, validate_id, validate_entity_payload,
     ValidationError,
