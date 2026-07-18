@@ -257,7 +257,7 @@ python3 scripts/health_check.py
 3. **标准 MCP，无锁定**。任何支持 MCP 的客户端都能用。
 4. **双语**。英文 + 中文，同等地位。
 5. **朴素可预测**。不耍花招。出了错 traceback 会说为什么。
-6. **可测量**。每次 patch 都带 before/after 数字。
+6. **可测量**。Benchmark 段所有数字都能从 cite 的来源复现。
 7. **有界**。软删除链有最大深度；老版本由 cron GC（未实现，见 TODO）。
 
 ---
@@ -272,17 +272,17 @@ python3 scripts/health_check.py
 | `hermes chat` CLI 有 pre-existing import bug | /opt/anaconda3 下 Python `cli/` 包冲突 | 用 Python fallback 或直接调 gateway |
 | bge-small-zh 是中文优化（英文也能用但次优） | C-MTEB 评测排名 | 英文为主时换 bge-small-en-v1.5 |
 
-### 为什么给数字不给感觉
+### 阈值的依据
 
-之前 "5000 entities" 和 "50K" 阈值是拍脑袋。现在的依据：
+阈值来自：
 
 - **sqlite-vec v0.1.0 作者实测**（Alex Garcia, 2024 年 8 月）：<https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html#benchmarks>
 - **alexgarcia 自己的 caveat**："sqlite-vec 的极限在 1M 向量时才显现"（高维下：192 维 → 192 ms，3072 维 → 8.5 秒）
 - **MDN 100 ms 响应目标** 作延迟预算
 
-### RAM 不是瓶颈（已修正）
+### RAM 不是瓶颈
 
-之前草稿说 "vectors live in SQLite page cache — 2 GB at 1M vectors"。关于 vec0 这句话是错的。Alex Garcia 在 vec0 设计讨论里（[Reddit r/LocalLLaMA](https://www.reddit.com/r/LocalLLaMA/comments/1ehlazq/introducing_sqlitevec_v010_a_vector_search/)）说：
+vec0 存储是 chunked 设计，默认不是 in-memory。Alex Garcia 在 vec0 设计讨论里（[Reddit r/LocalLLaMA](https://www.reddit.com/r/LocalLLaMA/comments/1ehlazq/introducing_sqlitevec_v010_a_vector_search/)）说：
 
 > "The vec0 virtual table stores vectors in **chunks** and reads those chunks one-by-one to perform KNN, so **not the entire dataset is fit into memory**."
 
@@ -291,14 +291,14 @@ python3 scripts/health_check.py
 | 组件 | 4487 vectors 时 | 1M vectors 时 |
 |---|---|---|
 | **vec0 chunked storage** | ~9 MB（4487 × 2 KB，落在 1 个 8192-row chunk 里） | ~2 GB 跨 122 个 chunk，但每次 query 实际只 hot 1 个 chunk |
-| **SQLite page cache**（`PRAGMA cache_size`） | 默认 ~2 MB，可调 | 通常配 50-200 MB |
+| **SQLite page cache**（`PRAGMA cache_size`） | 64 MB（启动时设置） | 同默认；按 working set 调整 |
 | **memory.db 的 OS page cache** | OS 管理，macOS 上几乎免费 | OS 管理，内存压力下会 evict |
 | **Embedder**（bge-small-zh，真正的 RAM 大头） | ~500 MB | ~500 MB（常数，不随数据增长） |
 
-所以**单 MacBook 的真正瓶颈**是：
+**单 MacBook 的真正瓶颈**：
 
 1. **冷 chunk 的磁盘随机读延迟** — OS page cache 缓解，但首次访问冷 chunk 需 ~1 次 SSD seek（~100 µs）
-2. **SQLite `cache_size`** — 默认 2 MB 时每次 recall 都从 OS page cache 重读 pages；调到 `cache_size = -64000`（64 MB）让 working-set 放得下
+2. **SQLite `cache_size`** — 启动时设为 `-64000`（64 MB），让 working-set 放下，不再每次从 OS page cache 重读
 3. **Embedder RAM**（~500 MB）— **不随数据规模增长**，是唯一的固定 RAM 开销
 
 一句话：**vec0 设计就是 disk-first，不是 RAM-resident**。超过 1M vectors 后，约束是 disk-IOPS 预算，不是 RAM。只有需要（a）ANN 在 >10M vectors 时 sub-10 ms 延迟，或（b）分布式分片，才换 HNSW 后端的 Qdrant/Milvus。
