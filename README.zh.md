@@ -279,9 +279,29 @@ python3 scripts/health_check.py
 - **sqlite-vec v0.1.0 作者实测**（Alex Garcia, 2024 年 8 月）：<https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html#benchmarks>
 - **alexgarcia 自己的 caveat**："sqlite-vec 的极限在 1M 向量时才显现"（高维下：192 维 → 192 ms，3072 维 → 8.5 秒）
 - **MDN 100 ms 响应目标** 作延迟预算
-- **内存占用**：512 维 × 100 万向量 × 4 字节 ≈ 2 GB 单向量存储 — 远在 sqlite-vec 算法极限前就超出单 MacBook 内存预算
 
-一句话：**mnelo 单机的真正瓶颈是 RAM（向量在 SQLite page cache），不是 sqlite-vec 的 brute-force 复杂度**。
+### RAM 不是瓶颈（已修正）
+
+之前草稿说 "vectors live in SQLite page cache — 2 GB at 1M vectors"。关于 vec0 这句话是错的。Alex Garcia 在 vec0 设计讨论里（[Reddit r/LocalLLaMA](https://www.reddit.com/r/LocalLLaMA/comments/1ehlazq/introducing_sqlitevec_v010_a_vector_search/)）说：
+
+> "The vec0 virtual table stores vectors in **chunks** and reads those chunks one-by-one to perform KNN, so **not the entire dataset is fit into memory**."
+
+对 mnelo 意味着：
+
+| 组件 | 4487 vectors 时 | 1M vectors 时 |
+|---|---|---|
+| **vec0 chunked storage** | ~9 MB（4487 × 2 KB，落在 1 个 8192-row chunk 里） | ~2 GB 跨 122 个 chunk，但每次 query 实际只 hot 1 个 chunk |
+| **SQLite page cache**（`PRAGMA cache_size`） | 默认 ~2 MB，可调 | 通常配 50-200 MB |
+| **memory.db 的 OS page cache** | OS 管理，macOS 上几乎免费 | OS 管理，内存压力下会 evict |
+| **Embedder**（bge-small-zh，真正的 RAM 大头） | ~500 MB | ~500 MB（常数，不随数据增长） |
+
+所以**单 MacBook 的真正瓶颈**是：
+
+1. **冷 chunk 的磁盘随机读延迟** — OS page cache 缓解，但首次访问冷 chunk 需 ~1 次 SSD seek（~100 µs）
+2. **SQLite `cache_size`** — 默认 2 MB 时每次 recall 都从 OS page cache 重读 pages；调到 `cache_size = -64000`（64 MB）让 working-set 放得下
+3. **Embedder RAM**（~500 MB）— **不随数据规模增长**，是唯一的固定 RAM 开销
+
+一句话：**vec0 设计就是 disk-first，不是 RAM-resident**。超过 1M vectors 后，约束是 disk-IOPS 预算，不是 RAM。只有需要（a）ANN 在 >10M vectors 时 sub-10 ms 延迟，或（b）分布式分片，才换 HNSW 后端的 Qdrant/Milvus。
 
 ---
 

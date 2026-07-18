@@ -276,9 +276,29 @@ The "5000 entities" and "50K" thresholds in earlier drafts were gut-feel. The cu
 - **sqlite-vec v0.1.0 author benchmarks** (Alex Garcia, Aug 2024): <https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html#benchmarks>
 - **alexgarcia's own caveat**: "the limits of sqlite-vec really show at 1 million vectors" for higher dimensions (192-dim → 192 ms, 3072-dim → 8.5 s)
 - **MDN 100 ms responsiveness goal** as the latency budget
-- **Memory footprint**: 512-dim × 1M vectors × 4 bytes ≈ 2 GB just for vectors — exceeds typical single-MacBook RAM budget long before sqlite-vec's algorithmic limit
 
-In short: **mnelo's real bottleneck on a single machine is RAM (vectors live in SQLite page cache), not sqlite-vec's brute-force complexity**.
+### RAM is NOT the bottleneck (corrected)
+
+Earlier drafts said "vectors live in SQLite page cache — 2 GB at 1M vectors". That was wrong about vec0. From Alex Garcia on the vec0 design ([Reddit, r/LocalLLaMA](https://www.reddit.com/r/LocalLLaMA/comments/1ehlazq/introducing_sqlitevec_v010_a_vector_search/)):
+
+> "The vec0 virtual table stores vectors in **chunks** and reads those chunks one-by-one to perform KNN, so **not the entire dataset is fit into memory**."
+
+What this means for mnelo:
+
+| Component | Memory at 4487 vectors | Memory at 1M vectors |
+|---|---|---|
+| **vec0 chunked storage** | ~9 MB (4487 × 2 KB, fits in 1 of 8192-row chunks) | ~2 GB across 122 chunks, but only ~1 chunk is hot per query |
+| **SQLite page cache** (`PRAGMA cache_size`) | ~2 MB default, configurable | Configurable, typically 50-200 MB |
+| **OS page cache** for `memory.db` | OS-managed, free on macOS | OS-managed, evicted under memory pressure |
+| **Embedder** (bge-small-zh, the actual RAM hog) | ~500 MB | ~500 MB (constant) |
+
+So the **real bottleneck on a single MacBook** is:
+
+1. **Disk random-read latency** for cold chunks — mitigated by OS page cache, but first access to a cold chunk costs ~1 SSD seek (~100 µs)
+2. **SQLite `cache_size`** — at default 2 MB, every recall re-fetches pages from OS page cache; bump to `cache_size = -64000` (64 MB) for working-set fits
+3. **Embedder RAM** (~500 MB) — does NOT scale with data size; this is the only fixed RAM cost
+
+In short: **vec0 is designed for disk-first storage, not RAM-resident**. Past 1M vectors, the disk-IOPS budget becomes the constraint, not RAM. Use HNSW-backed Qdrant/Milvus only if you need (a) ANN with sub-10 ms latency at >10M vectors, or (b) distributed shards.
 
 ---
 
