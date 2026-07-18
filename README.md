@@ -212,7 +212,7 @@ Or via env var (no config edit):
 ```bash
 export HERMES_MEMORY_EMBEDDER_MODEL='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
 export HERMES_MEMORY_EMBEDDER_DIM=384
-launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
+launchctl kickstart -k gui/$(id -u)/ai.mnelo.mcp
 ```
 
 **Recommended model matrix** (all on the [fastembed-supported list](https://qdrant.github.io/fastembed/examples/Supported_Models/), all MIT or Apache-2.0):
@@ -235,7 +235,7 @@ launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
 # After editing config.toml:
 rm ~/.hermes/memory/memory.db        # backup first if you have data you care about
 python3 scripts/init_db.py
-launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
+launchctl kickstart -k gui/$(id -u)/ai.mnelo.mcp
 ```
 
 ### Test coverage
@@ -293,7 +293,7 @@ What it does **NOT** touch (by design):
 **Restart after sync** (when memory.py / embedder.py / config.py changed):
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
+launchctl kickstart -k gui/$(id -u)/ai.mnelo.mcp
 ```
 
 ---
@@ -390,8 +390,8 @@ pip install -r requirements.txt
 python3 scripts/init_db.py
 
 # 4. Start MCP server
-launchctl load ~/Library/LaunchAgents/ai.hermes-memory.mcp.plist
-# (or: python3 mcp_server.py --transport sse --port 8086)
+launchctl load ~/Library/LaunchAgents/ai.mnelo.mcp.plist
+# (or: HERMES_MEMORY_SERVER_PORT=8086 python3 mcp_server.py --transport sse)
 
 # 5. Use from Python
 python3 -c "

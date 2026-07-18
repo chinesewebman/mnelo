@@ -104,7 +104,7 @@ schema 自动建 11 tables: `chunks`, `entities`, `relations`, `vectors` (sqlite
 
 ### 5.1 launchd 守护 (macOS 推荐)
 
-`~/Library/LaunchAgents/ai.hermes-memory.mcp.plist`:
+`~/Library/LaunchAgents/ai.mnelo.mcp.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -112,7 +112,7 @@ schema 自动建 11 tables: `chunks`, `entities`, `relations`, `vectors` (sqlite
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>ai.hermes-memory.mcp</string>
+    <string>ai.mnelo.mcp</string>
     <key>ProgramArguments</key>
     <array>
         <string>/Users/you/hermes-agent/venv/bin/python3</string>
@@ -121,13 +121,17 @@ schema 自动建 11 tables: `chunks`, `entities`, `relations`, `vectors` (sqlite
         <string>sse</string>
         <string>--host</string>
         <string>127.0.0.1</string>
-        <string>--port</string>
-        <string>8086</string>
+        <!-- 不传 --port: argparse default 走 config.server_port.
+             Port 改值: plist 环境变量 HERMES_MEMORY_SERVER_PORT, 或 config.toml [server].port. -->
     </array>
     <key>EnvironmentVariables</key>
     <dict>
         <key>HERMES_HOME</key>
         <string>/Users/you/.hermes</string>
+        <key>HERMES_MEMORY_SERVER_PORT</key>
+        <string>8086</string>
+        <key>VIRTUAL_ENV</key>
+        <string>/Users/you/hermes-agent/venv</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
@@ -147,10 +151,13 @@ schema 自动建 11 tables: `chunks`, `entities`, `relations`, `vectors` (sqlite
 加载 + 启动：
 
 ```bash
-launchctl load ~/Library/LaunchAgents/ai.hermes-memory.mcp.plist
-launchctl kickstart -k "gui/$(id -u)/ai.hermes-memory.mcp"
+launchctl load ~/Library/LaunchAgents/ai.mnelo.mcp.plist
+launchctl kickstart -k "gui/$(id -u)/ai.mnelo.mcp"
 # 实战: ~1.1s 启动 (含 Embedder warm-up)
 ```
+
+**Token 配置**: 不在 plist 里 (plist 是 world-readable XML, 暴露 attack surface)。
+Token 走 `~/.config/mnelo/auth_token` (mode 600) 默认; 或手动 `export MNEOLO_AUTH_TOKEN=***` override。
 
 ### 5.2 测试 SSE server
 

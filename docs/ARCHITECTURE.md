@@ -28,7 +28,7 @@
     └── hermes_memory_client.py  # 195 行, SSE 客户端
 ```
 
-部署形态: 单进程 + 单文件 SQLite + 127.0.0.1:8086 SSE，跟随 `ai.hermes-memory.mcp` launchd plist 启动。
+部署形态: 单进程 + 单文件 SQLite + 127.0.0.1:8086 SSE，跟随 `ai.mnelo.mcp` launchd plist 启动。
 
 ---
 
@@ -309,7 +309,7 @@ relation sh600089 --[mentioned_in]--> chunk_20260718_103045_xxx
 | 取舍 | 理由 |
 |---|---|
 | ✅ WAL + busy_timeout=30s | 单进程足够，lock 风险归零 |
-| ✅ LaunchAgent 单实例 | `ai.hermes-memory.mcp.plist` KeepAlive 保证 |
+| ✅ LaunchAgent 单实例 | `ai.mnelo.mcp.plist` KeepAlive 保证 |
 | ❌ 不支持并发写 | 实战场景是单用户 cron + 偶尔手动调用，无并发需求 |
 
 ---

@@ -212,7 +212,7 @@ dim = 384
 ```bash
 export HERMES_MEMORY_EMBEDDER_MODEL='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
 export HERMES_MEMORY_EMBEDDER_DIM=384
-launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
+launchctl kickstart -k gui/$(id -u)/ai.mnelo.mcp
 ```
 
 **推荐模型矩阵**（都在 [fastembed-supported list](https://qdrant.github.io/fastembed/examples/Supported_Models/) 上，license 全是 MIT 或 Apache-2.0）：
@@ -235,7 +235,7 @@ launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
 # 改完 config.toml 后:
 rm ~/.hermes/memory/memory.db        # 有重要数据先备份
 python3 scripts/init_db.py
-launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
+launchctl kickstart -k gui/$(id -u)/ai.mnelo.mcp
 ```
 
 ### 测试覆盖
@@ -293,7 +293,7 @@ git config core.hooksPath .githooks
 **同步后重启**（改了 `memory.py` / `embedder.py` / `config.py` 时）：
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp
+launchctl kickstart -k gui/$(id -u)/ai.mnelo.mcp
 ```
 
 ---
@@ -389,11 +389,11 @@ pip install -r requirements.txt
 # 初始化 db
 python3 scripts/init_db.py
 
-# 启动 MCP server
-launchctl load ~/Library/LaunchAgents/ai.hermes-memory.mcp.plist
-# 或: python3 mcp_server.py --transport sse --port 8086
+# 4. 启动 MCP server
+launchctl load ~/Library/LaunchAgents/ai.mnelo.mcp.plist
+# (或: HERMES_MEMORY_SERVER_PORT=8086 python3 mcp_server.py --transport sse)
 
-# Python 使用
+# 5. Python 使用
 python3 -c "
 import sys; sys.path.insert(0, 'api')
 from mnelo_client import MneloClient
