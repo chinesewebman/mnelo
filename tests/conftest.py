@@ -26,7 +26,51 @@ _load_from_repo('config')
 _load_from_repo('embedder')
 _load_from_repo('memory')
 
+# [Round 3 fix] conftest 也 force repo validation rebind — 防
+# test_more_coverage 把 sys.modules['validation'] 覆盖后,
+# test_coverage_gaps 后续 import 继承 live validation 造成类 identity 不一致
+import importlib.util as _ilu
+_LIVE_ROOT = '/Users/apple/.hermes/memory'
+if _LIVE_ROOT in sys.path:
+    sys.path.remove(_LIVE_ROOT)
+
+
+def _force_repo_validation():
+    """[Round 3 fix] 强制把 sys.modules['validation'] 绑回 repo 版本, 同时
+    rebind 'memory' module 的 ValidationError attr 指向新 class."""
+    spec = _ilu.spec_from_file_location('validation', _REPO_ROOT / 'validation.py')
+    mod = _ilu.module_from_spec(spec)
+    sys.modules['validation'] = mod
+    spec.loader.exec_module(mod)
+    # 关键: rebind memory module 的 ValidationError 引用 (它 'from validation import')
+    if 'memory' in sys.modules:
+        sys.modules['memory'].ValidationError = mod.ValidationError
+    return mod
+
+
+_force_repo_validation()
+
+
 import pytest  # noqa: E402
+
+
+def pytest_collection_finish(session):
+    """[Round 3 fix] collection 完后强制 rebind 每个 test 模块的 ValidationError attr.
+
+    Why: pytest collection 时 test file 顶部 'from validation import ValidationError'
+    会捕获 class reference. 如果彼时 sys.modules['validation'] 是 LIVE, 那 test 后续用的
+    ValidationError 永远指 LIVE (function captures are fine, but class identity matters).
+    这里 rebind test module namespace 的 ValidationError attr 到 repo.
+    """
+    repo_validation = sys.modules.get('validation')
+    if not repo_validation:
+        return
+    repo_ve = repo_validation.ValidationError
+    for name, mod in list(sys.modules.items()):
+        if not name.startswith('tests.test_'):
+            continue
+        if hasattr(mod, 'ValidationError') and mod.ValidationError is not repo_ve:
+            mod.ValidationError = repo_ve
 
 
 @pytest.fixture(scope='session', autouse=True)
