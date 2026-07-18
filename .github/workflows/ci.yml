@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: ['3.11']
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "mcp[cli]>=1.26.0" "sqlite-vec>=0.1.9" "fastembed>=0.8.0"
+          pip install pytest
+      
+      - name: Cache HuggingFace models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-hf-bge-small-zh
+      
+      - name: Init test DB
+        run: |
+          mkdir -p ~/.hermes/memory
+          cd ~/.hermes/memory
+          ln -sf $GITHUB_WORKSPACE/memory.py memory.py
+          ln -sf $GITHUB_WORKSPACE/config.py config.py
+          ln -sf $GITHUB_WORKSPACE/schema.sql schema.sql
+          ln -sf $GITHUB_WORKSPACE/embedder.py embedder.py
+          ln -sf $GITHUB_WORKSPACE/entity_resolve.py entity_resolve.py
+          ln -sf $GITHUB_WORKSPACE/i18n_messages.py i18n_messages.py
+          ln -sf $GITHUB_WORKSPACE/mnelo_locale.py mnelo_locale.py
+          python scripts/init_db.py
+      
+      - name: Run tests
+        run: |
+          cd ~/.hermes/memory
+          python -m pytest tests/ -v --tb=short
