@@ -1,0 +1,44 @@
+# Database (实战数据, 不上传)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+
+# Backup files
+*.bak
+*.bak-*
+*.old
+.*.swp
+
+# Logs / runtime
+*.log
+*.pid
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Secrets / config override (用 config.toml.example 作模板)
+.env
+.env.local
+*.local.toml
+
+# venv
+venv/
+.env/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/

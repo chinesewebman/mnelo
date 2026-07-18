@@ -1,0 +1,17 @@
+# hermes-memory 实战配置示例
+# 拷贝此文件为 config.toml (与 memory.db 在同目录) 并按需修改.
+# 或用环境变量覆盖 (优先级高):
+#   HERMES_MEMORY_TIMEZONE=utc
+#   HERMES_MEMORY_WARM_UP_EMBEDDER=false
+
+[main]
+# 时区选项 (实战默认 'local', 即系统本地时区):
+#   - 'local'    → 用系统时区 (实战: BJT +0800)
+#   - 'utc'      → 用 UTC
+#   - '<IANA>'   → 任意 IANA tz 名 (e.g. 'Asia/Shanghai', 'America/New_York')
+timezone = 'local'
+
+# Memory.__init__ 时是否立即 warm-up Embedder 模型
+# True (推荐): 启动慢 1s, 避免首次 recall 冷启动 1s
+# False: 启动快, 首次 recall 慢 1s (only do this in CI / 测试场景)
+warm_up_embedder = true

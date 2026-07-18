@@ -1,0 +1,7 @@
+# 默认 config. 实战不需要改.
+# 优先级: env vars > 此文件 > 代码内默认值
+# 改完后, 重启 MCP server (`launchctl kickstart -k gui/$(id -u)/ai.hermes-memory.mcp`)
+
+[main]
+timezone = 'local'         # 默认系统本地时区 (BJT)
+warm_up_embedder = true    # Memory 启动时加载 bge-small-zh 模型到 RAM, 避免首次 recall 冷启动 1s
