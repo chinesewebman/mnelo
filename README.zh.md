@@ -264,13 +264,24 @@ python3 scripts/health_check.py
 
 ## 🚧 已知局限
 
-| 局限 | workaround |
-|---|---|
-| ~5000 entities / 单 MacBook | >50K entities 时迁 Qdrant（计划中） |
-| 单用户（无多租户） | 不要把 8086 端口暴露到内网 |
-| 无 PII 自动检测 | 不要存密码 / token / 信用卡 |
-| `hermes chat` CLI 有 pre-existing import bug | 用 Python fallback 或直接调 gateway |
-| bge-small-zh 是中文优化（英文也能用但次优） | 英文为主时换 bge-small-en-v1.5 |
+| 局限 | 依据 | workaround |
+|---|---|---|
+| **~50 万向量** @ 512 维，单 MacBook | [`sqlite-vec` v0.1 实测](https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html#benchmarks)：vec0 在 1M × 128 维（sift1m）返回 33 ms，在 500K × 960 维（gist1m）< 100 ms。延迟按 `dim × log(n)` 缩放。512 维下 ~50 万向量可维持在 [100 ms 响应目标](https://developer.mozilla.org/en-US/docs/Web/Performance/How_long_is_too_long#responsiveness_goal) 内 | >1M 向量时换 HNSW 后端的 Qdrant / Milvus |
+| 单用户（无多租户） | 单 SQLite 文件，无行级隔离 | 不要把 8086 端口暴露到内网 |
+| 无 PII 自动检测 | 未实现（P1-5） | 不要存密码 / token / 信用卡 |
+| `hermes chat` CLI 有 pre-existing import bug | /opt/anaconda3 下 Python `cli/` 包冲突 | 用 Python fallback 或直接调 gateway |
+| bge-small-zh 是中文优化（英文也能用但次优） | C-MTEB 评测排名 | 英文为主时换 bge-small-en-v1.5 |
+
+### 为什么给数字不给感觉
+
+之前 "5000 entities" 和 "50K" 阈值是拍脑袋。现在的依据：
+
+- **sqlite-vec v0.1.0 作者实测**（Alex Garcia, 2024 年 8 月）：<https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html#benchmarks>
+- **alexgarcia 自己的 caveat**："sqlite-vec 的极限在 1M 向量时才显现"（高维下：192 维 → 192 ms，3072 维 → 8.5 秒）
+- **MDN 100 ms 响应目标** 作延迟预算
+- **内存占用**：512 维 × 100 万向量 × 4 字节 ≈ 2 GB 单向量存储 — 远在 sqlite-vec 算法极限前就超出单 MacBook 内存预算
+
+一句话：**mnelo 单机的真正瓶颈是 RAM（向量在 SQLite page cache），不是 sqlite-vec 的 brute-force 复杂度**。
 
 ---
 

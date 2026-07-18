@@ -405,7 +405,7 @@ sqlite3 ~/.hermes/memory/memory.db 'PRAGMA wal_checkpoint(PASSIVE);'
 | **WAL size** | 5.7 MB | 1 天数据 |
 | **Memory RAM** | ~700 MB | mcp + embedder |
 
-性能上限：单一 macbook + SQLite WAL mode **~5000 queries/min** 短期. 实战建议到 50K entities 后考虑迁移到 Qdrant (见 `docs/ARCHITECTURE.md#future-work`).
+性能上限：单一 macbook + SQLite WAL mode + sqlite-vec，**~50 万向量 (512 维) 之内可保持在 100 ms 响应目标内**。依据是 [sqlite-vec v0.1.0 作者实测](https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html#benchmarks)：1M × 128 维 33 ms、500K × 960 维 < 100 ms，延迟按 `dim × log(n)` 缩放。超过 50 万向量后建议迁 Qdrant / Milvus（带 HNSW 索引）。详见 [README.md §Known limitations](../../README.md#-known-limitations)。
 
 ---
 
