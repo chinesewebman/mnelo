@@ -24,6 +24,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from validation import ValidationError
+from auth import load_auth_token, verify_bearer, AuthError
 
 # 路径
 sys.path.insert(0, '/Users/apple/.hermes/memory')
@@ -417,14 +418,29 @@ async def run_stdio() -> None:
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
-def run_sse(host: str = '127.0.0.1', port: int = 8086) -> None:
+def run_sse(host: str = '127.0.0.1', port: int = 8086,
+            auth_token: Optional[str] = None) -> None:
     """实战: SSE transport (与 launchd 兼容).
 
     [7/19 P2-1] host 只接受 loopback (127.x / ::1 / localhost), 拒绝 0.0.0.0 / LAN IP
     防止误传把整个 LAN 暴露出去 (本地任何端口暴露都是 P0 风险)
+
+    [7/19 P0-2] Bearer token auth:
+    - auth_token 显式传入 → 用 (CLI --auth-token-file 模式)
+    - 没传 → 调 load_auth_token() 从 env/file 读
+    - 都没 → fail-fast
     """
     if not _MCP_AVAILABLE:
         raise RuntimeError('MCP/Starlette not available')
+
+    # [7/19 P0-2] Bearer token 加载 (fail-fast)
+    if auth_token is None:
+        try:
+            auth_token = load_auth_token()
+        except AuthError as e:
+            logger.error(f'SSE transport requires auth token: {e}')
+            raise
+    logger.info('SSE auth: Bearer token loaded (length=%d chars)', len(auth_token))
 
     # [7/19 P2-1] host 白名单
     if host != '127.0.0.1' and host != 'localhost' and not host.startswith('127.'):
@@ -445,6 +461,30 @@ def run_sse(host: str = '127.0.0.1', port: int = 8086) -> None:
         return  # 不抛错 — 让 launchd KeepAlive 自然接管
     sock.close()
 
+    # [7/19 P0-2] DNS rebinding 防护 + Bearer token middleware
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import JSONResponse
+
+    class _BearerAuthMiddleware(BaseHTTPMiddleware):
+        """校验 Authorization: Bearer <token> header. 用 hmac.compare_digest 防 timing attack."""
+        async def dispatch(self, request, call_next):
+            # /health 路径不需 auth (允许健康检查 / 监控)
+            if request.url.path == '/health':
+                return await call_next(request)
+            # SSE + messages 路由都需 Bearer token
+            auth_header = request.headers.get('authorization', '')
+            if not verify_bearer(auth_header, auth_token):
+                logger.warning(
+                    f'rejected {request.method} {request.url.path} from '
+                    f'{request.client.host if request.client else "?"} - invalid/missing token'
+                )
+                return JSONResponse(
+                    {'error': 'unauthorized', 'detail': 'Bearer token required'},
+                    status_code=401,
+                    headers={'WWW-Authenticate': 'Bearer realm="mnelo-mcp"'},
+                )
+            return await call_next(request)
+
     sse = SseServerTransport('/messages/')
 
     async def handle_sse(request):
@@ -457,8 +497,10 @@ def run_sse(host: str = '127.0.0.1', port: int = 8086) -> None:
             Mount('/messages/', app=sse.handle_post_message),
         ]
     )
+    # [7/19 P0-2] 加 Bearer auth middleware
+    app.add_middleware(_BearerAuthMiddleware)
 
-    logger.info(f'hermes-memory MCP SSE listening on http://{host}:{port}/sse')
+    logger.info(f'mnelo MCP SSE listening on http://{host}:{port}/sse (Bearer auth ON)')
     uvicorn.run(app, host=host, port=port, log_level='info')
 
 
@@ -468,6 +510,12 @@ def main():
     ap.add_argument('--transport', default='stdio', choices=['stdio', 'sse'])
     ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--port', type=int, default=8086)
+    # [7/19 P0-2] Bearer token 来源 (CLI override; 不传走 env/file 默认)
+    ap.add_argument(
+        '--auth-token-file', default=None,
+        help='Path to file containing Bearer token (default: $MNEOLO_AUTH_TOKEN '
+             'or ~/.config/mnelo/auth_token)'
+    )
     args = ap.parse_args()
 
     if not _MCP_AVAILABLE:
@@ -484,7 +532,15 @@ def main():
     if args.transport == 'stdio':
         asyncio.run(run_stdio())
     else:
-        run_sse(host=args.host, port=args.port)
+        # [7/19 P0-2] 提前解析 token (fail-fast before warmup, 避免浪费 Embedder 启动时间)
+        token = None
+        if args.auth_token_file:
+            try:
+                token = load_auth_token(explicit_path=args.auth_token_file)
+            except AuthError as e:
+                logger.error(f'--auth-token-file load failed: {e}')
+                sys.exit(2)
+        run_sse(host=args.host, port=args.port, auth_token=token)
 
 
 if __name__ == '__main__':

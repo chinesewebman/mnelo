@@ -32,10 +32,13 @@ Thumbs.db
 .env
 .env.local
 *.local.toml
-
+.env/
+# [7/19 P0-2 fix] mnelo auth token 文件不进 git
+mnelo_auth_token
+*.mnelo_token
+auth-token
 # venv
 venv/
-.env/
 
 # Test artifacts
 .pytest_cache/
