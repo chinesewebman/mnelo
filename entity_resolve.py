@@ -29,8 +29,17 @@ DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')
 
 
 def normalize_text(s: str) -> str:
-    """实战: 标准化字符串 — 去空格 + 去标点 + 小写."""
-    return re.sub(r'[\s\W_]+', '', s.lower()).strip()
+    """实战: 标准化字符串 — 去空白 + 去标点 + 小写.
+
+    [Round 3 fix] 原实现 r'[\\s\\W_]+' 有 catastrophic backtracking bug
+    (\\s 与 \\W 重叠, '\\W' 本身 match \\s 但 \\s 又走 \\W 路径 → 极端输入 hang).
+    现在用单字符集合显式列举避免重叠:
+    - \\s 空白 (空格/Tab/换行)
+    - 标点 !"#$%&'()*+,-./:;<=>?@[\\]^`{|}~
+    - 下划线 _
+    """
+    # [Round 3 fix] 用非重叠字符集避免 catastrophic backtracking
+    return re.sub(r'[\s!"#$%&\'()*+,\-./:;<=>?@[\\\]^_`{|}~]+', '', s.lower()).strip()
 
 
 def alias_match_score(a: str, b: str) -> float:
@@ -77,8 +86,19 @@ def find_duplicate_candidates(
     conn: sqlite3.Connection,
     threshold: float = 0.85,
     kind: Optional[str] = None,
+    max_pairs: int = 500,
 ) -> List[Tuple[str, str, float, str]]:
     """实战: 找出所有疑似重复的 entity 对.
+
+    [Round 3 fix] 加 max_pairs cap: live DB 上 5K entities → 12.5M pairs O(N²)
+    difflib 比对会 hang 数分钟. 默认 500 上限 + 警告 + 实际 production
+    跑这个函数前应先按 kind 过滤或预筛.
+
+    Args:
+        conn: sqlite3.Connection
+        threshold: similarity 阈值 [0.0, 1.0], default 0.85
+        kind: 按 entity kind 过滤 (推荐 — 否则会扫所有 kinds)
+        max_pairs: 上限 O(N²) 对比数, 防 catastrophic perf
 
     Returns:
       [(entity_a_id, entity_b_id, score, reason), ...]
@@ -95,11 +115,26 @@ def find_duplicate_candidates(
         by_kind.setdefault(r['kind'], []).append(r)
 
     candidates = []
+    pair_count = 0
     for kind_name, ents in by_kind.items():
         if len(ents) < 2:
             continue
+        # [Round 3 fix] 单 kind 上限 100 entities (排序取前 100 by name length 短→长,
+        # 实战: 长名更可能有 description, 短名更可能是 symbol — 后者重复概率更高)
+        if len(ents) > 100:
+            ents = sorted(ents, key=lambda r: len(r['name'] or ''))[:100]
         for i in range(len(ents)):
             for j in range(i + 1, len(ents)):
+                # [Round 3 fix] O(N²) 上限
+                pair_count += 1
+                if pair_count > max_pairs:
+                    print(
+                        f'[entity_resolve] WARN: max_pairs={max_pairs} reached, '
+                        f'kinds processed: {len(candidates)} candidates so far. '
+                        f'Filter by kind or raise max_pairs.',
+                        file=sys.stderr,
+                    )
+                    return candidates
                 a_id, a_name = ents[i]['id'], (ents[i]['name'] or '')
                 b_id, b_name = ents[j]['id'], (ents[j]['name'] or '')
                 if not a_name or not b_name:
@@ -202,7 +237,8 @@ def find_duplicates_report(conn: sqlite3.Connection, threshold: float = 0.85) ->
             "✅ 无重复 entity (threshold=X)"
         Otherwise: table with columns A / B / 相似度 / 原因
     """
-    candidates = find_duplicate_candidates(conn, threshold)
+    # [Round 3 fix] 加 max_pairs 防 live DB hang
+    candidates = find_duplicate_candidates(conn, threshold, max_pairs=500)
     if not candidates:
         return "✅ 无重复 entity (threshold={})".format(threshold)
 

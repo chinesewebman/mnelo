@@ -294,11 +294,14 @@ def _handle_entity_resolve(mem, args: Dict) -> str:
         {'candidates': [{'a', 'b', 'score', 'reason'}], 'count': N}
     """
     from entity_resolve import find_duplicate_candidates
+    # [Round 3 fix] 加 max_pairs=500 cap 防 live DB hang
+    # (5K entities → 12.5M O(N²) pairs, 数十秒 difflib 计算)
     with memory_module._with_row_factory(mem._conn, sqlite3.Row):
         candidates = find_duplicate_candidates(
             mem._conn,
             threshold=args.get('threshold', 0.85),
             kind=args.get('kind'),
+            max_pairs=args.get('max_pairs', 500),
         )
     out = [{'a': a, 'b': b, 'score': s, 'reason': r}
            for a, b, s, r in candidates]
@@ -433,38 +436,12 @@ async def run_stdio() -> None:
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
-def run_sse(host: Optional[str] = None, port: Optional[int] = None,
-            auth_token: Optional[str] = None) -> None:
-    """实战: SSE transport (与 launchd 兼容).
+def _validate_loopback_host(host: str) -> None:
+    """[P2-1] host 白名单 — 只接 loopback, 拒绝 0.0.0.0 / LAN IP.
 
-    [7/19 P2-1] host 只接受 loopback (127.x / ::1 / localhost), 拒绝 0.0.0.0 / LAN IP
-    防止误传把整个 LAN 暴露出去 (本地任何端口暴露都是 P0 风险)
-
-    [7/19 P0-2] Bearer token auth:
-    - auth_token 显式传入 → 用 (CLI --auth-token-file 模式)
-    - 没传 → 调 load_auth_token() 从 env/file 读
-    - 都没 → fail-fast
-
-    [Round 2] host/port 不传 → 从 config.server_host/server_port 读 (config.toml [server] 段)
+    Raises:
+        ValueError: host 不在 loopback 范围
     """
-    if host is None or port is None:
-        cfg_host, cfg_port = _resolve_server_defaults()
-        host = host if host is not None else cfg_host
-        port = port if port is not None else cfg_port
-
-    if not _MCP_AVAILABLE:
-        raise RuntimeError('MCP/Starlette not available')
-
-    # [7/19 P0-2] Bearer token 加载 (fail-fast)
-    if auth_token is None:
-        try:
-            auth_token = load_auth_token()
-        except AuthError as e:
-            logger.error(f'SSE transport requires auth token: {e}')
-            raise
-    logger.info('SSE auth: Bearer token loaded (length=%d chars)', len(auth_token))
-
-    # [7/19 P2-1] host 白名单
     if host != '127.0.0.1' and host != 'localhost' and not host.startswith('127.'):
         raise ValueError(
             f'--host {host!r} not allowed. mnelo SSE is loopback-only for security. '
@@ -472,18 +449,30 @@ def run_sse(host: Optional[str] = None, port: Optional[int] = None,
             f'use SSH tunnel or VPN instead.'
         )
 
-    # [7/19 P2-2] 启动前试 bind 端口, 占用就优雅退出 (避免 cron 重启循环)
+
+def _check_port_available(host: str, port: int) -> bool:
+    """[P2-2] 启动前试 bind 端口. 返回 True if free, False if in use.
+
+    Raises:
+        OSError: 非 port-in-use 的其他 socket error (向上传播)
+    """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         sock.bind((host, port))
-    except OSError as e:
         sock.close()
-        logger.warning(f'port {port} already in use on {host}: {e}; exiting cleanly')
-        return  # 不抛错 — 让 launchd KeepAlive 自然接管
-    sock.close()
+        return True
+    except OSError:
+        sock.close()
+        return False
 
-    # [7/19 P0-2] DNS rebinding 防护 + Bearer token middleware
+
+def _build_sse_app(auth_token: str) -> 'Starlette':
+    """[P0-2] 构建 SSE Starlette app: routes + Bearer auth middleware.
+
+    Args:
+        auth_token: 已加载的 Bearer token (不能为空)
+    """
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.responses import JSONResponse
 
@@ -519,9 +508,50 @@ def run_sse(host: Optional[str] = None, port: Optional[int] = None,
             Mount('/messages/', app=sse.handle_post_message),
         ]
     )
-    # [7/19 P0-2] 加 Bearer auth middleware
     app.add_middleware(_BearerAuthMiddleware)
+    return app
 
+
+def run_sse(host: Optional[str] = None, port: Optional[int] = None,
+            auth_token: Optional[str] = None) -> None:
+    """实战: SSE transport (与 launchd 兼容).
+
+    [7/19 P2-1] host 只接受 loopback (127.x / ::1 / localhost), 拒绝 0.0.0.0 / LAN IP
+    防止误传把整个 LAN 暴露出去 (本地任何端口暴露都是 P0 风险)
+
+    [7/19 P0-2] Bearer token auth:
+    - auth_token 显式传入 → 用 (CLI --auth-token-file 模式)
+    - 没传 → 调 load_auth_token() 从 env/file 读
+    - 都没 → fail-fast
+
+    [Round 2] host/port 不传 → 从 config.server_host/server_port 读 (config.toml [server] 段)
+    """
+    # 1. resolve host/port from config if not provided
+    if host is None or port is None:
+        cfg_host, cfg_port = _resolve_server_defaults()
+        host = host if host is not None else cfg_host
+        port = port if port is not None else cfg_port
+
+    if not _MCP_AVAILABLE:
+        raise RuntimeError('MCP/Starlette not available')
+
+    # 2. Bearer token 加载 (fail-fast)
+    if auth_token is None:
+        try:
+            auth_token = load_auth_token()
+        except AuthError as e:
+            logger.error(f'SSE transport requires auth token: {e}')
+            raise
+    logger.info('SSE auth: Bearer token loaded (length=%d chars)', len(auth_token))
+
+    # 3. validate + port pre-check
+    _validate_loopback_host(host)
+    if not _check_port_available(host, port):
+        logger.warning(f'port {port} already in use on {host}; exiting cleanly')
+        return  # 让 launchd KeepAlive 自然接管
+
+    # 4. build app + run
+    app = _build_sse_app(auth_token)
     logger.info(f'mnelo MCP SSE listening on http://{host}:{port}/sse (Bearer auth ON)')
     uvicorn.run(app, host=host, port=port, log_level='info')
 
