@@ -159,6 +159,10 @@ class Memory:
         self._conn = sqlite3.connect(str(db_path), timeout=30, check_same_thread=False)
         self._conn.execute('PRAGMA journal_mode = WAL')
         self._conn.execute('PRAGMA busy_timeout = 30000')
+        # [7/18 patch G] SQLite page cache 64 MB — 让 working-set (24 MB db)
+        # 在 RAM, vec0 cold-chunk 走 mmap/OS page cache 而不是每次 fetch
+        # cache_size 单位是 page (default 4 KB); -64000 = -64*1024 KB
+        self._conn.execute('PRAGMA cache_size = -64000')
         self._conn.execute('PRAGMA foreign_keys = ON')
         self._conn.enable_load_extension(True)
         sqlite_vec.load(self._conn)
@@ -428,6 +432,8 @@ class Memory:
             for c in recall_conns:
                 c.execute('PRAGMA journal_mode = WAL')
                 c.execute('PRAGMA busy_timeout = 30000')
+                # [7/18 patch G] 实战每个 worker conn 也设 64 MB cache
+                c.execute('PRAGMA cache_size = -64000')
                 c.enable_load_extension(True)
                 sqlite_vec.load(c)
                 c.enable_load_extension(False)
