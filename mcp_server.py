@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from validation import ValidationError
 from auth import load_auth_token, verify_bearer, AuthError
+from config import config  # [Round 2] server host/port 配置
 
 # 路径
 sys.path.insert(0, '/Users/apple/.hermes/memory')
@@ -44,7 +45,7 @@ try:
     from mcp.server import Server
     from mcp.server.stdio import stdio_server
     from mcp.server.sse import SseServerTransport
-    from mcp.types import TextContent, Tool, CallToolResult
+    from mcp.types import TextContent, Tool
     from starlette.applications import Starlette
     from starlette.routing import Mount, Route
     from starlette.responses import Response
@@ -218,6 +219,20 @@ TOOLS = [
 # P0 审计: 之前 _call_tool 是 80 行 if/elif 链 (10 个分支, 8 个简单委托 + 2 个自定义)
 # 现在抽 TOOL_REGISTRY: 简单委托走通用 wrapper, 自定义逻辑走 _custom_handlers.
 # 减 ~50 行, 加 ~5 行.
+
+# [Round 1 quality audit] 抽常量避免 magic numbers 散落
+# [Round 2] DEFAULT 从 config.server_host/port 读, 仍保留常量作 fallback
+DEFAULT_SSE_HOST = '127.0.0.1'      # P2-1: loopback-only fallback
+DEFAULT_SSE_PORT = 8086             # SSE 默认端口 fallback (config 优先)
+
+
+def _resolve_server_defaults() -> tuple:
+    """从 config 解析 SSE host/port 默认值. CLI flag 优先于 config."""
+    try:
+        cfg = config  # 来自 mcp_server 顶部 from config import config
+        return cfg.server_host, cfg.server_port
+    except Exception:
+        return DEFAULT_SSE_HOST, DEFAULT_SSE_PORT
 
 # [7/19 P2-3] 简易 in-memory rate limit (防 runaway loop / 滥用)
 # key=tool 名, value=[window_start_ts, count_in_window]
@@ -418,7 +433,7 @@ async def run_stdio() -> None:
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
-def run_sse(host: str = '127.0.0.1', port: int = 8086,
+def run_sse(host: Optional[str] = None, port: Optional[int] = None,
             auth_token: Optional[str] = None) -> None:
     """实战: SSE transport (与 launchd 兼容).
 
@@ -429,7 +444,14 @@ def run_sse(host: str = '127.0.0.1', port: int = 8086,
     - auth_token 显式传入 → 用 (CLI --auth-token-file 模式)
     - 没传 → 调 load_auth_token() 从 env/file 读
     - 都没 → fail-fast
+
+    [Round 2] host/port 不传 → 从 config.server_host/server_port 读 (config.toml [server] 段)
     """
+    if host is None or port is None:
+        cfg_host, cfg_port = _resolve_server_defaults()
+        host = host if host is not None else cfg_host
+        port = port if port is not None else cfg_port
+
     if not _MCP_AVAILABLE:
         raise RuntimeError('MCP/Starlette not available')
 
@@ -508,8 +530,10 @@ def main():
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument('--transport', default='stdio', choices=['stdio', 'sse'])
-    ap.add_argument('--host', default='127.0.0.1')
-    ap.add_argument('--port', type=int, default=8086)
+    # [Round 2] host/port default 从 config 读 (config.toml [server] 段)
+    _cfg_host, _cfg_port = _resolve_server_defaults()
+    ap.add_argument('--host', default=_cfg_host)
+    ap.add_argument('--port', type=int, default=_cfg_port)
     # [7/19 P0-2] Bearer token 来源 (CLI override; 不传走 env/file 默认)
     ap.add_argument(
         '--auth-token-file', default=None,

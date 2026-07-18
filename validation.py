@@ -8,12 +8,11 @@ validation.py — input sanitization for memory MCP tool arguments.
 边界设计:
 - chunk content: max 8 KB (实战 mnelo 平均 chunk < 500 B; 8 KB 是 backup 块大小)
 - query: max 1 KB (实战平均 50 B; 1 KB 已能容下任何 5+ token 多语种 query)
-- id (chunk/entity/relation): ^[a-zA-Z0-9_:.-]{1,256}$ (允许 . _ : -, 禁 / \ ' " ; NUL 等)
+- id (chunk/entity/relation): ^[a-zA-Z0-9_:.-]{1,256}$ (允许 . _ : -, 禁 / 反斜杠 单引号 双引号 分号 NUL 等)
 - entity.name: max 200 chars (OCR 持仓名 + 多语种实体名都够)
 - entity.summary: max 1000 chars (足够放 hold reason / position summary)
 """
 import re
-import unicodedata
 from typing import Any, Dict
 
 # === Size caps ===

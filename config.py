@@ -18,6 +18,10 @@ hermes-memory config — load settings from environment variables or config file
        | 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2' (50+ 语种, 384d, 含日/韩/西/法)
 - embedder_dim: int
   默认 512. 必须与模型实际输出维度一致 (mnelo 用它建 sqlite-vec 表 schema)
+- server.host: str
+  默认 '127.0.0.1' (loopback-only, P2-1 安全防线)
+- server.port: int
+  默认 8086 (与 launchd plist 默认一致, 可改到 1024-65535)
 """
 import os
 import sys
@@ -115,6 +119,27 @@ class Config:
         except ValueError:
             print(f'[config] WARN: embedder_dim "{dim_str}" 不是整数, 回落 512', file=sys.stderr)
             self.embedder_dim = 512
+
+        # [Round 2 quality audit] server.host + server.port 配置
+        server_section = self._raw.get('server', {}) if isinstance(self._raw.get('server'), dict) else {}
+        self.server_host = (
+            os.environ.get('HERMES_MEMORY_SERVER_HOST')
+            or server_section.get('host')
+            or '127.0.0.1'
+        )
+        port_str = (
+            os.environ.get('HERMES_MEMORY_SERVER_PORT')
+            or str(server_section.get('port', ''))
+            or ''
+        )
+        try:
+            port = int(port_str) if port_str else 8086
+            if not (1024 <= port <= 65535):
+                raise ValueError(f'port {port} out of range')
+        except ValueError as e:
+            print(f'[config] WARN: server.port "{port_str}" invalid ({e}); 回落 8086', file=sys.stderr)
+            port = 8086
+        self.server_port = port
 
     @classmethod
     def load(cls) -> 'Config':

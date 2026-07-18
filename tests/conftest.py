@@ -54,11 +54,13 @@ def _clean_test_data_session():
             "DELETE FROM chunks WHERE source LIKE '%test%' OR source LIKE '%audit%'"
         )
         mem._conn.execute(
-            "DELETE FROM entities WHERE id LIKE 'test_%' OR source LIKE '%test%'"
+            "DELETE FROM entities WHERE id LIKE 'test_%' OR id LIKE 'covgap_%' "
+            "OR source LIKE '%test%'"
         )
         mem._conn.execute(
-            "DELETE FROM relations WHERE source_id LIKE 'test_%' OR target_id LIKE 'test_%' "
-            "OR source LIKE '%test%'"
+            "DELETE FROM relations WHERE source_id LIKE 'test_%' "
+            "OR target_id LIKE 'test_%' OR source_id LIKE 'covgap_%' "
+            "OR target_id LIKE 'covgap_%' OR source LIKE '%test%'"
         )
         mem._conn.commit()
     finally:

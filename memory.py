@@ -18,7 +18,7 @@ import sqlite_vec
 import contextlib
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict
 
 logger = logging.getLogger('hermes_memory')
 if not logger.handlers:
