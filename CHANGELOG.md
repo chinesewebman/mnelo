@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.12.1 — 2026-07-20
+
+fix: test_edge_cases.test_03_mcp_recall_full_path reads content[1] instead of [0]
+
+After v0.5.12 added the 2-block response (🌳 echo + JSON), this test was reading
+`content[0].text` and json.loads()ing it — which now hits the echo line instead
+of the JSON. Fixed by reading `content[1].text` (the JSON block).
+
+The fix is small (1 line + 5 comment lines) and is part of v0.5.12's release:
+the breaking change was already noted in v0.5.12's CHANGELOG ("2 TextContent
+blocks"), and tests that consume MCP results should always read the JSON block.
+
 ## v0.5.12 — 2026-07-20
 
 feat: 🌳 echo on mcp__mnelo__* tools + deprecate scripts/mnelo_echo.py
