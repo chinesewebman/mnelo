@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.3 — 2026-07-19
+
+fix(validation): accept int IDs in validate_id + subprocess smoke tests
+
+- **`validate_id`** now accepts `int` (relation_id from `Memory.relate()`) and coerces to `str`. Rejects `bool` explicitly (since `bool` is subclass of `int`). Unblocks `Memory.forget(rid_int)` where rid is the int returned by `relate()`.
+- **+9 subprocess smoke tests** verify that `memory.py` / `entity_resolve.py` / `embedder.py` `__main__` blocks run end-to-end. These don't add line coverage (subprocess has its own coverage tracker), but they catch integration regressions in demo scripts.
+- Test `test_forget_relation` updated: previously asserted `validate_id` rejects int (the broken behavior); now asserts `forget(rid_int)` succeeds.
+- Total: 282 → 291 passed (1 skipped, +9 tests).
+
 ## v0.4.2 — 2026-07-19
 
 test: push auth 92→100%, config 80→92%, validation 95→99% (+30 tests)
