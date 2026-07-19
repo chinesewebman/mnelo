@@ -1,5 +1,9 @@
 name: CI
 
+# [7/19 v0.5.4] CI upgrade: lint + matrix + coverage + concurrency cancel.
+# Old workflow: only macOS + Python 3.11 + run tests.
+# New: 4-stage pipeline (lint → test matrix → security → summary).
+
 on:
   push:
     branches: [main]
@@ -7,48 +11,151 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel in-progress runs for the same PR (saves CI minutes on rapid pushes).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  test:
+  # ─── Stage 1: Lint ───────────────────────────────────────────────────
+  lint:
+    name: Lint (ruff)
     runs-on: macos-latest
-    strategy:
-      matrix:
-        python-version: ['3.11']
-    
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install ruff
+        run: pip install ruff==0.15.10
+
+      - name: Ruff check
+        run: ruff check *.py
+
+      - name: Ruff format check
+        run: ruff format --check *.py
+
+  # ─── Stage 2: Test matrix ───────────────────────────────────────────
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: macos-latest
+    strategy:
+      # Don't cancel the whole matrix if one version fails — let all run so
+      # the summary shows the full picture.
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
-      
-      - name: Install dependencies
+
+      - name: Install runtime + test deps
         run: |
           python -m pip install --upgrade pip
-          pip install "mcp[cli]>=1.26.0" "sqlite-vec>=0.1.9" "fastembed>=0.8.0"
-          pip install pytest
-      
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          pip install pytest pytest-cov ruff==0.15.10
+
       - name: Cache HuggingFace models
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
+          # Key by model name + OS (HF cache is arch-agnostic but be safe)
           key: ${{ runner.os }}-hf-bge-small-zh
-      
+
       - name: Init test DB
         run: |
           mkdir -p ~/.hermes/memory
           cd ~/.hermes/memory
-          ln -sf $GITHUB_WORKSPACE/memory.py memory.py
-          ln -sf $GITHUB_WORKSPACE/config.py config.py
-          ln -sf $GITHUB_WORKSPACE/schema.sql schema.sql
-          ln -sf $GITHUB_WORKSPACE/embedder.py embedder.py
-          ln -sf $GITHUB_WORKSPACE/entity_resolve.py entity_resolve.py
-          ln -sf $GITHUB_WORKSPACE/i18n_messages.py i18n_messages.py
-          ln -sf $GITHUB_WORKSPACE/mnelo_locale.py mnelo_locale.py
+          # Symlink repo source files into LIVE dir (matches conftest _load_from_repo)
+          for f in memory.py config.py schema.sql embedder.py \
+                   entity_resolve.py i18n_messages.py mnelo_locale.py \
+                   validation.py auth.py metrics.py mcp_server.py; do
+            [ -f "$GITHUB_WORKSPACE/$f" ] && ln -sf "$GITHUB_WORKSPACE/$f" "$f"
+          done
           python scripts/init_db.py
-      
-      - name: Run tests
+
+      - name: Run tests with coverage
         run: |
           cd ~/.hermes/memory
-          python -m pytest tests/ -v --tb=short
+          python -m pytest tests/ -q --timeout=30 \
+            --cov=mcp_server --cov=memory --cov=embedder \
+            --cov=entity_resolve --cov=validation --cov=auth \
+            --cov=config --cov=mnelo_locale --cov=i18n_messages \
+            --cov-report=xml --cov-report=term
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.11' && github.event_name == 'push'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          flags: unittests
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ─── Stage 3: Security scan ──────────────────────────────────────────
+  security:
+    name: Security (bandit)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install bandit
+        run: pip install bandit==1.7.10
+
+      - name: Run bandit
+        # Skip rules:
+        # B101: assert — tests use asserts deliberately.
+        # B404: subprocess import — used in scripts/health_check.py for `ps`.
+        # B603: subprocess call — subprocess is intentional for lsof/ps.
+        # B608: hardcoded_sql_expressions — f-string is from a literal whitelist,
+        #       not user input (e.g. `SELECT count(*) FROM {table}` where table
+        #       is from a hardcoded `_ALLOWED_TABLES` list).
+        # B110: try_except_pass — scripts/migrate_to_mnelo.py uses for vec0 dim
+        #       mismatch fallback (intentional swallow + log to stderr).
+        # B105: hardcoded_password_string — `AUTH_TOKEN_ENV = "MNEOLO_AUTH_TOKEN"`
+        #       is an env var NAME, not a password (false positive).
+        # B607: start_process_with_partial_path — `lsof`, `ps` are deliberately
+        #       called via PATH (false positive; we don't hardcode /usr/bin).
+        run: |
+          bandit -r . -lll \
+            --skip B101,B404,B603,B608,B110,B105,B607 \
+            -x ./tests/*,./htmlcov/*,./.git/*
+
+  # ─── Stage 4: Summary (after all jobs) ──────────────────────────────
+  summary:
+    name: CI summary
+    runs-on: macos-latest
+    needs: [lint, test, security]
+    if: always()
+    steps:
+      - name: Check overall result
+        run: |
+          echo "## CI Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security | ${{ needs.security.result }} |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.security.result }}" != "success" ]; then
+            echo "❌ CI failed — see job details above" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          echo "✅ All checks passed" >> $GITHUB_STEP_SUMMARY

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 embedder.py — fastembed wrapper (configurable model)
 
@@ -14,14 +13,14 @@ Override with $HF_HOME or $HUGGINGFACE_HUB_CACHE if you need to relocate.
 Model swap: edit [embedder] section in config.toml or set env vars
 $MNELO_MEMORY_EMBEDDER_MODEL / $MNELO_MEMORY_EMBEDDER_DIM (priority: env > file > default).
 """
-import sys
-from typing import List, Optional, Union
+
+from typing import List, Optional
 
 # Embedder config is loaded lazily inside Embedder._init() to avoid
 # circular import (config.py imports nothing from embedder.py, but
 # keeping the import order lazy makes embedder usable standalone for tests).
 EMBED_MODEL_NAME: Optional[str] = None  # resolved from config at _init() time
-EMBED_DIM: Optional[int] = None        # resolved from config at _init() time
+EMBED_DIM: Optional[int] = None  # resolved from config at _init() time
 
 
 class Embedder:
@@ -49,6 +48,7 @@ class Embedder:
 
     def _init(self) -> None:
         from fastembed import TextEmbedding
+
         from config import config as _config  # singleton; safe to import here
 
         # 模块级常量从 config 单例同步 — 方便其它模块直接 import 用
@@ -59,9 +59,9 @@ class Embedder:
         # fastembed 不直接暴露 cache_dir 参数 — 它走 HF 生态, 落到
         # $HF_HOME (默认 ~/.cache/huggingface), 具体在
         # hub/models--{org}--{model}/blobs/ + snapshots/
-        print(f'[embedder] 加载 {EMBED_MODEL_NAME} (dim={EMBED_DIM})...')
+        print(f"[embedder] 加载 {EMBED_MODEL_NAME} (dim={EMBED_DIM})...")
         self.model = TextEmbedding(model_name=EMBED_MODEL_NAME)
-        print(f'[embedder] OK')
+        print("[embedder] OK")
 
     def embed(self, text: str) -> List[float]:
         """单条嵌入 → 512 维 float list.
@@ -114,15 +114,16 @@ def embed_bytes(text: str) -> bytes:
         bytes of length EMBED_DIM * 4 (512 * 4 = 2048 bytes for dim=512)
     """
     import sqlite_vec
+
     return sqlite_vec.serialize_float32(embed(text))
 
 
 # === 自测 ===
-if __name__ == '__main__':
+if __name__ == "__main__":
     e = Embedder()
-    v = e.embed('测试中文嵌入')
-    assert len(v) == 512, f'dim 错误: {len(v)}'
-    print(f'✅ 单条: {len(v)} 维')
+    v = e.embed("测试中文嵌入")
+    assert len(v) == 512, f"dim 错误: {len(v)}"
+    print(f"✅ 单条: {len(v)} 维")
 
-    vs = e.embed_batch(['sh600089 特变电工', '翁氏 D∩W '])
-    print(f'✅ 批量: {len(vs)} 条 × {len(vs[0])} 维')
+    vs = e.embed_batch(["sh600089 特变电工", "翁氏 D∩W "])
+    print(f"✅ 批量: {len(vs)} 条 × {len(vs[0])} 维")

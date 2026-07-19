@@ -1,0 +1,47 @@
+[tool.ruff]
+# Match minimum Python version we test (3.9 — oldest in matrix)
+target-version = "py39"
+line-length = 120
+extend-exclude = [
+    ".git",
+    "__pycache__",
+    "htmlcov",
+    ".pytest_cache",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+# Default ruleset + pycodestyle warnings + isort + pyupgrade
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+]
+# Pragmas we explicitly tolerate:
+# E402: module-level imports not at top — mnelo uses lazy imports for
+#       optional deps (mcp, sqlite_vec); ruff can't see they're intentional.
+# UP006/UP035: typing.List/Dict → list/dict would require Python 3.9+
+#       minimum, but we still target 3.9 (oldest in matrix); keep typing imports.
+ignore = [
+    "E402",  # module-level import not at top of file
+    "B008",  # do not perform function call in argument defaults (fastembed API)
+    "B904",  # raise without from inside except (we re-raise deliberately)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests often have unused fixtures, intentional asserts, etc.
+"tests/*" = [
+    "F401",  # unused imports in tests are often re-exports
+    "F811",  # redefinition of unused name (parametrized fixtures)
+]
+
+[tool.ruff.format]
+# Match Black defaults so ruff format == black format (for back-compat)
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"

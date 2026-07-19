@@ -26,18 +26,20 @@ auth.py — Bearer token auth for SSE transport (P0-2 fix).
 
 5. stdio transport 不需要 auth (同进程, MCP SDK 已认证 client)
 """
+
 import hmac
 import os
 from pathlib import Path
 from typing import Optional
 
 # 通用 token env 名 — 避开 HERMES/MCP 避免冲突, 但用 mnelo_ 前缀保持项目自识别
-AUTH_TOKEN_ENV = 'MNEOLO_AUTH_TOKEN'
-AUTH_TOKEN_FILE = Path.home() / '.config' / 'mnelo' / 'auth_token'
+AUTH_TOKEN_ENV = "MNEOLO_AUTH_TOKEN"
+AUTH_TOKEN_FILE = Path.home() / ".config" / "mnelo" / "auth_token"
 
 
 class AuthError(Exception):
     """Token 缺失 / 错误时抛. 不带 token 字面值 (防 log 泄露)."""
+
     pass
 
 
@@ -51,14 +53,14 @@ def load_auth_token(explicit_path: Optional[str] = None) -> str:
     if explicit_path:
         p = Path(explicit_path)
         if not p.exists():
-            raise AuthError(f'--auth-token-file not found: {p}')
+            raise AuthError(f"--auth-token-file not found: {p}")
         token = p.read_text().strip()
         if not token:
-            raise AuthError(f'--auth-token-file is empty: {p}')
+            raise AuthError(f"--auth-token-file is empty: {p}")
         return token
 
     # 2. 环境变量
-    env_token = os.environ.get(AUTH_TOKEN_ENV, '').strip()
+    env_token = os.environ.get(AUTH_TOKEN_ENV, "").strip()
     if env_token:
         return env_token
 
@@ -69,9 +71,9 @@ def load_auth_token(explicit_path: Optional[str] = None) -> str:
             return token
 
     raise AuthError(
-        f'no auth token configured. Set {AUTH_TOKEN_ENV} env var, '
-        f'create {AUTH_TOKEN_FILE} (mode 600), '
-        f'or pass --auth-token-file <path>. '
+        f"no auth token configured. Set {AUTH_TOKEN_ENV} env var, "
+        f"create {AUTH_TOKEN_FILE} (mode 600), "
+        f"or pass --auth-token-file <path>. "
         f'Generate: python -c "import secrets; print(secrets.token_urlsafe(32))"'
     )
 
@@ -83,8 +85,8 @@ def verify_bearer(authorization_header: Optional[str], expected_token: str) -> b
     """
     if not authorization_header:
         return False
-    parts = authorization_header.split(' ', 1)
-    if len(parts) != 2 or parts[0].lower() != 'bearer':
+    parts = authorization_header.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
         return False
     # 比较时 strip (允许 header value 末尾 whitespace)
     return hmac.compare_digest(parts[1].strip(), expected_token)
@@ -96,9 +98,10 @@ def setup_auth_token_file(token: Optional[str] = None) -> Path:
     用于首次部署 / 初始化. 不打印 token 值到 stdout (防 shoulder-surf).
     """
     import secrets
+
     AUTH_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     if token is None:
         token = secrets.token_urlsafe(32)
-    AUTH_TOKEN_FILE.write_text(token + '\n')
+    AUTH_TOKEN_FILE.write_text(token + "\n")
     AUTH_TOKEN_FILE.chmod(0o600)
     return AUTH_TOKEN_FILE

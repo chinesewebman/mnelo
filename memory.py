@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 memory.py — mnelo 核心 CRUD API
 
@@ -8,36 +7,39 @@ memory.py — mnelo 核心 CRUD API
 - 4D 时间维度 (valid_from / valid_until / soft delete + 自动级联)
 - 单一 writer (单进程) + WAL + busy_timeout=30s 防 lock
 """
-import sys
-import re
+
+import contextlib
 import json
 import logging
+import re
 import sqlite3
-import sqlite_vec
-import contextlib
-from pathlib import Path
 from datetime import datetime
-from typing import List, Dict
+from pathlib import Path
+from typing import Dict, List
 
-logger = logging.getLogger('mnelo')
+import sqlite_vec
+
+logger = logging.getLogger("mnelo")
 if not logger.handlers:
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(
-        '[%(asctime)s] %(name)s %(levelname)s: %(message)s'
-    ))
+    handler.setFormatter(logging.Formatter("[%(asctime)s] %(name)s %(levelname)s: %(message)s"))
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
-from embedder import embed_bytes, get_embedder
+from embedder import embed_bytes
+from metrics import get_registry as _metrics_registry  # [7/19 v0.5.3] observability
+
 # validation 模块从 conftest/repo 加载 (live == repo via hook sync).
 # 注意: memory.py 不再硬编码 /Users/apple/.hermes/memory path — repo 自身是 single source of truth.
 from validation import (
-    validate_chunk_content, validate_query, validate_id, validate_entity_payload,
     ValidationError,
+    validate_chunk_content,
+    validate_entity_payload,
+    validate_id,
+    validate_query,
 )
-from metrics import get_registry as _metrics_registry  # [7/19 v0.5.3] observability
 
-DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')
+DB_PATH = Path("/Users/apple/.hermes/memory/memory.db")
 # 注: embedding 模型 + dim 不再在此处硬编码 — 见 embedder.py 从 config 读 (config.toml [embedder])
 
 
@@ -56,26 +58,29 @@ def now(tz: str = None) -> str:
     Used as default for valid_from / valid_until / timestamp fields.
     """
     from config import config as _cfg
+
     if tz is None:
         tz = _cfg.timezone
 
-    if tz == 'local':
-        return datetime.now().isoformat(timespec='seconds')
-    elif tz == 'utc':
-        return datetime.utcnow().isoformat(timespec='seconds')
+    if tz == "local":
+        return datetime.now().isoformat(timespec="seconds")
+    elif tz == "utc":
+        return datetime.utcnow().isoformat(timespec="seconds")
     else:
         # IANA tz (e.g. 'Asia/Shanghai'). Try zoneinfo (3.9+), fallback to manual offset
         try:
             from zoneinfo import ZoneInfo
-            return datetime.now(ZoneInfo(tz)).isoformat(timespec='seconds')
+
+            return datetime.now(ZoneInfo(tz)).isoformat(timespec="seconds")
         except ImportError:
             # Python 3.8 fallback: manual offset
-            from datetime import timezone, timedelta
+            from datetime import timedelta, timezone
+
             # Best-effort: use UTC and tell user to upgrade
-            return datetime.now(timezone(timedelta(hours=8))).isoformat(timespec='seconds')
+            return datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
 
 
-def generate_id(prefix: str = 'chunk') -> str:
+def generate_id(prefix: str = "chunk") -> str:
     """Generate a unique chunk/entity/relation id with prefix + timestamp (microsecond precision).
 
     Format: '{prefix}_YYYYMMDD_HHMMSS_microseconds'
@@ -84,10 +89,10 @@ def generate_id(prefix: str = 'chunk') -> str:
     Collision risk: microsecond precision is enough for single-process; for multi-writer
     scenarios consider adding a random suffix.
     """
-    return f'{prefix}_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}'
+    return f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
 
 
-def clamp01(value: float, name: str = 'value') -> float:
+def clamp01(value: float, name: str = "value") -> float:
     """Clamp importance/weight to [0.0, 1.0] with type and NaN validation.
 
     [P0 审计] : remember(importance) / relate(weight) / update(new_importance)
@@ -118,9 +123,9 @@ def clamp01(value: float, name: str = 'value') -> float:
         ValueError: importance must not be NaN
     """
     if not isinstance(value, (int, float)) or isinstance(value, bool):
-        raise TypeError(f'{name} must be numeric, got {type(value).__name__}')
+        raise TypeError(f"{name} must be numeric, got {type(value).__name__}")
     if value != value:  # NaN check (NaN != NaN)
-        raise ValueError(f'{name} must not be NaN')
+        raise ValueError(f"{name} must not be NaN")
     return max(0.0, min(1.0, float(value)))
 
 
@@ -162,13 +167,13 @@ class Memory:
         # graph_recall (主 method) 仍然在主 thread 调, 但需要 main conn 也能被 worker 间接用
         # SQLite 检查是 dbapi-level strict — 一切 conn 都允许跨 thread 是务实做法
         self._conn = sqlite3.connect(str(db_path), timeout=30, check_same_thread=False)
-        self._conn.execute('PRAGMA journal_mode = WAL')
-        self._conn.execute('PRAGMA busy_timeout = 30000')
+        self._conn.execute("PRAGMA journal_mode = WAL")
+        self._conn.execute("PRAGMA busy_timeout = 30000")
         # [7/18 patch G] SQLite page cache 64 MB — 让 working-set (24 MB db)
         # 在 RAM, vec0 cold-chunk 走 mmap/OS page cache 而不是每次 fetch
         # cache_size 单位是 page (default 4 KB); -64000 = -64*1024 KB
-        self._conn.execute('PRAGMA cache_size = -64000')
-        self._conn.execute('PRAGMA foreign_keys = ON')
+        self._conn.execute("PRAGMA cache_size = -64000")
+        self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.enable_load_extension(True)
         sqlite_vec.load(self._conn)
         self._conn.enable_load_extension(False)
@@ -178,18 +183,20 @@ class Memory:
         # 实测: Demo 1 1030ms wall-clock (服务端 50ms), 980ms 是 Embedder model 加载到 RAM
         # 配置: warm_up_embedder=True by default, 可 config.toml 关闭
         from config import config as _cfg
+
         if _cfg.warm_up_embedder:
             from embedder import get_embedder
+
             get_embedder()  # lazy singleton, 第一次调用触发 model 加载
-            logger.info(f'[P2-1] Embedder warmed-up ({_cfg.describe()})')
+            logger.info(f"[P2-1] Embedder warmed-up ({_cfg.describe()})")
         else:
-            logger.info(f'[P2-1] Embedder warm-up disabled ({_cfg.describe()})')
+            logger.info(f"[P2-1] Embedder warm-up disabled ({_cfg.describe()})")
 
     def close(self) -> None:
         """Close the underlying SQLite connection."""
         self._conn.close()
 
-    def __enter__(self) -> 'Memory':
+    def __enter__(self) -> "Memory":
         """Support `with Memory() as m:` — returns self."""
         return self
 
@@ -202,70 +209,81 @@ class Memory:
     def remember(
         self,
         content: str,
-        source: str = 'manual',
+        source: str = "manual",
         importance: float = 0.5,
         entities: List[Dict] = None,
         relations: List[Dict] = None,
         tags: List[str] = None,
-        session_id: str = 'default',
+        session_id: str = "default",
         timestamp: str = None,
     ) -> str:
         """写入一条 chunk + 实体 + 关系.
 
         entities = [{id, kind, name, summary?, aliases?, properties?}]
-        relations = [{source_id, target_id, relation, weight?, properties?, valid_from?, valid_until?, evidence_chunk_id?}]
+        relations = [{source_id, target_id, relation, weight?, properties?,
+                      valid_from?, valid_until?, evidence_chunk_id?}]
         """
         ts = timestamp or now()
-        chunk_id = generate_id('chunk')
+        chunk_id = generate_id("chunk")
 
         # [7/19 P0-3] chunk content 大小 + 控制字符 + bidi override 验证
         content = validate_chunk_content(content)
         # [7/19 P1-1] id 来源 = generate_id (服务端生成), 无需 validate_id
 
         # 1. 写 chunk
-        self._conn.execute("""
+        self._conn.execute(
+            """
             INSERT INTO chunks (id, content, source, session_id, timestamp, importance, metadata_json, valid_until)
             VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-        """, (chunk_id, content, source, session_id, ts, clamp01(importance, 'importance'),
-              json.dumps({'tags': tags or []}, ensure_ascii=False)))
+        """,
+            (
+                chunk_id,
+                content,
+                source,
+                session_id,
+                ts,
+                clamp01(importance, "importance"),
+                json.dumps({"tags": tags or []}, ensure_ascii=False),
+            ),
+        )
 
         # 2. 写 entities (insert or ignore — 实体可能已存在)
-        for ent in (entities or []):
+        for ent in entities or []:
             self._upsert_entity(ent)
 
         # 3. 写 relations
-        for rel in (relations or []):
-            self._conn.execute("""
+        for rel in relations or []:
+            self._conn.execute(
+                """
                 INSERT INTO relations (source_id, target_id, relation, weight, properties_json,
                                        valid_from, valid_until, source, confidence, evidence_chunk_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                rel['source_id'], rel['target_id'], rel['relation'],
-                rel.get('weight', 1.0),
-                json.dumps(rel.get('properties', {}), ensure_ascii=False),
-                rel.get('valid_from', ts),
-                rel.get('valid_until'),  # None = NULL
-                rel.get('source', source),
-                rel.get('confidence', 1.0),
-                rel.get('evidence_chunk_id', chunk_id),
-            ))
+            """,
+                (
+                    rel["source_id"],
+                    rel["target_id"],
+                    rel["relation"],
+                    rel.get("weight", 1.0),
+                    json.dumps(rel.get("properties", {}), ensure_ascii=False),
+                    rel.get("valid_from", ts),
+                    rel.get("valid_until"),  # None = NULL
+                    rel.get("source", source),
+                    rel.get("confidence", 1.0),
+                    rel.get("evidence_chunk_id", chunk_id),
+                ),
+            )
 
         # 4. 写 vector (sqlite-vec 0.1.x: vec0.rowid = chunks.rowid)
         # [BUG 7/18 fix] 之前用 last_insert_rowid() 但 entities/relations INSERT 后会被覆盖
         # → vector 写到错的 vec0 rowid, _vector_recall 召回失败
         # 修: 用 SELECT round-trip 拿 chunks.rowid (保证 1:1)
-        chunk_rowid = self._conn.execute(
-            "SELECT rowid FROM chunks WHERE id = ?", (chunk_id,)
-        ).fetchone()[0]
+        chunk_rowid = self._conn.execute("SELECT rowid FROM chunks WHERE id = ?", (chunk_id,)).fetchone()[0]
         v_bytes = embed_bytes(content)
-        self._conn.execute(
-            "INSERT INTO vectors (rowid, embedding) VALUES (?, ?)",
-            (chunk_rowid, v_bytes)
-        )
+        self._conn.execute("INSERT INTO vectors (rowid, embedding) VALUES (?, ?)", (chunk_rowid, v_bytes))
 
         self._conn.commit()
         # [7/19 v0.5.3] metrics
-        _metrics_registry().remember_total.inc(source=source or 'unknown')
+        _metrics_registry().remember_total.inc(source=source or "unknown")
         return chunk_id
 
     def relate(
@@ -281,17 +299,27 @@ class Memory:
     ) -> int:
         """新建一条关系."""
         # [7/19 P1-1] id 格式验证 (白名单正则)
-        source_id = validate_id(source_id, 'source_id')
-        target_id = validate_id(target_id, 'target_id')
+        source_id = validate_id(source_id, "source_id")
+        target_id = validate_id(target_id, "target_id")
         if evidence_chunk_id is not None:
-            evidence_chunk_id = validate_id(evidence_chunk_id, 'evidence_chunk_id')
-        cur = self._conn.execute("""
+            evidence_chunk_id = validate_id(evidence_chunk_id, "evidence_chunk_id")
+        cur = self._conn.execute(
+            """
             INSERT INTO relations (source_id, target_id, relation, weight, properties_json,
                                    valid_from, valid_until, source, confidence, evidence_chunk_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', 1.0, ?)
-        """, (source_id, target_id, relation, clamp01(weight, 'weight'),
-              json.dumps(properties or {}, ensure_ascii=False),
-              valid_from or now(), valid_until, evidence_chunk_id))
+        """,
+            (
+                source_id,
+                target_id,
+                relation,
+                clamp01(weight, "weight"),
+                json.dumps(properties or {}, ensure_ascii=False),
+                valid_from or now(),
+                valid_until,
+                evidence_chunk_id,
+            ),
+        )
         self._conn.commit()
         # [7/19 v0.5.3] metrics
         _metrics_registry().relate_total.inc()
@@ -300,7 +328,7 @@ class Memory:
     def update(
         self,
         old_id: str,
-        reason: str = 'updated',
+        reason: str = "updated",
         new_content: str = None,
         new_properties: Dict = None,
         new_importance: float = None,
@@ -323,39 +351,42 @@ class Memory:
             新 chunk id (新版本 id)
         """
         # [7/19 P1-1] id 格式验证
-        old_id = validate_id(old_id, 'old_id')
+        old_id = validate_id(old_id, "old_id")
         # [7/19 P0-3] 新 content 也走 sanitize (None = 保留老内容, 跳过)
         if new_content is not None:
             new_content = validate_chunk_content(new_content)
 
-        old = self._conn.execute(
-            "SELECT * FROM chunks WHERE id = ? AND valid_until IS NULL", (old_id,)
-        ).fetchone()
+        old = self._conn.execute("SELECT * FROM chunks WHERE id = ? AND valid_until IS NULL", (old_id,)).fetchone()
         if not old:
-            raise ValueError(f'chunk {old_id} not found or already superseded')
+            raise ValueError(f"chunk {old_id} not found or already superseded")
 
         # 1. 创建新 chunk
-        new_id = generate_id('chunk')
+        new_id = generate_id("chunk")
         # [P0 审计] new_importance 也走 clamp01 防止越界
         if new_importance is not None:
-            importance_value = clamp01(new_importance, 'new_importance')
+            importance_value = clamp01(new_importance, "new_importance")
         else:
-            importance_value = old['importance'] if old['importance'] is not None else 0.5
-        self._conn.execute("""
+            importance_value = old["importance"] if old["importance"] is not None else 0.5
+        self._conn.execute(
+            """
             INSERT INTO chunks (id, content, source, session_id, timestamp, importance, metadata_json, valid_until)
             VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-        """, (new_id,
-              new_content or old['content'],
-              'update:' + reason,
-              old['session_id'],
-              now(),
-              importance_value,
-              json.dumps({'supersedes': old_id, 'reason': reason}, ensure_ascii=False)))
+        """,
+            (
+                new_id,
+                new_content or old["content"],
+                "update:" + reason,
+                old["session_id"],
+                now(),
+                importance_value,
+                json.dumps({"supersedes": old_id, "reason": reason}, ensure_ascii=False),
+            ),
+        )
 
         # 2. 老 chunk 标 superseded_by + valid_until (中 supersede 后不再召回)
         self._conn.execute(
             "UPDATE chunks SET superseded_by = ?, valid_until = ? WHERE id = ? AND valid_until IS NULL",
-            (new_id, now(), old_id)
+            (new_id, now(), old_id),
         )
         self._conn.commit()
         # [7/19 v0.5.3] metrics
@@ -365,52 +396,55 @@ class Memory:
     def forget(
         self,
         target_id: str,
-        target_kind: str = 'chunk',  # 'chunk' / 'entity' / 'relation'
-        reason: str = 'outdated',
+        target_kind: str = "chunk",  # 'chunk' / 'entity' / 'relation'
+        reason: str = "outdated",
         cascade: bool = True,
     ) -> Dict[str, int]:
         """软删除: valid_until = now, cascade 级联失效引用边.
         主人口中"删除无用知识" — 不直接物理删, 30 天后 worker 物理清理.
         """
         # [7/19 P1-1] id 格式验证
-        target_id = validate_id(target_id, 'target_id')
-        if target_kind == 'chunk':
+        target_id = validate_id(target_id, "target_id")
+        if target_kind == "chunk":
             self._conn.execute(
-                "UPDATE chunks SET valid_until = ? WHERE id = ? AND valid_until IS NULL",
-                (now(), target_id)
+                "UPDATE chunks SET valid_until = ? WHERE id = ? AND valid_until IS NULL", (now(), target_id)
             )
-        elif target_kind == 'entity':
+        elif target_kind == "entity":
             self._conn.execute(
-                "UPDATE entities SET valid_until = ? WHERE id = ? AND valid_until IS NULL",
-                (now(), target_id)
+                "UPDATE entities SET valid_until = ? WHERE id = ? AND valid_until IS NULL", (now(), target_id)
             )
-        elif target_kind == 'relation':
+        elif target_kind == "relation":
             self._conn.execute(
-                "UPDATE relations SET valid_until = ? WHERE id = ? AND valid_until IS NULL",
-                (now(), target_id)
+                "UPDATE relations SET valid_until = ? WHERE id = ? AND valid_until IS NULL", (now(), target_id)
             )
         else:
-            raise ValueError(f'unknown kind: {target_kind}')
+            raise ValueError(f"unknown kind: {target_kind}")
 
         # cascade (主流程中, 触发器也会自动做)
         edges_invalidated = 0
         if cascade:
-            cur = self._conn.execute("""
+            cur = self._conn.execute(
+                """
                 UPDATE relations SET valid_until = ?
                 WHERE (source_id = ? OR target_id = ?) AND valid_until IS NULL
-            """, (now(), target_id, target_id))
+            """,
+                (now(), target_id, target_id),
+            )
             edges_invalidated = cur.rowcount
 
         # 入队 30 天后物理删除
-        self._conn.execute("""
+        self._conn.execute(
+            """
             INSERT INTO purged_queue (target_id, target_kind, purged_at, done)
             VALUES (?, ?, datetime('now', '+30 days'), 0)
-        """, (target_id, target_kind))
+        """,
+            (target_id, target_kind),
+        )
 
         self._conn.commit()
         # [7/19 v0.5.3] metrics
-        _metrics_registry().forget_total.inc(kind=target_kind or 'unknown')
-        return {'edges_invalidated': edges_invalidated, 'queued_purge': 1}
+        _metrics_registry().forget_total.inc(kind=target_kind or "unknown")
+        return {"edges_invalidated": edges_invalidated, "queued_purge": 1}
 
     # === R = Recall (3 路 + RRF) ===================
 
@@ -420,7 +454,7 @@ class Memory:
         top_k: int = 5,
         graph_hops: int = 2,
         filters: Dict = None,
-        strategy: str = 'rrf',
+        strategy: str = "rrf",
         asof: str = None,
     ) -> List[Dict]:
         """4 路召回 + RRF 融合 ( 7/18 加 entity 路).
@@ -439,9 +473,21 @@ class Memory:
         query = validate_query(query)
         clean = query.strip()
         # 占位符白名单 (case insensitive)
-        _PLACEHOLDER_QUERIES = {'anything', 'something', 'test', 'foo', 'bar',
-                                'baz', 'q', '?', 'placeholder', 'dummy',
-                                'demo', 'sample', 'foo bar'}
+        _PLACEHOLDER_QUERIES = {
+            "anything",
+            "something",
+            "test",
+            "foo",
+            "bar",
+            "baz",
+            "q",
+            "?",
+            "placeholder",
+            "dummy",
+            "demo",
+            "sample",
+            "foo bar",
+        }
         if clean.lower() in _PLACEHOLDER_QUERIES:
             return []
         # 单字符无意义 (除了短股票代码 e.g. 'a' 单字母 + 中文概念单字)
@@ -452,24 +498,26 @@ class Memory:
         query = clean
 
         import time
+
         t0_start = time.time()
 
         asof = asof or now()
 
-        if strategy == 'rrf':
+        if strategy == "rrf":
             # [P2+ #2 7/18 patch] 4 路召回并发 —  p95 70ms → 25ms 目标
             # 串行慢原因: vec0 MATCH ~3.5ms + meta LIKE 0-11ms + entity name ~2-9ms + graph 0-7ms 累加
             # WAL mode SQLite 允许多 conn 并发读, 每路开独立 conn + 共享 Embedder
             # 用 ThreadPoolExecutor 跑 4 task 并行, 取最长耗时 (vs 串行累加)
             from concurrent.futures import ThreadPoolExecutor
+
             # 4 个独立 SQLite connection (避免同一 conn threading 冲突)
             # check_same_thread=False 让 conn 跨 thread 可用 (主 thread 创建, worker 用)
             recall_conns = [sqlite3.connect(str(self.db_path), timeout=30, check_same_thread=False) for _ in range(4)]  # noqa: E501
             for c in recall_conns:
-                c.execute('PRAGMA journal_mode = WAL')
-                c.execute('PRAGMA busy_timeout = 30000')
+                c.execute("PRAGMA journal_mode = WAL")
+                c.execute("PRAGMA busy_timeout = 30000")
                 # [7/18 patch G] 每个 worker conn 也设 64 MB cache
-                c.execute('PRAGMA cache_size = -64000')
+                c.execute("PRAGMA cache_size = -64000")
                 c.enable_load_extension(True)
                 sqlite_vec.load(c)
                 c.enable_load_extension(False)
@@ -498,29 +546,30 @@ class Memory:
 
             results = self._rrf_fuse([vector_hits, graph_hits, meta_hits, entity_hits], top_k)
             # meta/entity roughly parallel (no separate timers; record 0 to skip metric)
-            lane_latencies = {'vector': vec_ms, 'graph': graph_ms, 'meta': 0.0, 'entity': 0.0}
-        elif strategy == 'vector_only':
+            lane_latencies = {"vector": vec_ms, "graph": graph_ms, "meta": 0.0, "entity": 0.0}
+        elif strategy == "vector_only":
             t0 = time.time()
             results = self._vector_recall(query, top_k, filters, asof)
-            lane_latencies = {'vector': (time.time() - t0) * 1000}
-        elif strategy == 'graph_only':
+            lane_latencies = {"vector": (time.time() - t0) * 1000}
+        elif strategy == "graph_only":
             t0 = time.time()
             vector_hits = self._vector_recall(query, top_k, filters, asof)
             graph_hits = self._graph_recall(vector_hits, graph_hops, asof)
             results = graph_hits[:top_k]
             lane_latencies = {
-                'vector': (time.time() - t0) * 1000, 'graph': 0.0,
+                "vector": (time.time() - t0) * 1000,
+                "graph": 0.0,
             }
-        elif strategy == 'meta_only':
+        elif strategy == "meta_only":
             t0 = time.time()
             results = self._meta_recall(query, top_k, filters, asof)
-            lane_latencies = {'meta': (time.time() - t0) * 1000}
-        elif strategy == 'entity_only':
+            lane_latencies = {"meta": (time.time() - t0) * 1000}
+        elif strategy == "entity_only":
             t0 = time.time()
             results = self._entity_recall(query, top_k, filters, asof)
-            lane_latencies = {'entity': (time.time() - t0) * 1000}
+            lane_latencies = {"entity": (time.time() - t0) * 1000}
         else:
-            raise ValueError(f'unknown strategy: {strategy}')
+            raise ValueError(f"unknown strategy: {strategy}")
 
         latency_ms = (time.time() - t0_start) * 1000
 
@@ -530,7 +579,7 @@ class Memory:
             _reg.recall_total.inc(method=lane)
             if lane_ms > 0:
                 _reg.recall_latency.observe(lane_ms / 1000.0, method=lane)
-        _reg.recall_hits.inc(result='empty' if not results else 'non_empty')
+        _reg.recall_hits.inc(result="empty" if not results else "non_empty")
         _reg.recall_top_k.inc(k=str(top_k))
 
         #  recall audit
@@ -538,14 +587,17 @@ class Memory:
 
         # 更新 recall_count + last_recalled
         if results:
-            ids = [r['chunk_id'] for r in results if 'chunk_id' in r]
+            ids = [r["chunk_id"] for r in results if "chunk_id" in r]
             if ids:
-                placeholders = ','.join('?' * len(ids))
-                self._conn.execute(f"""
+                placeholders = ",".join("?" * len(ids))
+                self._conn.execute(
+                    f"""
                     UPDATE chunks
                     SET recall_count = recall_count + 1, last_recalled = ?
                     WHERE id IN ({placeholders})
-                """, [now()] + ids)
+                """,
+                    [now()] + ids,
+                )
                 self._conn.commit()
 
         return results
@@ -559,31 +611,34 @@ class Memory:
         # [P0 审计] 用 _with_row_factory helper 统一处理 (前: 双层 try/finally 嵌套)
         try:
             with _with_row_factory(self._conn, sqlite3.Row):
-                rows = self._conn.execute("""
+                rows = self._conn.execute(
+                    """
                     SELECT v.rowid AS v_rowid, v.distance AS distance
                     FROM vectors v
                     WHERE v.embedding MATCH ?
                     ORDER BY v.distance
                     LIMIT ?
-                """, (q_bytes, fetch_limit)).fetchall()
+                """,
+                    (q_bytes, fetch_limit),
+                ).fetchall()
         except Exception as e:
-            print(f'[vector_recall] failed: {e}')
+            print(f"[vector_recall] failed: {e}")
             return []
 
         results = []
         for r in rows:
-            v_rowid = r['v_rowid'] if isinstance(r, sqlite3.Row) else r[0]
-            distance = r['distance'] if isinstance(r, sqlite3.Row) else r[1]
+            v_rowid = r["v_rowid"] if isinstance(r, sqlite3.Row) else r[0]
+            distance = r["distance"] if isinstance(r, sqlite3.Row) else r[1]
             chunk = self._conn.execute(
                 "SELECT id, content, source, timestamp, importance FROM chunks WHERE rowid = ? AND valid_until IS NULL",
-                (v_rowid,)
+                (v_rowid,),
             ).fetchone()
             if not chunk:
                 continue
             if filters:
-                if 'source' in filters and chunk['source'] != filters['source']:
+                if "source" in filters and chunk["source"] != filters["source"]:
                     continue
-            results.append(self._hit_dict(chunk, method='vector', distance=float(distance)))
+            results.append(self._hit_dict(chunk, method="vector", distance=float(distance)))
         return results[:top_k]  # type: ignore
 
     def _vector_recall_with_conn(self, conn, query, top_k, filters, asof) -> List[Dict]:
@@ -596,31 +651,34 @@ class Memory:
         fetch_limit = top_k * (8 if (filters or top_k >= 3) else 2)
         try:
             with _with_row_factory(conn, sqlite3.Row):
-                rows = conn.execute("""
+                rows = conn.execute(
+                    """
                     SELECT v.rowid AS v_rowid, v.distance AS distance
                     FROM vectors v
                     WHERE v.embedding MATCH ?
                     ORDER BY v.distance
                     LIMIT ?
-                """, (q_bytes, fetch_limit)).fetchall()
+                """,
+                    (q_bytes, fetch_limit),
+                ).fetchall()
         except Exception as e:
-            print(f'[vector_recall_thread] failed: {e}')
+            print(f"[vector_recall_thread] failed: {e}")
             return []
 
         results = []
         for r in rows:
-            v_rowid = r['v_rowid'] if isinstance(r, sqlite3.Row) else r[0]
-            distance = r['distance'] if isinstance(r, sqlite3.Row) else r[1]
+            v_rowid = r["v_rowid"] if isinstance(r, sqlite3.Row) else r[0]
+            distance = r["distance"] if isinstance(r, sqlite3.Row) else r[1]
             chunk = conn.execute(
                 "SELECT id, content, source, timestamp, importance FROM chunks WHERE rowid = ? AND valid_until IS NULL",
-                (v_rowid,)
+                (v_rowid,),
             ).fetchone()
             if not chunk:
                 continue
             if filters:
-                if 'source' in filters and chunk['source'] != filters['source']:
+                if "source" in filters and chunk["source"] != filters["source"]:
                     continue
-            results.append(self._hit_dict(chunk, method='vector', distance=float(distance)))
+            results.append(self._hit_dict(chunk, method="vector", distance=float(distance)))
         return results[:top_k]  # type: ignore
 
     def _meta_recall_with_conn(self, conn, query, top_k, filters, asof) -> List[Dict]:
@@ -630,18 +688,18 @@ class Memory:
             WHERE valid_until IS NULL
               AND content LIKE ?
         """
-        params = [f'%{query}%']
-        if filters and 'source' in filters:
-            sql += ' AND source = ?'
-            params.append(filters['source'])
-        sql += ' ORDER BY importance DESC, timestamp DESC LIMIT ?'
+        params = [f"%{query}%"]
+        if filters and "source" in filters:
+            sql += " AND source = ?"
+            params.append(filters["source"])
+        sql += " ORDER BY importance DESC, timestamp DESC LIMIT ?"
         params.append(top_k)
         rows = conn.execute(sql, params).fetchall()
-        return [self._hit_dict(r, method='meta') for r in rows]
+        return [self._hit_dict(r, method="meta") for r in rows]
 
     def _entity_recall_with_conn(self, conn, query, top_k, filters, asof) -> List[Dict]:
         """[P2+ #2] 独立 conn 版 entity recall."""
-        if ' ' in query.strip():
+        if " " in query.strip():
             tokens = query.strip().split()
         else:
             tokens = [query]
@@ -651,35 +709,38 @@ class Memory:
         for tok in tokens:
             if not tok or len(tok) < 2:
                 continue
-            like = f'%{tok}%'
-            rows = conn.execute("""
+            like = f"%{tok}%"
+            rows = conn.execute(
+                """
                 SELECT id, name, kind, summary, importance, aliases_json
                 FROM entities
                 WHERE valid_until IS NULL
                   AND (name LIKE ? OR aliases_json LIKE ?)
                 ORDER BY importance DESC
                 LIMIT ?
-            """, (like, like, top_k)).fetchall()
+            """,
+                (like, like, top_k),
+            ).fetchall()
             for r in rows:
-                aliases = json.loads(r['aliases_json'] or '[]') if r['aliases_json'] else []
-                content = r['summary'] or r['name']
+                aliases = json.loads(r["aliases_json"] or "[]") if r["aliases_json"] else []
+                content = r["summary"] or r["name"]
                 if not content:
                     continue
                 hit = {
-                    'chunk_id': f'entity:{r["id"]}',
-                    'content': content,
-                    'source': f'entity:{r["kind"]}',
-                    'timestamp': now(),
-                    'importance': float(r['importance'] or 0.5),
-                    'method': 'entity',
-                    'entity_id': r['id'],
-                    'entity_name': r['name'],
-                    'entity_kind': r['kind'],
+                    "chunk_id": f"entity:{r['id']}",
+                    "content": content,
+                    "source": f"entity:{r['kind']}",
+                    "timestamp": now(),
+                    "importance": float(r["importance"] or 0.5),
+                    "method": "entity",
+                    "entity_id": r["id"],
+                    "entity_name": r["name"],
+                    "entity_kind": r["kind"],
                 }
                 if any(tok.lower() in a.lower() for a in aliases):
-                    hit['importance'] = min(1.0, hit['importance'] + 0.2)
-                if hit['chunk_id'] not in seen_chunk_ids:
-                    seen_chunk_ids.add(hit['chunk_id'])
+                    hit["importance"] = min(1.0, hit["importance"] + 0.2)
+                if hit["chunk_id"] not in seen_chunk_ids:
+                    seen_chunk_ids.add(hit["chunk_id"])
                     chunk_results.append(hit)
         return chunk_results[:top_k]  # type: ignore
 
@@ -687,36 +748,42 @@ class Memory:
         """路 2: 图遍历 (NetworkX 内存层 + hops 跳)."""
         if not seed_hits:
             return []
-        seed_ids = {h['chunk_id'] for h in seed_hits}
+        seed_ids = {h["chunk_id"] for h in seed_hits}
         # [审计 4.1 优化] 1 次 SQL 拿全部 seed chunks 的关联 entities (避免 N+1)
-        placeholders = ','.join('?' * len(seed_ids))
-        rows = self._conn.execute(f"""
+        placeholders = ",".join("?" * len(seed_ids))
+        rows = self._conn.execute(
+            f"""
             SELECT source_id, target_id FROM relations
             WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders}))
               AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?)
-        """, (*seed_ids, *seed_ids, asof, asof)).fetchall()
+        """,
+            (*seed_ids, *seed_ids, asof, asof),
+        ).fetchall()
         seed_entities = set()
         for r in rows:
-            if r['source_id'] not in seed_ids:
-                seed_entities.add(r['source_id'])
-            if r['target_id'] not in seed_ids:
-                seed_entities.add(r['target_id'])
+            if r["source_id"] not in seed_ids:
+                seed_entities.add(r["source_id"])
+            if r["target_id"] not in seed_ids:
+                seed_entities.add(r["target_id"])
 
         # [审计 4.1 优化] 1 次 SQL 拿 entities 关联的 chunks (2 跳)
         if not seed_entities:
             return []
-        placeholders = ','.join('?' * len(seed_entities))
-        rows = self._conn.execute(f"""
+        placeholders = ",".join("?" * len(seed_entities))
+        rows = self._conn.execute(
+            f"""
             SELECT source_id, target_id FROM relations
             WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders}))
               AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?)
-        """, (*seed_entities, *seed_entities, asof, asof)).fetchall()
+        """,
+            (*seed_entities, *seed_entities, asof, asof),
+        ).fetchall()
         entity_chunks = set()
         for r in rows:
-            if r['source_id'] not in seed_entities:
-                entity_chunks.add(r['source_id'])
-            if r['target_id'] not in seed_entities:
-                entity_chunks.add(r['target_id'])
+            if r["source_id"] not in seed_entities:
+                entity_chunks.add(r["source_id"])
+            if r["target_id"] not in seed_entities:
+                entity_chunks.add(r["target_id"])
 
         # 排除原 seed, 取剩下的 entity_chunks
         new_chunks = entity_chunks - seed_ids - seed_entities
@@ -728,32 +795,40 @@ class Memory:
         # (不必绕回 chunk)
         entity_hits = []
         if seed_entities:
-            placeholders_e = ','.join('?' * len(seed_entities))
-            e_rows = self._conn.execute(f"""
+            placeholders_e = ",".join("?" * len(seed_entities))
+            e_rows = self._conn.execute(
+                f"""
                 SELECT id, kind, name, summary, importance FROM entities
                 WHERE id IN ({placeholders_e}) AND valid_until IS NULL
                   AND kind IN ('identity_fact', 'canonical_fact')
-            """, list(seed_entities)).fetchall()
+            """,
+                list(seed_entities),
+            ).fetchall()
             for er in e_rows:
-                entity_hits.append({
-                    'chunk_id': f'entity:{er["id"]}',
-                    'content': er['summary'] or er['name'],
-                    'source': f'entity:{er["kind"]}',
-                    'timestamp': now(),
-                    'importance': float(er['importance'] or 0.5),
-                    'method': 'graph_entity',
-                    'entity_id': er['id'],
-                    'entity_name': er['name'],
-                    'entity_kind': er['kind'],
-                })
+                entity_hits.append(
+                    {
+                        "chunk_id": f"entity:{er['id']}",
+                        "content": er["summary"] or er["name"],
+                        "source": f"entity:{er['kind']}",
+                        "timestamp": now(),
+                        "importance": float(er["importance"] or 0.5),
+                        "method": "graph_entity",
+                        "entity_id": er["id"],
+                        "entity_name": er["name"],
+                        "entity_kind": er["kind"],
+                    }
+                )
 
-        placeholders = ','.join('?' * len(new_chunks))
-        rows = self._conn.execute(f"""
+        placeholders = ",".join("?" * len(new_chunks))
+        rows = self._conn.execute(
+            f"""
             SELECT id, content, source, timestamp, importance FROM chunks
             WHERE id IN ({placeholders}) AND valid_until IS NULL
             ORDER BY importance DESC, timestamp DESC
-        """, list(new_chunks)).fetchall()
-        chunk_hits = [self._hit_dict(r, method='graph') for r in rows]
+        """,
+            list(new_chunks),
+        ).fetchall()
+        chunk_hits = [self._hit_dict(r, method="graph") for r in rows]
         # entity 在前 (偏重结构化答案)
         return entity_hits + chunk_hits
 
@@ -764,15 +839,15 @@ class Memory:
             WHERE valid_until IS NULL
               AND content LIKE ?
         """
-        params = [f'%{query}%']
-        if filters and 'source' in filters:
-            sql += ' AND source = ?'
-            params.append(filters['source'])
-        sql += ' ORDER BY importance DESC, timestamp DESC LIMIT ?'
+        params = [f"%{query}%"]
+        if filters and "source" in filters:
+            sql += " AND source = ?"
+            params.append(filters["source"])
+        sql += " ORDER BY importance DESC, timestamp DESC LIMIT ?"
         params.append(top_k)
 
         rows = self._conn.execute(sql, params).fetchall()
-        return [self._hit_dict(r, method='meta') for r in rows]
+        return [self._hit_dict(r, method="meta") for r in rows]
 
     def _entity_recall(self, query: str, top_k: int, filters: Dict, asof: str) -> List[Dict]:
         """路 4: 实体精确/模糊匹配 ( 7/18 加).
@@ -797,7 +872,7 @@ class Memory:
         seen_ids = set()
 
         # === 第一阶段: 意图增强 (user identity 询问) ===
-        identity_query_keys = ('我', '主人', 'user', 'ling2077', '2077 Ling')
+        identity_query_keys = ("我", "主人", "user", "ling2077", "2077 Ling")
         is_identity_query = any(k in query for k in identity_query_keys)
         if is_identity_query:
             rows = self._conn.execute("""
@@ -809,18 +884,20 @@ class Memory:
                   AND e.kind IN ('identity_fact', 'canonical_fact')
             """).fetchall()
             for r in rows:
-                seen_ids.add(r['id'])
-                hits.append({
-                    'chunk_id': f'entity:{r["id"]}',
-                    'content': r['summary'] or r['name'],
-                    'source': f'entity:{r["kind"]}',
-                    'timestamp': now(),
-                    'importance': float(r['importance'] or 0.9),
-                    'method': 'entity_intent',
-                    'entity_id': r['id'],
-                    'entity_name': r['name'],
-                    'entity_kind': r['kind'],
-                })
+                seen_ids.add(r["id"])
+                hits.append(
+                    {
+                        "chunk_id": f"entity:{r['id']}",
+                        "content": r["summary"] or r["name"],
+                        "source": f"entity:{r['kind']}",
+                        "timestamp": now(),
+                        "importance": float(r["importance"] or 0.9),
+                        "method": "entity_intent",
+                        "entity_id": r["id"],
+                        "entity_name": r["name"],
+                        "entity_kind": r["kind"],
+                    }
+                )
 
         # === 第二阶段: 通用 token LIKE (高优先级 → 补 concept) ===
         tokens = set()
@@ -832,49 +909,51 @@ class Memory:
                 tokens.add(w)
         for n in (2, 3):
             for i in range(len(query) - n + 1):
-                seg = query[i:i+n]
-                if all('\u4e00' <= ch <= '\u9fff' for ch in seg):
+                seg = query[i : i + n]
+                if all("\u4e00" <= ch <= "\u9fff" for ch in seg):
                     tokens.add(seg)
         if not tokens:
             return hits
         like_clauses = []
         params = []
         for t in tokens:
-            like_clauses.append('(name LIKE ? OR id LIKE ? OR summary LIKE ?)')
-            params.extend([f'%{t}%'] * 3)
+            like_clauses.append("(name LIKE ? OR id LIKE ? OR summary LIKE ?)")
+            params.extend([f"%{t}%"] * 3)
 
         # 两轮: 高优先级 (强 fact), 后补 concept
-        high_priority_kinds = ('identity_fact', 'canonical_fact', 'user')
+        high_priority_kinds = ("identity_fact", "canonical_fact", "user")
 
         for kind_filter, take in (
             (high_priority_kinds, top_k),
-            (('concept',), top_k),  # 补足
+            (("concept",), top_k),  # 补足
         ):
             sql = f"""
                 SELECT id, kind, name, summary, importance, recall_count FROM entities
                 WHERE valid_until IS NULL
-                  AND kind IN ({','.join('?' * len(kind_filter))})
-                  AND ({' OR '.join(like_clauses)})
+                  AND kind IN ({",".join("?" * len(kind_filter))})
+                  AND ({" OR ".join(like_clauses)})
                 ORDER BY importance DESC, recall_count DESC
                 LIMIT ?
             """
             cur_params = list(kind_filter) + params + [take]
             rows = self._conn.execute(sql, cur_params).fetchall()
             for r in rows:
-                if r['id'] in seen_ids:
+                if r["id"] in seen_ids:
                     continue
-                seen_ids.add(r['id'])
-                hits.append({
-                    'chunk_id': f'entity:{r["id"]}',
-                    'content': r['summary'] or r['name'],
-                    'source': f'entity:{r["kind"]}',
-                    'timestamp': now(),
-                    'importance': float(r['importance'] or 0.5),
-                    'method': 'entity',
-                    'entity_id': r['id'],
-                    'entity_name': r['name'],
-                    'entity_kind': r['kind'],
-                })
+                seen_ids.add(r["id"])
+                hits.append(
+                    {
+                        "chunk_id": f"entity:{r['id']}",
+                        "content": r["summary"] or r["name"],
+                        "source": f"entity:{r['kind']}",
+                        "timestamp": now(),
+                        "importance": float(r["importance"] or 0.5),
+                        "method": "entity",
+                        "entity_id": r["id"],
+                        "entity_name": r["name"],
+                        "entity_kind": r["kind"],
+                    }
+                )
         return hits
 
     def _rrf_fuse(self, hit_lists: List[List[Dict]], top_k: int) -> List[Dict]:
@@ -886,6 +965,7 @@ class Memory:
         BOOST = 0.05 / rank^0.5 —  trade-off: 不压倒既有排序, 但 stock always 浮顶.
         """
         import math
+
         rrf_score: Dict[str, float] = {}
         rrf_hits: Dict[str, Dict] = {}
         k = 60
@@ -896,14 +976,15 @@ class Memory:
                 # 实体 hit 的 chunk_id = 'entity:<entity_id>'
                 # chunk hit 的 chunk_id = '<chunk_id>'
                 # 同 ID 合并(实体 hit 和 chunk hit 可能是同一事实在不同层的表达)
-                cid = h['chunk_id']
+                cid = h["chunk_id"]
                 rank_score = 1.0 / (k + rank + 1)
                 # [P2+ #4] stock entity boost — 让 kind=stock entity (如 'sh600089') 优先
-                kind = h.get('entity_kind') or (
-                    'stock' if h.get('source', '').startswith('entity:stock') or 'stock' in str(h.get('source', ''))
+                kind = h.get("entity_kind") or (
+                    "stock"
+                    if h.get("source", "").startswith("entity:stock") or "stock" in str(h.get("source", ""))
                     else None
                 )
-                if kind == 'stock' and h.get('method') == 'entity':
+                if kind == "stock" and h.get("method") == "entity":
                     # : stock entity 0.05 / rank^0.5 boost — 浮顶但不让压倒 RRF 排序
                     boost = STOCK_BOOST / math.sqrt(rank + 1)
                     rank_score += boost
@@ -913,7 +994,7 @@ class Memory:
         out = []
         for cid, score in ranked[:top_k]:
             h = rrf_hits[cid]
-            h['rrf_score'] = score
+            h["rrf_score"] = score
             out.append(h)
         return out
 
@@ -928,26 +1009,29 @@ class Memory:
         #  feedback loop: 每条命中的 method + 距离 + 排名 (top-5 by RRF score)
         detail = [
             {
-                'rank': i + 1,
-                'chunk_id': r.get('chunk_id'),
-                'method': r.get('method'),
-                'distance': r.get('distance'),  # 0.0-2.0 越小越相似 (vector_only)
-                'rrf_score': r.get('rrf_score'),  # RRF 融合分数 (rrf strategy)
-                'importance': r.get('importance'),
+                "rank": i + 1,
+                "chunk_id": r.get("chunk_id"),
+                "method": r.get("method"),
+                "distance": r.get("distance"),  # 0.0-2.0 越小越相似 (vector_only)
+                "rrf_score": r.get("rrf_score"),  # RRF 融合分数 (rrf strategy)
+                "importance": r.get("importance"),
             }
             for i, r in enumerate(results[:5])  # top-5
         ]
-        self._conn.execute("""
+        self._conn.execute(
+            """
             INSERT INTO recall_log (query, results_json, graph_hops, latency_ms, created_at, recall_details_json)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            query,
-            json.dumps([r.get('chunk_id') for r in results]),
-            hops,
-            latency_ms,
-            now(),
-            json.dumps(detail, ensure_ascii=False),
-        ))
+        """,
+            (
+                query,
+                json.dumps([r.get("chunk_id") for r in results]),
+                hops,
+                latency_ms,
+                now(),
+                json.dumps(detail, ensure_ascii=False),
+            ),
+        )
         self._conn.commit()
 
     # === 图遍历 ====================
@@ -961,13 +1045,13 @@ class Memory:
     ) -> Dict:
         """子图: start_node 起, max_hops 跳内的所有节点 + 边."""
         # [7/19 P1-1] start_node 格式验证
-        start_node = validate_id(start_node, 'start_node')
+        start_node = validate_id(start_node, "start_node")
         asof = asof or now()
         # BFS: 拿 max_hops 跳内的所有节点
         visited = {start_node}
         frontier = [start_node]
         edges = []
-        for hop in range(max_hops):
+        for _hop in range(max_hops):
             next_frontier = []
             for node in frontier:
                 sql = """
@@ -977,12 +1061,12 @@ class Memory:
                 """
                 params = [node, node, asof, asof]
                 if edge_types:
-                    sql += f' AND relation IN ({",".join("?" * len(edge_types))})'
+                    sql += f" AND relation IN ({','.join('?' * len(edge_types))})"
                     params.extend(edge_types)
                 rows = self._conn.execute(sql, params).fetchall()
                 for r in rows:
                     edges.append(dict(r))
-                    other = r['target_id'] if r['source_id'] == node else r['source_id']
+                    other = r["target_id"] if r["source_id"] == node else r["source_id"]
                     if other not in visited:
                         visited.add(other)
                         next_frontier.append(other)
@@ -991,14 +1075,17 @@ class Memory:
         # 拿节点详情
         nodes = []
         if visited:
-            placeholders = ','.join('?' * len(visited))
-            rows = self._conn.execute(f"""
+            placeholders = ",".join("?" * len(visited))
+            rows = self._conn.execute(
+                f"""
                 SELECT id, kind, name, summary FROM entities
                 WHERE id IN ({placeholders}) AND valid_until IS NULL
-            """, list(visited)).fetchall()
+            """,
+                list(visited),
+            ).fetchall()
             nodes = [dict(r) for r in rows]
 
-        return {'nodes': nodes, 'edges': edges, 'asof': asof}
+        return {"nodes": nodes, "edges": edges, "asof": asof}
 
     # === 内部 helper ====================
 
@@ -1015,12 +1102,12 @@ class Memory:
             dict 含 chunk_id/content/source/timestamp/importance/method + extra
         """
         return {
-            'chunk_id': row['id'],
-            'content': row['content'],
-            'source': row['source'],
-            'timestamp': row['timestamp'],
-            'importance': row['importance'],
-            'method': method,
+            "chunk_id": row["id"],
+            "content": row["content"],
+            "source": row["source"],
+            "timestamp": row["timestamp"],
+            "importance": row["importance"],
+            "method": method,
             **extra,
         }
 
@@ -1044,120 +1131,131 @@ class Memory:
         # [7/19 P1-1 + P1-2 + P1-5] entity 整体清洗 (id 验证 + name/summary/kind 剥离控制 + bidi)
         ent = validate_entity_payload(ent)
         existing = self._conn.execute(
-            "SELECT id FROM entities WHERE id = ? AND valid_until IS NULL",
-            (ent['id'],)
+            "SELECT id FROM entities WHERE id = ? AND valid_until IS NULL", (ent["id"],)
         ).fetchone()
         if existing:
             # [7/19 P1-2] identity_fact 类实体拒绝覆盖 name/aliases/properties (防伪造主人身份)
             # 只能新增 (valid_until 旧版 + 新版)
             existing_kind = self._conn.execute(
-                "SELECT kind FROM entities WHERE id = ? AND valid_until IS NULL",
-                (ent['id'],)
+                "SELECT kind FROM entities WHERE id = ? AND valid_until IS NULL", (ent["id"],)
             ).fetchone()
-            if existing_kind and existing_kind['kind'] == 'identity_fact':
+            if existing_kind and existing_kind["kind"] == "identity_fact":
                 raise ValidationError(
-                    'entity.identity_fact',
-                    'identity_fact entities are immutable; create a new version instead'
+                    "entity.identity_fact", "identity_fact entities are immutable; create a new version instead"
                 )
             # 更新 fields
-            self._conn.execute("""
+            self._conn.execute(
+                """
                 UPDATE entities
                 SET name = COALESCE(?, name),
                     summary = COALESCE(?, summary),
                     aliases_json = COALESCE(?, aliases_json),
                     properties_json = COALESCE(?, properties_json)
                 WHERE id = ? AND valid_until IS NULL
-            """, (
-                ent.get('name'),
-                ent.get('summary'),
-                json.dumps(ent.get('aliases', []), ensure_ascii=False) if 'aliases' in ent else None,
-                json.dumps(ent.get('properties', {}), ensure_ascii=False) if 'properties' in ent else None,
-                ent['id'],
-            ))
+            """,
+                (
+                    ent.get("name"),
+                    ent.get("summary"),
+                    json.dumps(ent.get("aliases", []), ensure_ascii=False) if "aliases" in ent else None,
+                    json.dumps(ent.get("properties", {}), ensure_ascii=False) if "properties" in ent else None,
+                    ent["id"],
+                ),
+            )
         else:
-            self._conn.execute("""
+            self._conn.execute(
+                """
                 INSERT INTO entities (id, kind, name, summary, aliases_json, properties_json,
                                       source, importance, valid_from, valid_until)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-            """, (
-                ent['id'], ent['kind'], ent.get('name'), ent.get('summary'),
-                json.dumps(ent.get('aliases', []), ensure_ascii=False),
-                json.dumps(ent.get('properties', {}), ensure_ascii=False),
-                ent.get('source', 'manual'),
-                clamp01(ent.get('importance', 0.5), 'entities[].importance'),
-                now(),
-            ))
+            """,
+                (
+                    ent["id"],
+                    ent["kind"],
+                    ent.get("name"),
+                    ent.get("summary"),
+                    json.dumps(ent.get("aliases", []), ensure_ascii=False),
+                    json.dumps(ent.get("properties", {}), ensure_ascii=False),
+                    ent.get("source", "manual"),
+                    clamp01(ent.get("importance", 0.5), "entities[].importance"),
+                    now(),
+                ),
+            )
 
     # === 统计 ====================
 
     # [7/19 P2-4] 显式白名单, 防止以后误把 user input 传进来 → SQL injection
-    _ALLOWED_TABLES = frozenset({'entities', 'chunks', 'relations'})
+    _ALLOWED_TABLES = frozenset({"entities", "chunks", "relations"})
 
     def stats(self) -> Dict:
         """统计."""
         stats = {}
         for t in self._ALLOWED_TABLES:  # 永远是 3 个白名单字符串
             total = self._conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
-            active = self._conn.execute(
-                f"SELECT count(*) FROM {t} WHERE valid_until IS NULL"
-            ).fetchone()[0]
-            stats[t] = {'total': total, 'active': active, 'deleted': total - active}
-        stats['vectors'] = self._conn.execute("SELECT count(*) FROM vectors").fetchone()[0]
-        stats['recall_log'] = self._conn.execute("SELECT count(*) FROM recall_log").fetchone()[0]
+            active = self._conn.execute(f"SELECT count(*) FROM {t} WHERE valid_until IS NULL").fetchone()[0]
+            stats[t] = {"total": total, "active": active, "deleted": total - active}
+        stats["vectors"] = self._conn.execute("SELECT count(*) FROM vectors").fetchone()[0]
+        stats["recall_log"] = self._conn.execute("SELECT count(*) FROM recall_log").fetchone()[0]
         return stats
 
 
 # === 自测 ===
-if __name__ == '__main__':
+if __name__ == "__main__":
     with Memory() as m:
         # 1. remember
         cid = m.remember(
-            content='测试: sh600089 建仓 12000 @ 18.96',
-            source='master:0029',
+            content="测试: sh600089 建仓 12000 @ 18.96",
+            source="master:0029",
             importance=0.9,
             entities=[
-                {'id': 'sh600089', 'kind': 'stock', 'name': '特变电工',
-                 'aliases': ['特变电工', 'TBEA'],
-                 'properties': {'ticker': 'sh600089', 'sector': '公用事业'}},
-                {'id': 'master_2077_ling', 'kind': 'person', 'name': '主人 2077'},
+                {
+                    "id": "sh600089",
+                    "kind": "stock",
+                    "name": "特变电工",
+                    "aliases": ["特变电工", "TBEA"],
+                    "properties": {"ticker": "sh600089", "sector": "公用事业"},
+                },
+                {"id": "master_2077_ling", "kind": "person", "name": "主人 2077"},
             ],
             relations=[
-                {'source_id': 'master_2077_ling', 'target_id': 'sh600089',
-                 'relation': '_建仓_于', 'weight': 1.0,
-                 'properties': {'quantity': 12000, 'price': 18.96, 'amount': 227520}},
+                {
+                    "source_id": "master_2077_ling",
+                    "target_id": "sh600089",
+                    "relation": "_建仓_于",
+                    "weight": 1.0,
+                    "properties": {"quantity": 12000, "price": 18.96, "amount": 227520},
+                },
             ],
         )
-        print(f'✅ remember → chunk_id: {cid}')
+        print(f"✅ remember → chunk_id: {cid}")
 
         # 2. relate
-        rid = m.relate('master_2077_ling', 'sh600089', '_关注', weight=0.7,
-                       evidence_chunk_id=cid)
-        print(f'✅ relate → relation_id: {rid}')
+        rid = m.relate("master_2077_ling", "sh600089", "_关注", weight=0.7, evidence_chunk_id=cid)
+        print(f"✅ relate → relation_id: {rid}")
 
         # 3. recall
-        results = m.recall('sh600089 特变电工', top_k=3)
-        print(f'✅ recall → {len(results)} hits')
+        results = m.recall("sh600089 特变电工", top_k=3)
+        print(f"✅ recall → {len(results)} hits")
         for r in results:
-            print(f'  - {r["method"]} | score={r.get("rrf_score", r.get("distance", "?")):.3f} | {r["content"][:60]}')
+            print(f"  - {r['method']} | score={r.get('rrf_score', r.get('distance', '?')):.3f} | {r['content'][:60]}")
 
         # 4. graph_query
-        graph = m.graph_query('sh600089', max_hops=2)
-        print(f'✅ graph_query → {len(graph["nodes"])} nodes, {len(graph["edges"])} edges')
+        graph = m.graph_query("sh600089", max_hops=2)
+        print(f"✅ graph_query → {len(graph['nodes'])} nodes, {len(graph['edges'])} edges")
 
         # 5. stats
         stats = m.stats()
-        print(f'✅ stats: {stats}')
+        print(f"✅ stats: {stats}")
 
         # 6. update
-        new_cid = m.update(cid, reason='修正', new_content='测试修正: sh600089 实际 7,800')
-        print(f'✅ update → new chunk_id: {new_cid}')
+        new_cid = m.update(cid, reason="修正", new_content="测试修正: sh600089 实际 7,800")
+        print(f"✅ update → new chunk_id: {new_cid}")
 
         # 7. forget
-        f = m.forget(rid, target_kind='relation', reason='outdated')
-        print(f'✅ forget → {f}')
+        f = m.forget(rid, target_kind="relation", reason="outdated")
+        print(f"✅ forget → {f}")
 
         # 8. recall again
-        results = m.recall('sh600089', top_k=3)
-        print(f'✅ recall after updates → {len(results)} hits')
+        results = m.recall("sh600089", top_k=3)
+        print(f"✅ recall after updates → {len(results)} hits")
         for r in results:
-            print(f'  - {r["method"]} | {r["content"][:60]}')
+            print(f"  - {r['method']} | {r['content'][:60]}")

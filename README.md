@@ -11,6 +11,8 @@
 [![SQLite-vec](https://img.shields.io/badge/sqlite--vec-0.1.9-orange)](https://github.com/asg017/sqlite-vec)
 [![Bilingual](https://img.shields.io/badge/i18n-EN%20%2B%20中文-blueviolet)](#-i18n)
 [![Local-first](https://img.shields.io/badge/local--first-100%25-brightgreen)](#-design-tenets)
+[![CI](https://github.com/chinesewebman/mnelo/actions/workflows/ci.yml/badge.svg)](https://github.com/chinesewebman/mnelo/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/chinesewebman/mnelo/branch/main/graph/badge.svg)](https://codecov.io/gh/chinesewebman/mnelo)
 
 A memory layer for AI agents. Remembers across **4 dimensions** — vector semantics, knowledge graph, full-text metadata, and entity identity — so every decision can be traced back to the conditions that produced it. One local SQLite file, shared by every local MCP client. **Zero cloud, zero lock-in.**
 

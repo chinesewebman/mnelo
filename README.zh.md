@@ -11,6 +11,8 @@
 [![SQLite-vec](https://img.shields.io/badge/sqlite--vec-0.1.9-orange)](https://github.com/asg017/sqlite-vec)
 [![Bilingual](https://img.shields.io/badge/i18n-EN%20%2B%20中文-blueviolet)](#-i18n-国际化)
 [![Local-first](https://img.shields.io/badge/local--first-100%25-brightgreen)](#-设计原则)
+[![CI](https://github.com/chinesewebman/mnelo/actions/workflows/ci.yml/badge.svg)](https://github.com/chinesewebman/mnelo/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/chinesewebman/mnelo/branch/main/graph/badge.svg)](https://codecov.io/gh/chinesewebman/mnelo)
 
 轻量化 AI agent 记忆系统。**4 个维度的记忆**：向量语义、知识图谱、元数据全文、实体身份——任何决策都能回溯到产生它的全部条件。本地优先 SQLite + 4 路 RRF 召回，零云端、零锁定。
 

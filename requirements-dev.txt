@@ -4,3 +4,12 @@
 
 # Test runner
 pytest>=8.0
+
+# Coverage reporting (for CI --cov flag)
+pytest-cov>=5.0
+
+# Linter (used in CI lint job)
+ruff==0.15.10
+
+# Security scanner (used in CI security job)
+bandit==1.7.10

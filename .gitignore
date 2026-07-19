@@ -47,3 +47,4 @@ venv/
 htmlcov/
 .tox/
 *.cover
+coverage.xml

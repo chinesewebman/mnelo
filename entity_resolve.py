@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 entity_resolve.py — 实体消歧 (7/18 主人口中拍板方案 1 需求)
 
@@ -13,19 +12,20 @@ entity_resolve.py — 实体消歧 (7/18 主人口中拍板方案 1 需求)
 - 2) 相似度合并: 名字相似度 ≥ 0.85 → 合并 (0.85 = 同股票不同名变体)
 - 3)  review API: find_duplicates() 列出所有疑似重复, 人工 review
 """
+
+import difflib
 import json
 import re
 import sqlite3
-import difflib
 import sys
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 # [P2 审计] 复用 memory.now() 而非自己 datetime.now()
 sys.path.insert(0, str(Path(__file__).parent))
 from memory import now
 
-DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')
+DB_PATH = Path("/Users/apple/.hermes/memory/memory.db")
 
 
 def normalize_text(s: str) -> str:
@@ -39,7 +39,7 @@ def normalize_text(s: str) -> str:
     - 下划线 _
     """
     # [Round 3 fix] 用非重叠字符集避免 catastrophic backtracking
-    return re.sub(r'[\s!"#$%&\'()*+,\-./:;<=>?@[\\\]^_`{|}~]+', '', s.lower()).strip()
+    return re.sub(r'[\s!"#$%&\'()*+,\-./:;<=>?@[\\\]^_`{|}~]+', "", s.lower()).strip()
 
 
 def alias_match_score(a: str, b: str) -> float:
@@ -66,17 +66,16 @@ def get_aliases(conn: sqlite3.Connection, entity_id: str) -> List[str]:
         or has no name/aliases_json. JSON parse errors are silently swallowed.
     """
     row = conn.execute(
-        "SELECT name, aliases_json FROM entities WHERE id = ? AND valid_until IS NULL",
-        (entity_id,)
+        "SELECT name, aliases_json FROM entities WHERE id = ? AND valid_until IS NULL", (entity_id,)
     ).fetchone()
     if not row:
         return []
     aliases = []
-    if row['name']:
-        aliases.append(row['name'])
-    if row['aliases_json']:
+    if row["name"]:
+        aliases.append(row["name"])
+    if row["aliases_json"]:
         try:
-            aliases.extend(json.loads(row['aliases_json']))
+            aliases.extend(json.loads(row["aliases_json"]))
         except (json.JSONDecodeError, TypeError):
             pass
     return aliases
@@ -112,31 +111,31 @@ def find_duplicate_candidates(
 
     by_kind: dict = {}
     for r in rows:
-        by_kind.setdefault(r['kind'], []).append(r)
+        by_kind.setdefault(r["kind"], []).append(r)
 
     candidates = []
     pair_count = 0
-    for kind_name, ents in by_kind.items():
+    for _kind_name, ents in by_kind.items():
         if len(ents) < 2:
             continue
         # [Round 3 fix] 单 kind 上限 100 entities (排序取前 100 by name length 短→长,
         # : 长名更可能有 description, 短名更可能是 symbol — 后者重复概率更高)
         if len(ents) > 100:
-            ents = sorted(ents, key=lambda r: len(r['name'] or ''))[:100]
+            ents = sorted(ents, key=lambda r: len(r["name"] or ""))[:100]
         for i in range(len(ents)):
             for j in range(i + 1, len(ents)):
                 # [Round 3 fix] O(N²) 上限
                 pair_count += 1
                 if pair_count > max_pairs:
                     print(
-                        f'[entity_resolve] WARN: max_pairs={max_pairs} reached, '
-                        f'kinds processed: {len(candidates)} candidates so far. '
-                        f'Filter by kind or raise max_pairs.',
+                        f"[entity_resolve] WARN: max_pairs={max_pairs} reached, "
+                        f"kinds processed: {len(candidates)} candidates so far. "
+                        f"Filter by kind or raise max_pairs.",
                         file=sys.stderr,
                     )
                     return candidates
-                a_id, a_name = ents[i]['id'], (ents[i]['name'] or '')
-                b_id, b_name = ents[j]['id'], (ents[j]['name'] or '')
+                a_id, a_name = ents[i]["id"], (ents[i]["name"] or "")
+                b_id, b_name = ents[j]["id"], (ents[j]["name"] or "")
                 if not a_name or not b_name:
                     continue
                 # : 跳过已 supersede / 完全相同 id
@@ -161,7 +160,7 @@ def merge_entities(
     conn: sqlite3.Connection,
     primary_id: str,
     secondary_id: str,
-    reason: str = 'auto-merge',
+    reason: str = "auto-merge",
 ) -> bool:
     """Merge secondary entity into primary (idempotent reverse direction is a no-op).
 
@@ -183,12 +182,10 @@ def merge_entities(
     if primary_id == secondary_id:
         return False
     primary = conn.execute(
-        "SELECT id, name, aliases_json FROM entities WHERE id = ? AND valid_until IS NULL",
-        (primary_id,)
+        "SELECT id, name, aliases_json FROM entities WHERE id = ? AND valid_until IS NULL", (primary_id,)
     ).fetchone()
     secondary = conn.execute(
-        "SELECT id, name, aliases_json FROM entities WHERE id = ? AND valid_until IS NULL",
-        (secondary_id,)
+        "SELECT id, name, aliases_json FROM entities WHERE id = ? AND valid_until IS NULL", (secondary_id,)
     ).fetchone()
     if not primary or not secondary:
         return False
@@ -200,26 +197,34 @@ def merge_entities(
     merged_str = json.dumps(merged, ensure_ascii=False)
 
     # 2. primary aliases 更新
-    conn.execute("""
+    conn.execute(
+        """
         UPDATE entities SET aliases_json = ?
         WHERE id = ? AND valid_until IS NULL
-    """, (merged_str, primary_id))
+    """,
+        (merged_str, primary_id),
+    )
 
     # 3. secondary 的入边 / 出边重指向 primary (1 个 SQL, 同时处理 src + tgt)
-    conn.execute("""
+    conn.execute(
+        """
         UPDATE relations
         SET target_id = CASE WHEN target_id = ? THEN ? ELSE target_id END,
             source_id = CASE WHEN source_id = ? THEN ? ELSE source_id END
         WHERE (target_id = ? OR source_id = ?) AND valid_until IS NULL
           AND NOT (source_id = ? AND target_id = ?)  -- 排除自环
-    """, (secondary_id, primary_id, secondary_id, primary_id,
-          secondary_id, secondary_id, primary_id, primary_id))
+    """,
+        (secondary_id, primary_id, secondary_id, primary_id, secondary_id, secondary_id, primary_id, primary_id),
+    )
 
     # 4. secondary soft delete
-    conn.execute("""
+    conn.execute(
+        """
         UPDATE entities SET valid_until = ?, superseded_by = ?
         WHERE id = ? AND valid_until IS NULL
-    """, (now(), primary_id, secondary_id))
+    """,
+        (now(), primary_id, secondary_id),
+    )
 
     conn.commit()
     return True
@@ -240,7 +245,7 @@ def find_duplicates_report(conn: sqlite3.Connection, threshold: float = 0.85) ->
     # [Round 3 fix] 加 max_pairs 防 live DB hang
     candidates = find_duplicate_candidates(conn, threshold, max_pairs=500)
     if not candidates:
-        return "✅ 无重复 entity (threshold={})".format(threshold)
+        return f"✅ 无重复 entity (threshold={threshold})"
 
     lines = [f"# 重复 entity 候选 (threshold={threshold})", ""]
     lines.append(f"共 {len(candidates)} 组疑似重复")
@@ -249,31 +254,28 @@ def find_duplicates_report(conn: sqlite3.Connection, threshold: float = 0.85) ->
     lines.append("|---|---|---|---|")
     for a, b, score, reason in candidates:
         lines.append(f"| `{a}` | `{b}` | {score:.3f} | {reason} |")
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 # === 自测 ===
-if __name__ == '__main__':
+if __name__ == "__main__":
     conn = sqlite3.connect(str(DB_PATH), timeout=10)
     conn.row_factory = sqlite3.Row
-    print('=== Entity 数量 ===')
-    for kind in ['stock', 'concept', 'person', 'canonical_fact']:
-        n = conn.execute(
-            "SELECT count(*) FROM entities WHERE kind = ? AND valid_until IS NULL",
-            (kind,)
-        ).fetchone()[0]
-        print(f'  {kind}: {n}')
+    print("=== Entity 数量 ===")
+    for kind in ["stock", "concept", "person", "canonical_fact"]:
+        n = conn.execute("SELECT count(*) FROM entities WHERE kind = ? AND valid_until IS NULL", (kind,)).fetchone()[0]
+        print(f"  {kind}: {n}")
 
     print()
-    print('=== 重复候选 (stock) ===')
-    cands = find_duplicate_candidates(conn, threshold=0.7, kind='stock')
+    print("=== 重复候选 (stock) ===")
+    cands = find_duplicate_candidates(conn, threshold=0.7, kind="stock")
     for a, b, score, reason in cands[:20]:
-        print(f'  {a} --{score:.3f}--> {b} ({reason})')
+        print(f"  {a} --{score:.3f}--> {b} ({reason})")
 
     print()
-    print('=== 重复候选 (canonical_fact) ===')
-    cands = find_duplicate_candidates(conn, threshold=0.6, kind='canonical_fact')
+    print("=== 重复候选 (canonical_fact) ===")
+    cands = find_duplicate_candidates(conn, threshold=0.6, kind="canonical_fact")
     for a, b, score, reason in cands[:20]:
-        print(f'  {a} --{score:.3f}--> {b} ({reason})')
+        print(f"  {a} --{score:.3f}--> {b} ({reason})")
 
     conn.close()

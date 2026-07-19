@@ -32,7 +32,7 @@ le="0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, +Inf"
 Output format: Prometheus text exposition format
 https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format
 """
-import os
+
 import sys
 import threading
 import time
@@ -40,7 +40,16 @@ from typing import Dict, List, Optional, Tuple
 
 # Latency histogram buckets (seconds)
 _LATENCY_BUCKETS: Tuple[float, ...] = (
-    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0,
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
 )
 _INF = float("inf")
 
@@ -54,7 +63,7 @@ class Counter:
         c.inc(method='graph', amount=5)
     """
 
-    __slots__ = ('_name', '_help', '_labelnames', '_values', '_lock')
+    __slots__ = ("_name", "_help", "_labelnames", "_values", "_lock")
 
     def __init__(self, name: str, help: str, labelnames: Tuple[str, ...] = ()):
         self._name = name
@@ -72,26 +81,24 @@ class Counter:
         return self._values.get(self._key(labels), 0.0)
 
     def _key(self, labels: Dict[str, str]) -> Tuple[str, ...]:
-        return tuple(labels.get(n, '') for n in self._labelnames)
+        return tuple(labels.get(n, "") for n in self._labelnames)
 
     def render(self) -> List[str]:
         """Render in Prometheus text format."""
         lines = [
-            f'# HELP {self._name} {self._help}',
-            f'# TYPE {self._name} counter',
+            f"# HELP {self._name} {self._help}",
+            f"# TYPE {self._name} counter",
         ]
         with self._lock:
             if not self._values:
-                lines.append(f'{self._name} 0')
+                lines.append(f"{self._name} 0")
                 return lines
             for key, value in sorted(self._values.items()):
                 if self._labelnames:
-                    labels_str = ','.join(
-                        f'{n}="{v}"' for n, v in zip(self._labelnames, key)
-                    )
-                    lines.append(f'{self._name}{{{labels_str}}} {value}')
+                    labels_str = ",".join(f'{n}="{v}"' for n, v in zip(self._labelnames, key))
+                    lines.append(f"{self._name}{{{labels_str}}} {value}")
                 else:
-                    lines.append(f'{self._name} {value}')
+                    lines.append(f"{self._name} {value}")
         return lines
 
 
@@ -103,7 +110,7 @@ class Gauge:
         g.set(123.45)
     """
 
-    __slots__ = ('_name', '_help', '_labelnames', '_values', '_lock')
+    __slots__ = ("_name", "_help", "_labelnames", "_values", "_lock")
 
     def __init__(self, name: str, help: str, labelnames: Tuple[str, ...] = ()):
         self._name = name
@@ -124,25 +131,23 @@ class Gauge:
         return self._values.get(self._key(labels), 0.0)
 
     def _key(self, labels: Dict[str, str]) -> Tuple[str, ...]:
-        return tuple(labels.get(n, '') for n in self._labelnames)
+        return tuple(labels.get(n, "") for n in self._labelnames)
 
     def render(self) -> List[str]:
         lines = [
-            f'# HELP {self._name} {self._help}',
-            f'# TYPE {self._name} gauge',
+            f"# HELP {self._name} {self._help}",
+            f"# TYPE {self._name} gauge",
         ]
         with self._lock:
             if not self._values:
-                lines.append(f'{self._name} 0')
+                lines.append(f"{self._name} 0")
                 return lines
             for key, value in sorted(self._values.items()):
                 if self._labelnames:
-                    labels_str = ','.join(
-                        f'{n}="{v}"' for n, v in zip(self._labelnames, key)
-                    )
-                    lines.append(f'{self._name}{{{labels_str}}} {value}')
+                    labels_str = ",".join(f'{n}="{v}"' for n, v in zip(self._labelnames, key))
+                    lines.append(f"{self._name}{{{labels_str}}} {value}")
                 else:
-                    lines.append(f'{self._name} {value}')
+                    lines.append(f"{self._name} {value}")
         return lines
 
 
@@ -157,7 +162,7 @@ class Histogram:
         h.observe(0.012, method='vector')
     """
 
-    __slots__ = ('_name', '_help', '_labelnames', '_buckets', '_data', '_lock')
+    __slots__ = ("_name", "_help", "_labelnames", "_buckets", "_data", "_lock")
 
     def __init__(self, name: str, help: str, labelnames: Tuple[str, ...] = ()):
         self._name = name
@@ -169,57 +174,50 @@ class Histogram:
         self._lock = threading.Lock()
 
     def observe(self, value: float, **labels) -> None:
-        key = tuple(labels.get(n, '') for n in self._labelnames)
+        key = tuple(labels.get(n, "") for n in self._labelnames)
         with self._lock:
             if key not in self._data:
                 self._data[key] = {
-                    'buckets': [0] * (len(self._buckets) + 1),  # +1 for +Inf
-                    'sum': 0.0,
-                    'count': 0,
+                    "buckets": [0] * (len(self._buckets) + 1),  # +1 for +Inf
+                    "sum": 0.0,
+                    "count": 0,
                 }
             entry = self._data[key]
-            entry['sum'] += value
-            entry['count'] += 1
+            entry["sum"] += value
+            entry["count"] += 1
             for i, le in enumerate(self._buckets):
                 if value <= le:
-                    entry['buckets'][i] += 1
-            entry['buckets'][-1] += 1  # +Inf bucket
+                    entry["buckets"][i] += 1
+            entry["buckets"][-1] += 1  # +Inf bucket
 
     def render(self) -> List[str]:
         lines = [
-            f'# HELP {self._name} {self._help}',
-            f'# TYPE {self._name} histogram',
+            f"# HELP {self._name} {self._help}",
+            f"# TYPE {self._name} histogram",
         ]
         with self._lock:
             for key, entry in sorted(self._data.items()):
-                label_str = (
-                    ','.join(f'{n}="{v}"' for n, v in zip(self._labelnames, key))
-                    if self._labelnames else ''
-                )
+                label_str = ",".join(f'{n}="{v}"' for n, v in zip(self._labelnames, key)) if self._labelnames else ""
                 # Render cumulative buckets
                 for i, le in enumerate(self._buckets):
-                    count = entry['buckets'][i]
+                    count = entry["buckets"][i]
                     if label_str:
-                        lines.append(
-                            f'{self._name}_bucket{{{label_str},le="{le}"}} {count}'
-                        )
+                        lines.append(f'{self._name}_bucket{{{label_str},le="{le}"}} {count}')
                     else:
                         lines.append(f'{self._name}_bucket{{le="{le}"}} {count}')
                 # +Inf bucket
-                count_inf = entry['buckets'][-1]
+                count_inf = entry["buckets"][-1]
                 if label_str:
-                    lines.append(
-                        f'{self._name}_bucket{{{label_str},le="+Inf"}} {count_inf}'
-                    )
+                    lines.append(f'{self._name}_bucket{{{label_str},le="+Inf"}} {count_inf}')
                 else:
                     lines.append(f'{self._name}_bucket{{le="+Inf"}} {count_inf}')
                 # sum + count
                 if label_str:
-                    lines.append(f'{self._name}_sum{{{label_str}}} {entry["sum"]:.6f}')
-                    lines.append(f'{self._name}_count{{{label_str}}} {entry["count"]}')
+                    lines.append(f"{self._name}_sum{{{label_str}}} {entry['sum']:.6f}")
+                    lines.append(f"{self._name}_count{{{label_str}}} {entry['count']}")
                 else:
-                    lines.append(f'{self._name}_sum {entry["sum"]:.6f}')
-                    lines.append(f'{self._name}_count {entry["count"]}')
+                    lines.append(f"{self._name}_sum {entry['sum']:.6f}")
+                    lines.append(f"{self._name}_count {entry['count']}")
         return lines
 
 
@@ -235,80 +233,80 @@ class Registry:
 
         # Recall metrics
         self.recall_total = Counter(
-            'mnelo_recall_total',
-            'Total recall calls broken down by lane method',
-            labelnames=('method',),
+            "mnelo_recall_total",
+            "Total recall calls broken down by lane method",
+            labelnames=("method",),
         )
         self.recall_latency = Histogram(
-            'mnelo_recall_latency_seconds',
-            'Recall latency distribution by lane method (seconds)',
-            labelnames=('method',),
+            "mnelo_recall_latency_seconds",
+            "Recall latency distribution by lane method (seconds)",
+            labelnames=("method",),
         )
         self.recall_hits = Counter(
-            'mnelo_recall_hits_total',
-            'Recall result hit counts (empty = no results returned)',
-            labelnames=('result',),
+            "mnelo_recall_hits_total",
+            "Recall result hit counts (empty = no results returned)",
+            labelnames=("result",),
         )
         self.recall_top_k = Counter(
-            'mnelo_recall_top_k_total',
-            'Recall call counts by top_k parameter',
-            labelnames=('k',),
+            "mnelo_recall_top_k_total",
+            "Recall call counts by top_k parameter",
+            labelnames=("k",),
         )
 
         # Write metrics
         self.remember_total = Counter(
-            'mnelo_remember_total',
-            'Total remember() calls by source',
-            labelnames=('source',),
+            "mnelo_remember_total",
+            "Total remember() calls by source",
+            labelnames=("source",),
         )
         self.forget_total = Counter(
-            'mnelo_forget_total',
-            'Total forget() calls by target kind',
-            labelnames=('kind',),
+            "mnelo_forget_total",
+            "Total forget() calls by target kind",
+            labelnames=("kind",),
         )
         self.relate_total = Counter(
-            'mnelo_relate_total',
-            'Total relate() calls',
+            "mnelo_relate_total",
+            "Total relate() calls",
         )
         self.update_total = Counter(
-            'mnelo_update_total',
-            'Total update() calls',
+            "mnelo_update_total",
+            "Total update() calls",
         )
 
         # DB stats gauges (cached, TTL=10s)
         self.db_entities = Gauge(
-            'mnelo_db_entities',
-            'Current entity count (live)',
+            "mnelo_db_entities",
+            "Current entity count (live)",
         )
         self.db_chunks = Gauge(
-            'mnelo_db_chunks',
-            'Current chunk count (live)',
+            "mnelo_db_chunks",
+            "Current chunk count (live)",
         )
         self.db_relations = Gauge(
-            'mnelo_db_relations',
-            'Current relation count (live)',
+            "mnelo_db_relations",
+            "Current relation count (live)",
         )
         self.db_vectors = Gauge(
-            'mnelo_db_vectors',
-            'Current vector count (live)',
+            "mnelo_db_vectors",
+            "Current vector count (live)",
         )
         self.db_size_bytes = Gauge(
-            'mnelo_db_size_bytes',
-            'SQLite db file size in bytes',
+            "mnelo_db_size_bytes",
+            "SQLite db file size in bytes",
         )
         self.wal_pages_flushed = Gauge(
-            'mnelo_wal_pages_flushed_total',
-            'Total WAL pages flushed since startup',
+            "mnelo_wal_pages_flushed_total",
+            "Total WAL pages flushed since startup",
         )
 
         # Process gauges
         self.uptime_seconds = Gauge(
-            'mnelo_uptime_seconds',
-            'Process uptime in seconds since startup',
+            "mnelo_uptime_seconds",
+            "Process uptime in seconds since startup",
         )
         self.process_rss_bytes = Gauge(
-            'mnelo_process_rss_bytes',
-            'Process resident set size in bytes (RSS)',
+            "mnelo_process_rss_bytes",
+            "Process resident set size in bytes (RSS)",
         )
 
         # DB cache state (TTL tracking)
@@ -321,11 +319,13 @@ class Registry:
         # RSS via psutil if available, else /proc/self/statm or fallback
         try:
             import resource  # noqa: F401 — macOS doesn't expose /proc
+
             # macOS uses getrusage()
             import resource as _r
+
             usage = _r.getrusage(_r.RUSAGE_SELF)
             # ru_maxrss is KB on macOS, bytes on Linux
-            if sys.platform == 'darwin':
+            if sys.platform == "darwin":
                 self.process_rss_bytes.set(usage.ru_maxrss * 1024)
             else:
                 self.process_rss_bytes.set(usage.ru_maxrss)
@@ -348,21 +348,22 @@ class Registry:
             stats = memory_instance.stats()
             # stats() shape: {'entities': {'total', 'active', 'deleted'}, 'chunks': {...},
             #                 'relations': {...}, 'vectors': N, 'recall_log': N}
-            entities_table = stats.get('entities', {})
-            chunks_table = stats.get('chunks', {})
-            relations_table = stats.get('relations', {})
-            self.db_entities.set(entities_table.get('total', 0))
-            self.db_chunks.set(chunks_table.get('total', 0))
-            self.db_relations.set(relations_table.get('total', 0))
-            self.db_vectors.set(stats.get('vectors', 0))
+            entities_table = stats.get("entities", {})
+            chunks_table = stats.get("chunks", {})
+            relations_table = stats.get("relations", {})
+            self.db_entities.set(entities_table.get("total", 0))
+            self.db_chunks.set(chunks_table.get("total", 0))
+            self.db_relations.set(relations_table.get("total", 0))
+            self.db_vectors.set(stats.get("vectors", 0))
             # No db size in stats() — try fs path
             try:
                 import os
                 from pathlib import Path
+
                 # Memory doesn't expose DB_PATH publicly; use ENV MNELO_MEMORY_CONFIG path
-                cfg_path = os.environ.get('MNELO_MEMORY_CONFIG', '')
+                cfg_path = os.environ.get("MNELO_MEMORY_CONFIG", "")
                 if cfg_path:
-                    db_path = Path(cfg_path).parent / 'memory.db'
+                    db_path = Path(cfg_path).parent / "memory.db"
                     if db_path.exists():
                         self.db_size_bytes.set(db_path.stat().st_size)
             except Exception:
@@ -398,7 +399,7 @@ class Registry:
         lines.extend(self.uptime_seconds.render())
         lines.extend(self.process_rss_bytes.render())
         # Prometheus convention: end with newline
-        return '\n'.join(lines) + '\n'
+        return "\n".join(lines) + "\n"
 
 
 # === Singleton accessor ===

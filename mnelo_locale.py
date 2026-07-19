@@ -14,13 +14,12 @@ locale.py — mnelo locale detection + i18n message resolver.
 5. fallback: zh → en, en → en (no fallback)
 """
 
-import os
 import locale as _syslocale
+import os
 from typing import Optional
 
-
 # 默认 locales (可扩展)
-SUPPORTED_LOCALES = ['en', 'zh', 'zh-CN', 'zh-TW']
+SUPPORTED_LOCALES = ["en", "zh", "zh-CN", "zh-TW"]
 
 
 def get_locale() -> str:
@@ -35,12 +34,12 @@ def get_locale() -> str:
         'en' | 'zh' | ...
     """
     # 1.  override
-    env_lang = os.environ.get('MNELO_MEMORY_LANG')
+    env_lang = os.environ.get("MNELO_MEMORY_LANG")
     if env_lang:
         return _normalize(env_lang)
 
     # 2.  POSIX
-    for var in ['LC_ALL', 'LANG']:
+    for var in ["LC_ALL", "LANG"]:
         val = os.environ.get(var)
         if val:
             return _normalize(val)
@@ -54,20 +53,20 @@ def get_locale() -> str:
         pass
 
     # 4. fallback
-    return 'en'
+    return "en"
 
 
 def _normalize(lang: str) -> str:
     """: zh_CN.UTF-8 → zh, en-US → en, zh-TW → zh-TW ()."""
     if not lang:
-        return 'en'
-    lang = lang.strip().replace('-', '_')
+        return "en"
+    lang = lang.strip().replace("-", "_")
     # zh_CN.UTF-8 → zh_CN
-    parts = lang.split('_')
+    parts = lang.split("_")
     primary = parts[0].lower()
     # 简化: zh_CN/zh_TW 都归 'zh' (主用户 zh)
-    if primary == 'zh':
-        return 'zh'
+    if primary == "zh":
+        return "zh"
     return primary
 
 
@@ -103,10 +102,11 @@ def t(msg_id: str, **kwargs) -> str:
         当前 locale 的 string.  fallback: msg_id 未找到 → 'en' 表; 都没有 → msg_id 本身.
     """
     from i18n_messages import MESSAGES
+
     loc = current_locale()
     table = MESSAGES.get(msg_id, {})
     # 当前 locale, fallback 到 'en'
-    text = table.get(loc) or table.get('en') or msg_id
+    text = table.get(loc) or table.get("en") or msg_id
     if kwargs:
         try:
             return text.format(**kwargs)
