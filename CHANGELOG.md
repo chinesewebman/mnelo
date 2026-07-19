@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.0 — 2026-07-19
+
+test(mcp_server): add 13 tests for uncovered dispatcher + SSE paths
+
+- Targets previously-uncovered lines in mcp_server.py: `_handle_simple` id_field wrap path (remember/relate/update), `_call_tool` unknown tool name branch, `run_sse` AuthError propagation + uvicorn.run dispatch, `_build_sse_app` + `BearerAuthMiddleware` wiring.
+- Plus integration tests: ImportError fallback when MCP libs missing, `_resolve_server_defaults` config-fallback path, `_build_sse_app` /sse + /messages/ route registration.
+- Total: 195 → 208 passed (1 skipped).
+
 ## v0.3.9 — 2026-07-19
 
 test(locale): add 24 tests for mnelo_locale (0% → 100% coverage)
