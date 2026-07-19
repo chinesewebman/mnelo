@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.4.1 — 2026-07-19
+
+test: push coverage 88% → 89% via 44 new tests across 4 modules
+
+- **mnelo_locale.py** (0% fragmented → 100%): replaced `importlib.reload()` with cache reset (avoids coverage fragmentation).
+- **entity_resolve.py** (76% → 84% LIVE): +25 tests for `normalize_text`, `alias_match_score`, `get_aliases` bad-JSON path, `find_duplicate_candidates` empty-name/alias-conflict branches, `merge_entities` same-id/missing-id, `find_duplicates_report` empty/with-candidates.
+- **memory.py** (89% → 90%): +13 tests for `now()` tz fallback, warm-up disabled config path, recall strategy branches (`graph_only`/`meta_only`/`entity_only`/unknown), `_vector_recall` exception handling, `forget` unknown kind, `_entity_recall` empty content, `_graph_recall` empty seeds, `_meta_recall` with source filter.
+- **embedder.py** (83% → 85%): +6 tests for `embed_batch`, `get_embedder` singleton, `EMBED_DIM` constant.
+- Total: 208 → 252 passed (1 skipped, 44 new tests).
+
 ## v0.4.0 — 2026-07-19
 
 test(mcp_server): add 13 tests for uncovered dispatcher + SSE paths
