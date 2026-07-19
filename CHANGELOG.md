@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.4.8 — 2026-07-19
+
+test(mcp_server): push REPO coverage 75% → 87% via SSE/CLI paths (+21 tests)
+
+- **mcp_server.py** (REPO 75% → 87%): +21 tests targeting SSE/CLI/main() branches:
+  - `_call_tool` rate-limit error JSON return (lines 386-388)
+  - `run_sse` config defaults fallback (lines 530-532)
+  - `_validate_loopback_host` whitelist: `127.x` / `localhost` allowed, `0.0.0.0` / LAN / public rejected (lines 438-450)
+  - `_check_port_available` (free port `True` / occupied port `False`, lines 452-466)
+  - `main()` `_MCP_AVAILABLE` check + `sys.exit(1)` (lines 574-578)
+  - `main()` pre-warm Memory at startup (lines 582-583)
+  - `main()` stdio / SSE branch dispatch (lines 586-596)
+  - `main()` `--auth-token-file` path + `AuthError` → `sys.exit(2)` (line 596)
+  - `__main__` guard via subprocess smoke test (line 600)
+- Total: 358 → 379 passed (1 skipped, +21 tests).
+
 ## v0.4.7 — 2026-07-19
 
 test(mcp_server): push REPO coverage 63% → 75% via custom handlers (+18 tests)
