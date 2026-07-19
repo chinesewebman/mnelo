@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.4.15 — 2026-07-19
+
+docs(readme): fix 5 polish issues + clean GitHub repo About
+
+Owner feedback on repo landing page:
+
+1. **Repo About (gh CLI)** — removed surrounding `"` and `\n\n` escape characters.
+   - Before: `"轻量化 AI agent 记忆系统。...\n\nLightweight memory..."`
+   - After: `Lightweight memory layer for AI agents: vectors + graph + metadata + entities. Local SQLite, 4-way RRF.`
+2. **Memory footprint table** — removed ephemeral `PID 39344` (changes every restart).
+   - Renamed column header `Measured?` / `实测?` → `Source` / `数据来源`.
+   - Replaced `✅ RSS, PID 39344` with `RSS measured via ps -o rss`.
+3. **Test coverage section** — removed changelog-style progression.
+   - Dropped `429 tests across 12 rounds (v0.4.0 → v0.4.11)` bullet list.
+   - Replaced with concise per-module coverage table (current state only).
+   - README is not CHANGELOG — owner reminder.
+4. **Design tenets** — removed broken promise.
+   - Deleted `7. Bounded. Soft-delete chain has a max depth; old versions are GC'd by a cron job (not implemented yet, see TODO).`
+   - The `not implemented yet` contradicts the `Boring & predictable` tenet.
+5. **Run tests section** — `50 passed in ~3s` → `450 passed, 1 skipped in ~16s`.
+   - Was the last stale `50 passed` reference (Test coverage was already fixed in v0.4.12).
+
+Mirrored all changes to `README.zh.md`. Variable rename (HERMES_MEMORY_* → MNELO_MEMORY_*) tracked in v0.5.0.
+
 ## v0.4.14 — 2026-07-19
 
 test(i18n): every key in MESSAGES resolvable + zh/en pair + format args (+21 tests)
