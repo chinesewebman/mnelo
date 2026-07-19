@@ -458,7 +458,11 @@ class TestVec0RowFactory(unittest.TestCase):
                         'top_k': 3,
                         'strategy': 'vector_only',
                     })
-                    return r1.content[0].text
+                    # [v0.5.12] mcp_server.call_tool returns 2 TextContent blocks:
+                    #   [0] = 🌳 echo line (human-readable)
+                    #   [1] = JSON result (machine-readable)
+                    # Real consumers should read [1]; [0] is for visual feedback.
+                    return r1.content[1].text
 
         result = asyncio.run(_recall())
         data = json.loads(result)
