@@ -33,10 +33,14 @@ jobs:
         run: pip install ruff==0.15.10
 
       - name: Ruff check
-        run: ruff check *.py
+        run: ruff check *.py tests/
 
-      - name: Ruff format check
-        run: ruff format --check *.py
+      - name: Ruff format check (src only)
+        # Skip tests/ — many pre-existing files use a different formatting style
+        # (mostly single-quote strings, which ruff would touch). Tests are
+        # already covered by `ruff check` for lint issues, and pytest validates
+        # correctness. Reformatting 30 test files in one go is a separate refactor.
+        run: ruff format --check *.py scripts/*.py
 
   # ─── Stage 2: Test matrix ───────────────────────────────────────────
   test:

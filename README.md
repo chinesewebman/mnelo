@@ -16,7 +16,7 @@
 
 A memory layer for AI agents. Remembers across **4 dimensions** — vector semantics, knowledge graph, full-text metadata, and entity identity — so every decision can be traced back to the conditions that produced it. One local SQLite file, shared by every local MCP client. **Zero cloud, zero lock-in.**
 
-**Why 4-way recall wins**: each lane catches what the others miss — vector misses literal terms (stock codes, ticker symbols), meta misses semantic paraphrases, graph misses orphaned chunks with no entity links, entity misses long-form prose. Four lanes run in parallel (WAL-mode concurrent reads, p50 = **12.5 ms** / p95 = **36 ms**), and RRF fuses their ranks without any score normalization — so you get high recall without per-lane threshold tuning. See [🔀 What is RRF?](#-what-is-rrf) below for the math, and [At a glance](#-at-a-glance) for the latency numbers.
+**Why 4-way recall wins**: each lane catches what the others miss — vector misses literal terms (stock codes, ticker symbols), meta misses semantic paraphrases, graph misses orphaned chunks with no entity links, entity misses long-form prose. Four lanes run in parallel (WAL-mode concurrent reads, p50 = **8.5 ms** / p95 = **10 ms** on baseline 6.3k chunks), and RRF fuses their ranks without any score normalization — so you get high recall without per-lane threshold tuning. See [🔀 What is RRF?](#-what-is-rrf) below for the math, and [At a glance](#-at-a-glance) for the latency numbers.
 
 ---
 
@@ -29,7 +29,7 @@ A memory layer for AI agents. Remembers across **4 dimensions** — vector seman
 | **Graph** | Native relations table, 2-hop BFS traversal |
 | **Recall** | 4-way hybrid: `vector + graph + meta + entity` → RRF fusion |
 | **Protocol** | MCP over SSE (127.0.0.1:8086) |
-| **Latency (warm)** | p50 = **12.5 ms**, p95 = **36 ms** (4-way concurrent) |
+| **Latency (warm)** | p50 = **8.5 ms**, p95 = **10 ms** (baseline 6.3k chunks, 4-way concurrent) |
 | **LOC** | ~3000 lines of Python (memory.py + scripts + client + tests) |
 | **Dependencies** | 3 pip installs: `mcp[cli]`, `sqlite-vec`, `fastembed` |
 | **i18n** | English + 中文 first-class, locale auto-detect |
@@ -115,17 +115,31 @@ Exposes 7 tools (`memory_remember`, `memory_recall`, `memory_relate`, `memory_fo
 
 ## 📊 Benchmark results
 
-All numbers measured on a single MacBook (M-series), `memory.db` = **23.9 MB / 4,606 entities / 4,186 chunks / 15,749 relations / 4,484 vectors**.
+All numbers measured on a single MacBook (M-series), `memory.db` = **~24 MB / 4,300 entities / 6,300 chunks / 18,500 relations / 5,200 vectors**.
 
 ### Latency
 
 | Metric | Value | Notes |
 |---|---|---|
-| **p50** | **12.5 ms** | warm path, 4-way concurrent |
-| **p95** | **36.2 ms** | warm path, 4-way concurrent |
-| **avg** | 34.4 ms | 24h warm-path average |
-| **max** | 2980 ms | first recall after cold start (embedder warm-up) |
+| **p50** | **8.5 ms** | warm path on baseline 6.3k chunks, 4-way concurrent |
+| **p95** | **10 ms** | same |
+| **p50 (10k seed)** | **23 ms** | with `scripts/benchmark.py --chunks 10000` |
+| **p95 (10k seed)** | **29 ms** | vector search scales with chunk count |
+| **avg (24h warm)** | 34.4 ms | includes sporadic empties + cold-start outliers |
+| **max (cold)** | 2980 ms | first recall after MCP launch (embedder warm-up) |
 | **cold start** | ~1.1 s | MCP server launch + embedder model load |
+
+Reproduce these numbers yourself:
+
+```bash
+python scripts/benchmark.py --chunks 10000 --queries 100 --json bench.json
+cat bench.json
+```
+
+The benchmark script seeds N synthetic chunks (deterministic content), warms
+up caches (5 queries), runs K measured queries with `time.perf_counter()`,
+and reports `p50/p95/p99 + min/max/mean/stdev + empty_count + DB stats`.
+All seed data is cleaned up after the run — no DB pollution.
 
 ### Memory footprint
 

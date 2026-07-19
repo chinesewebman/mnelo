@@ -21,6 +21,7 @@ Exit codes:
   1 = degraded (something off, alert sent)
   2 = failed (MCP down or DB inaccessible)
 """
+
 import json
 import os
 
@@ -43,6 +44,7 @@ except ImportError:
     def _t(msg_id, **kwargs):
         return msg_id.format(**kwargs) if kwargs else msg_id
 
+
 # Paths
 DB_PATH = Path("/Users/apple/.hermes/memory/memory.db")
 MCP_PORT = 8086
@@ -58,7 +60,9 @@ def check_mcp_alive():
         # lsof is the source of truth — listens means it's actually serving
         result = subprocess.run(
             ["lsof", "-tiTCP:%d" % MCP_PORT, "-sTCP:LISTEN"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         pid_str = result.stdout.strip().split("\n")[0] if result.stdout.strip() else None
         if not pid_str:
@@ -67,7 +71,9 @@ def check_mcp_alive():
         # etime
         ps = subprocess.run(
             ["ps", "-p", str(pid), "-o", "etime="],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         etime = ps.stdout.strip()
         # Parse [[DD-]HH:]MM:SS
@@ -124,9 +130,7 @@ def db_stats(db_path):
         # [7/19 P2-4] 显式白名单, 防止以后误把 user input 传进来 → SQL injection
         for table in ("entities", "chunks", "relations"):
             try:
-                row = con.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE valid_until IS NULL"
-                ).fetchone()
+                row = con.execute(f"SELECT COUNT(*) FROM {table} WHERE valid_until IS NULL").fetchone()
                 out[f"{table}_active"] = row[0]
                 total = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                 out[f"{table}_total"] = total
@@ -137,6 +141,7 @@ def db_stats(db_path):
         # vec0 virtual table — load sqlite-vec, count via vectors_rowids()
         try:
             import sqlite_vec
+
             con.enable_load_extension(True)
             sqlite_vec.load(con)
             con.enable_load_extension(False)
@@ -160,14 +165,17 @@ def db_stats(db_path):
         # [P1-v2 审计后] recall_log 聚合 (24h window, 查质量)
         try:
             cutoff = (datetime.now(BJT) - timedelta(hours=24)).isoformat()
-            row = con.execute("""
+            row = con.execute(
+                """
                 SELECT COUNT(*),
                        AVG(latency_ms),
                        MIN(latency_ms),
                        MAX(latency_ms)
                 FROM recall_log
                 WHERE created_at > ?
-            """, (cutoff,)).fetchone()
+            """,
+                (cutoff,),
+            ).fetchone()
             cnt, avg_lat, min_lat, max_lat = row
             out["recall_24h_count"] = cnt or 0
             out["recall_24h_avg_latency_ms"] = round(avg_lat, 1) if avg_lat else 0
@@ -176,11 +184,14 @@ def db_stats(db_path):
 
             # latency p50 / p95 (percentile via SQL)
             if cnt and cnt >= 5:
-                lat_rows = con.execute("""
+                lat_rows = con.execute(
+                    """
                     SELECT latency_ms FROM recall_log
                     WHERE created_at > ?
                     ORDER BY latency_ms
-                """, (cutoff,)).fetchall()
+                """,
+                    (cutoff,),
+                ).fetchall()
                 lats = [r[0] for r in lat_rows if r[0] is not None]
                 if lats:
                     p50_idx = int(len(lats) * 0.50)
@@ -189,11 +200,14 @@ def db_stats(db_path):
                     out["recall_24h_p95_ms"] = round(lats[p95_idx], 1) if p95_idx < len(lats) else 0
 
             # 空 hits 数 (results_json 是 '[]' 或 'null')
-            out["recall_24h_empty_count"] = con.execute("""
+            out["recall_24h_empty_count"] = con.execute(
+                """
                 SELECT COUNT(*) FROM recall_log
                 WHERE created_at > ?
                   AND (results_json = '[]' OR results_json IS NULL OR results_json = 'null')
-            """, (cutoff,)).fetchone()[0]
+            """,
+                (cutoff,),
+            ).fetchone()[0]
         except Exception as e:
             out["recall_24h_error"] = str(e)[:120]
 
@@ -207,19 +221,16 @@ def db_stats(db_path):
                 ORDER BY cnt DESC
                 LIMIT 10
             """).fetchall()
-            out["entity_kind_distribution"] = [
-                {"kind": r["kind"] or "(null)", "count": r["cnt"]}
-                for r in kind_rows
-            ]
+            out["entity_kind_distribution"] = [{"kind": r["kind"] or "(null)", "count": r["cnt"]} for r in kind_rows]
             # 单一化预警: 主导 kind > 70% = P1 注意
             total = sum(r["cnt"] for r in kind_rows)
             if total and kind_rows[0]["cnt"] / total > 0.70 and len(kind_rows) > 1:
                 out["kind_diversity_warning"] = (
-                    f"{kind_rows[0]['kind']} 占 {kind_rows[0]['cnt']*100.0/total:.1f}% — "
+                    f"{kind_rows[0]['kind']} 占 {kind_rows[0]['cnt'] * 100.0 / total:.1f}% — "
                     f" kind 单一化, 考虑提升其他 kind 占比"
                 )
                 # [7/18 patch F] i18n — expose concept_pct for msg format
-                out["concept_pct"] = round(kind_rows[0]['cnt'] * 100.0 / total, 1)
+                out["concept_pct"] = round(kind_rows[0]["cnt"] * 100.0 / total, 1)
         except Exception as e:
             out["entity_kind_error"] = str(e)[:120]
 
@@ -246,7 +257,9 @@ def main():
     # 1. MCP alive
     alive, pid, uptime = check_mcp_alive()
     report["checks"]["mcp_server"] = {
-        "alive": alive, "pid": pid, "uptime_sec": uptime,
+        "alive": alive,
+        "pid": pid,
+        "uptime_sec": uptime,
     }
     if not alive:
         degraded = True
@@ -256,7 +269,9 @@ def main():
     try:
         busy, log, ckpt = wal_checkpoint(DB_PATH)
         report["checks"]["wal_checkpoint"] = {
-            "busy": bool(busy), "log_pages_before": log, "checkpointed_pages": ckpt,
+            "busy": bool(busy),
+            "log_pages_before": log,
+            "checkpointed_pages": ckpt,
         }
         if busy:
             degraded = True  # checkpoint deferred = WAL pressure
@@ -293,7 +308,7 @@ def main():
     if mcp["alive"]:
         uptime_h = mcp["uptime_sec"] / 3600 if mcp["uptime_sec"] else 0
         # [7/18 patch F] i18n — check.mcp_alive msg_id
-        lines.append(_t("check.mcp_alive", pid=mcp['pid'], uptime=f"{uptime_h:.1f}h"))
+        lines.append(_t("check.mcp_alive", pid=mcp["pid"], uptime=f"{uptime_h:.1f}h"))
     else:
         lines.append(f"❌ MCP server DOWN — port {MCP_PORT} not listening")
 
@@ -301,9 +316,7 @@ def main():
     if "error" not in wc:
         # [7/18 patch F] i18n — check.wal_checkpoint msg_id
         lines.append(
-            _t("check.wal_checkpoint",
-                done=wc['checkpointed_pages'],
-                total=wc['log_pages_before'])
+            _t("check.wal_checkpoint", done=wc["checkpointed_pages"], total=wc["log_pages_before"])
             + (" (busy — checkpoint deferred)" if wc["busy"] else "")
         )
     else:
@@ -312,36 +325,49 @@ def main():
     s = report["checks"]["db_stats"]
     if "error" not in s:
         # [7/18 patch F] i18n — check.db_stats msg_id
-        lines.append(_t(
-            "check.db_stats",
-            e_a=s['entities_active'], e_t=s['entities_total'],
-            c_a=s['chunks_active'], c_t=s['chunks_total'],
-            r_a=s['relations_active'], r_t=s['relations_total'],
-            v=s.get('vectors_total', '?'),
-        ))
+        lines.append(
+            _t(
+                "check.db_stats",
+                e_a=s["entities_active"],
+                e_t=s["entities_total"],
+                c_a=s["chunks_active"],
+                c_t=s["chunks_total"],
+                r_a=s["relations_active"],
+                r_t=s["relations_total"],
+                v=s.get("vectors_total", "?"),
+            )
+        )
         # [7/18 patch F] i18n — check.db_size msg_id
-        lines.append(_t(
-            "check.db_size",
-            db=format_size(s['db_size_bytes']),
-            wal=format_size(s['wal_size_bytes']),
-            shm=format_size(s.get('shm_size_bytes')),
-            mode=s['journal_mode'],
-        ))
+        lines.append(
+            _t(
+                "check.db_size",
+                db=format_size(s["db_size_bytes"]),
+                wal=format_size(s["wal_size_bytes"]),
+                shm=format_size(s.get("shm_size_bytes")),
+                mode=s["journal_mode"],
+            )
+        )
 
         # [P1-v2 审计后] recall_log 24h 聚合
         if "recall_24h_count" in s:
-            rc = s['recall_24h_count']
-            empty = s.get('recall_24h_empty_count', 0)
+            rc = s["recall_24h_count"]
+            empty = s.get("recall_24h_empty_count", 0)
             empty_pct = (empty * 100.0 / rc) if rc else 0
-            p50 = s.get('recall_24h_p50_ms', '?')
-            p95 = s.get('recall_24h_p95_ms', '?')
-            avg = s.get('recall_24h_avg_latency_ms', '?')
+            p50 = s.get("recall_24h_p50_ms", "?")
+            p95 = s.get("recall_24h_p95_ms", "?")
+            avg = s.get("recall_24h_avg_latency_ms", "?")
             # [7/18 patch F] i18n — check.recall_24h msg_id
-            lines.append(_t(
-                "check.recall_24h",
-                count=rc, empty=empty, pct=empty_pct,
-                p50=p50, p95=p95, avg=avg,
-            ))
+            lines.append(
+                _t(
+                    "check.recall_24h",
+                    count=rc,
+                    empty=empty,
+                    pct=empty_pct,
+                    p50=p50,
+                    p95=p95,
+                    avg=avg,
+                )
+            )
 
         # [P1-v2 审计后] kind 分布 (TOP 3 + 单一化预警)
         if "entity_kind_distribution" in s:
@@ -351,7 +377,7 @@ def main():
             lines.append(_t("check.kind_top", kinds=kind_str))
             if "kind_diversity_warning" in s:
                 # [7/18 patch F] i18n — check.kind_skewed msg_id
-                lines.append(_t("check.kind_skewed", pct=s.get('concept_pct', '?')))
+                lines.append(_t("check.kind_skewed", pct=s.get("concept_pct", "?")))
 
         if "warning" in s:
             lines.append(f"⚠️  {s['warning']}")

@@ -16,38 +16,40 @@ import_identity_facts.py — 从 mnelo chunks 中抽取身份陈述类 fact
 - 6 个 predicate: lives_in / timezone / telegram_handle / github_handle / display_name / working_lang
 - 不用 LLM 抽取 (怕 token 成本 + 不一致), 用严格正则 + 白名单
 """
+
 import sys
 import re
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')
+DB_PATH = Path("/Users/apple/.hermes/memory/memory.db")
 
 # === 严格抽取器 ===
 # (regex, predicate, value_normalizer)
 STRICT_EXTRACTORS = [
-    (re.compile(r"(?:位于|我在|住在|居住地|home in|lives in)[^a-zA-Z]{0,8}(北京市大兴区亦庄镇|北京)"),
-     "lives_in", lambda m: "北京市大兴区亦庄镇"),
-    (re.compile(r"坐标[^a-zA-Z]{0,8}(北京市大兴区亦庄镇|北京)"),
-     "lives_in", lambda m: "北京市大兴区亦庄镇"),
-    (re.compile(r"时区[^a-zA-Z]{0,8}(GMT[+\-]\d+)"),
-     "timezone", lambda m: m.group(1)),
-    (re.compile(r"(GMT[+\-]8)"),
-     "timezone", lambda m: m.group(1)),
-    (re.compile(r"(?:Telegram|TG|电报)[:：]?\s*(@\w+)"),
-     "telegram_handle", lambda m: m.group(1)),
-    (re.compile(r"GitHub[:：]?\s*(chinesewebman)"),
-     "github_handle", lambda m: m.group(1)),
-    (re.compile(r"github\.com/(chinesewebman)"),
-     "github_handle", lambda m: m.group(1)),
-    (re.compile(r"(?:名字|网名)[::]?\s*(2077 Ling)"),
-     "display_name", lambda m: m.group(1)),
-    (re.compile(r"(?:名字|网名)[::]?\s*(主人)"),
-     "display_name", lambda m: m.group(1)),
-    (re.compile(r"working lang[^a-zA-Z]{0,8}(English|中文|简体中文)", re.I),
-     "working_lang", lambda m: "English" if m.group(1).lower() == "english" else "中文"),
-    (re.compile(r"工作语言[^a-zA-Z]{0,8}(English|中文|简体中文)", re.I),
-     "working_lang", lambda m: "English" if m.group(1).lower() == "english" else "中文"),
+    (
+        re.compile(r"(?:位于|我在|住在|居住地|home in|lives in)[^a-zA-Z]{0,8}(北京市大兴区亦庄镇|北京)"),
+        "lives_in",
+        lambda m: "北京市大兴区亦庄镇",
+    ),
+    (re.compile(r"坐标[^a-zA-Z]{0,8}(北京市大兴区亦庄镇|北京)"), "lives_in", lambda m: "北京市大兴区亦庄镇"),
+    (re.compile(r"时区[^a-zA-Z]{0,8}(GMT[+\-]\d+)"), "timezone", lambda m: m.group(1)),
+    (re.compile(r"(GMT[+\-]8)"), "timezone", lambda m: m.group(1)),
+    (re.compile(r"(?:Telegram|TG|电报)[:：]?\s*(@\w+)"), "telegram_handle", lambda m: m.group(1)),
+    (re.compile(r"GitHub[:：]?\s*(chinesewebman)"), "github_handle", lambda m: m.group(1)),
+    (re.compile(r"github\.com/(chinesewebman)"), "github_handle", lambda m: m.group(1)),
+    (re.compile(r"(?:名字|网名)[::]?\s*(2077 Ling)"), "display_name", lambda m: m.group(1)),
+    (re.compile(r"(?:名字|网名)[::]?\s*(主人)"), "display_name", lambda m: m.group(1)),
+    (
+        re.compile(r"working lang[^a-zA-Z]{0,8}(English|中文|简体中文)", re.I),
+        "working_lang",
+        lambda m: "English" if m.group(1).lower() == "english" else "中文",
+    ),
+    (
+        re.compile(r"工作语言[^a-zA-Z]{0,8}(English|中文|简体中文)", re.I),
+        "working_lang",
+        lambda m: "English" if m.group(1).lower() == "english" else "中文",
+    ),
 ]
 
 
@@ -57,12 +59,12 @@ def slugify(s: str) -> str:
     for ch in s:
         if ch.isascii() and ch.isalnum():
             out.append(ch)
-        elif '\u4e00' <= ch <= '\u9fff':
+        elif "\u4e00" <= ch <= "\u9fff":
             out.append(ch)
         else:
-            out.append('_')
-    s2 = ''.join(out).strip('_')
-    return s2 or 'unnamed'
+            out.append("_")
+    s2 = "".join(out).strip("_")
+    return s2 or "unnamed"
 
 
 def extract_all(con):
@@ -89,40 +91,52 @@ def ensure_entity(con, predicate: str, value: str) -> str:
     cur = con.execute("select id from entities where id = ? and valid_until IS NULL", (ent_id,))
     if cur.fetchone():
         return ent_id
-    con.execute("""
+    con.execute(
+        """
         INSERT INTO entities (id, kind, name, summary, properties_json, source,
                               valid_from, valid_until, importance)
         VALUES (?, 'identity_fact', ?, ?, ?, 'identity-fact-extract',
                 datetime('now'), NULL, 0.9)
-    """, (ent_id, value, value, f'{{"predicate": "{predicate}", "value": "{value}"}}'))
+    """,
+        (ent_id, value, value, f'{{"predicate": "{predicate}", "value": "{value}"}}'),
+    )
     return ent_id
 
 
 def relation_exists(con, source_id: str, target_id: str, relation: str) -> bool:
-    cur = con.execute("""
+    cur = con.execute(
+        """
         select 1 from relations
         where source_id = ? and target_id = ? and relation = ?
           and valid_until IS NULL
         limit 1
-    """, (source_id, target_id, relation))
+    """,
+        (source_id, target_id, relation),
+    )
     return cur.fetchone() is not None
 
 
-def ensure_relation(con, source_id: str, target_id: str, relation: str,
-                    evidence_chunk_id: str):
+def ensure_relation(con, source_id: str, target_id: str, relation: str, evidence_chunk_id: str):
     """保证 (source, target, relation, valid_until=NULL) 关系存在; 已存在补 evidence"""
     if relation_exists(con, source_id, target_id, relation):
         # 已存在: 跳过 (幂等)
         return False
-    con.execute("""
+    con.execute(
+        """
         INSERT INTO relations (source_id, target_id, relation, weight, properties_json,
                                valid_from, valid_until, source, confidence,
                                evidence_chunk_id)
         VALUES (?, ?, ?, 1.0, ?, datetime('now'), NULL,
                 'identity-fact-extract', 1.0, ?)
-    """, (source_id, target_id, relation,
-          f'{{"extracted_at": "{Path(__file__).name}", "predicate": "{relation}"}}',
-          evidence_chunk_id))
+    """,
+        (
+            source_id,
+            target_id,
+            relation,
+            f'{{"extracted_at": "{Path(__file__).name}", "predicate": "{relation}"}}',
+            evidence_chunk_id,
+        ),
+    )
     return True
 
 
@@ -132,10 +146,9 @@ def main(dry_run: bool = False):
     print(f"=== 抽取 {len(extracted)} 个独立 (predicate, value) ===")
 
     # user 是已存在 entity
-    USER_ID = 'user'
+    USER_ID = "user"
 
-    stats = {"entities_new": 0, "entities_existing": 0,
-             "relations_new": 0, "relations_skipped": 0}
+    stats = {"entities_new": 0, "entities_existing": 0, "relations_new": 0, "relations_skipped": 0}
 
     for (pred, val), evidences in sorted(extracted.items()):
         ent_id = f"identity:{pred}:{slugify(val)}"
@@ -166,6 +179,6 @@ def main(dry_run: bool = False):
         print(f"  {k}: {v}")
 
 
-if __name__ == '__main__':
-    dry = '--dry-run' in sys.argv
+if __name__ == "__main__":
+    dry = "--dry-run" in sys.argv
     main(dry_run=dry)

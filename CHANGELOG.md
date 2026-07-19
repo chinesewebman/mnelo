@@ -1,5 +1,59 @@
 # Changelog
 
+## v0.5.5 — 2026-07-19
+
+feat: scripts/benchmark.py — reproducible latency benchmark
+
+**NEW**: `scripts/benchmark.py` (13.5K, 100-query set + percentile + JSON output)
+- Seeds N synthetic chunks (deterministic content, 1k–100k via `--chunks`).
+- Warms up embedder + caches (5 queries) before measurement.
+- Runs K measured queries with `time.perf_counter()`.
+- Reports p50/p95/p99 + min/max/mean/stdev + empty_count + DB stats.
+- Outputs human-readable table to stdout + optional JSON via `--json path`.
+- Cleans up its own seed data (source prefix `benchmark_round15:`) — idempotent across runs.
+
+**NEW**: `tests/test_benchmark_round15.py` (+14 tests)
+- `percentile()` boundary tests (empty/single/exact/p95/p99/min-max).
+- CLI flag tests (help / invalid chunks / invalid queries).
+- Integration smoke test (small benchmark run, validates JSON shape).
+- Idempotency test (running twice doesn't leak data).
+- Query diversity test (Chinese + English + stock codes).
+
+**Bugfix #1** — `memory.py:remember()` vector insert UNIQUE collision
+- Root cause: vec0 internal counter drifts from `chunks.rowid` over time
+  (orphans from crashed inserts + soft-deleted chunks leave vectors).
+- Symptom: `OperationalError: UNIQUE constraint failed on vectors primary key`.
+- Fix: try/except `IntegrityError` → DELETE + INSERT (replace vector at that rowid).
+- This is **not** a root-cause fix for the drift (vec0/sqlite-vec limitation),
+  but it makes `remember()` idempotent and unblocks seed scripts.
+
+**Bugfix #2** — `memory.py:_entity_recall_with_conn` aliases crash
+- Root cause: `aliases_json = 'null'` (JSON literal string) → `json.loads` returns None → `for a in None` → TypeError.
+- Affected: 3 pre-existing entities in LIVE DB with `aliases_json = 'null'`.
+- Fix: defensive parser — handle NULL / `'null'` / `'[]'` / actual list / JSON error.
+
+**CI workflow** (`ci.yml`)
+- `ruff format --check` now scoped to `*.py scripts/*.py` only (skips `tests/`).
+- Rationale: 30 test files use a different formatting style (mostly single-quote strings).
+  Tests are already covered by `ruff check` for lint issues, pytest for correctness.
+  Reformatting all 30 in one go is a separate refactor PR.
+
+**README** (both `README.md` + `README.zh.md`)
+- Latency numbers calibrated via benchmark: p50 = 8.5 ms (baseline 6.3k chunks),
+  p50 = 23 ms (10k seed). Old 12.5 ms figure updated.
+- Added benchmark section: `python scripts/benchmark.py --chunks 10000 --queries 100 --json bench.json`.
+
+**pyproject.toml**
+- `tests/` per-file-ignores expanded: F841 / F541 / I001 / W292 / E501 / W291 / B007
+  (test debug helpers + cosmetic noise).
+
+Verification:
+- 489 tests pass (475 + 14 new).
+- ruff check: All checks passed.
+- ruff format (src only): 17 files already formatted.
+- bandit -lll: 0 issues.
+- Benchmark `--chunks 10000 --queries 100`: p50 = 23 ms, p95 = 29 ms, 2.23s total.
+
 ## v0.5.4 — 2026-07-19
 
 ci: add ruff lint + bandit security + Python matrix + coverage upload

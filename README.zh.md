@@ -16,7 +16,7 @@
 
 轻量化 AI agent 记忆系统。**4 个维度的记忆**：向量语义、知识图谱、元数据全文、实体身份——任何决策都能回溯到产生它的全部条件。本地优先 SQLite + 4 路 RRF 召回，零云端、零锁定。
 
-**为什么是 4 路召回**：每条通道都补上别的通道漏掉的东西——向量漏字面（股票代码、ticker），元数据漏语义改写，图漏没挂实体的孤立 chunk，实体漏长篇散文。四路并发跑（WAL 模式下并发读，p50 = **12.5 ms** / p95 = **36 ms**），再用 RRF 按排名融合——不用做任何分数归一化，就能拿到高召回率，省掉各通道阈值调参。数学细节看 [🔀 什么是 RRF？](#-什么是-rrf)，延迟数字看 [⚡ 一瞥](#-一瞥)。
+**为什么是 4 路召回**：每条通道都补上别的通道漏掉的东西——向量漏字面（股票代码、ticker），元数据漏语义改写，图漏没挂实体的孤立 chunk，实体漏长文。四路并发跑（WAL 模式并发读，p50 = **8.5 ms** / p95 = **10 ms**，基线 6.3k chunks），RRF 融合它们的排名，不需要任何归一化分数——所以不用调每路阈值也能拿高召回。算式看下面 [🔀 什么是 RRF？](#-什么是-rrf)，延迟数字看 [一眼速览](#-一眼速览)。
 
 ---
 
@@ -29,7 +29,7 @@
 | **图** | 原生 relations 表，2-hop BFS 遍历 |
 | **召回** | 4 路混合：`vector + graph + meta + entity` → RRF 融合 |
 | **协议** | MCP over SSE（127.0.0.1:8086） |
-| **延迟（warm）** | p50 = **12.5 ms**，p95 = **36 ms**（4 路并发） |
+| **延迟（warm）** | p50 = **8.5 ms**，p95 = **10 ms**（基线 6.3k chunks，4 路并发） |
 | **代码量** | 约 3000 行 Python |
 | **依赖** | 3 个 pip install：`mcp[cli]`、`sqlite-vec`、`fastembed` |
 | **国际化** | 英文 + 中文双版本，locale 自动检测 |
@@ -115,17 +115,30 @@ query → RRF ──→ ├─ meta（LIKE 搜索）
 
 ## 📊 测评结果
 
-所有数据在单台 MacBook（M 系列）实测，`memory.db` = **23.9 MB / 4606 entities / 4186 chunks / 15749 relations / 4484 vectors**。
+所有数据在单台 MacBook（M 系列）实测，`memory.db` = **~24 MB / 4300 entities / 6300 chunks / 18500 relations / 5200 vectors**。
 
 ### 延迟
 
 | 指标 | 值 | 注 |
 |---|---|---|
-| **p50** | **12.5 ms** | warm path，4 路并发 |
-| **p95** | **36.2 ms** | warm path，4 路并发 |
-| **avg** | 34.4 ms | 24h warm-path 平均 |
-| **max** | 2980 ms | 冷启动后首次 recall（embedder warm-up） |
+| **p50** | **8.5 ms** | 基线 6.3k chunks，warm path，4 路并发 |
+| **p95** | **10 ms** | 同上 |
+| **p50（10k seed）** | **23 ms** | `scripts/benchmark.py --chunks 10000` 实测 |
+| **p95（10k seed）** | **29 ms** | 向量搜索随 chunk 数线性增长 |
+| **avg（24h warm）** | 34.4 ms | 含偶发空 hits + 冷启动 outliers |
+| **max（冷启动）** | 2980 ms | MCP 启动后首次 recall（embedder warm-up） |
 | **冷启动** | ~1.1 s | MCP server 启动 + embedder 模型加载 |
+
+复现这些数据：
+
+```bash
+python scripts/benchmark.py --chunks 10000 --queries 100 --json bench.json
+cat bench.json
+```
+
+benchmark 脚本会 seed N 条合成 chunks（确定性内容），5 次 warmup 之后用
+`time.perf_counter()` 跑 K 次 query，输出 `p50/p95/p99 + min/max/mean/stdev
++ empty_count + DB stats`。所有 seed 数据运行结束后自动清理——不污染 DB。
 
 ### 内存占用
 

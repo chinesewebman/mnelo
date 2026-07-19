@@ -279,7 +279,23 @@ class Memory:
         # 修: 用 SELECT round-trip 拿 chunks.rowid (保证 1:1)
         chunk_rowid = self._conn.execute("SELECT rowid FROM chunks WHERE id = ?", (chunk_id,)).fetchone()[0]
         v_bytes = embed_bytes(content)
-        self._conn.execute("INSERT INTO vectors (rowid, embedding) VALUES (?, ?)", (chunk_rowid, v_bytes))
+        # [7/19 v0.5.5] Robust vector insert: if rowid collides with a previous
+        # crashed insert or orphan from `forget()` cleanup, REPLACE it (DELETE+INSERT).
+        # Root cause: vec0 internal counter doesn't perfectly track chunks.rowid
+        # (e.g. soft-deleted chunks leave their vectors in place). Without this
+        # guard, remember() raises UNIQUE constraint on vectors primary key.
+        try:
+            self._conn.execute(
+                "INSERT INTO vectors (rowid, embedding) VALUES (?, ?)",
+                (chunk_rowid, v_bytes),
+            )
+        except sqlite3.IntegrityError:
+            logger.warning(f"vector rowid {chunk_rowid} already exists — replacing (chunk_id={chunk_id})")
+            self._conn.execute("DELETE FROM vectors WHERE rowid = ?", (chunk_rowid,))
+            self._conn.execute(
+                "INSERT INTO vectors (rowid, embedding) VALUES (?, ?)",
+                (chunk_rowid, v_bytes),
+            )
 
         self._conn.commit()
         # [7/19 v0.5.3] metrics
@@ -722,7 +738,19 @@ class Memory:
                 (like, like, top_k),
             ).fetchall()
             for r in rows:
-                aliases = json.loads(r["aliases_json"] or "[]") if r["aliases_json"] else []
+                # [7/19 v0.5.5] Robust aliases parsing:
+                # aliases_json may be NULL (SQL), 'null' (JSON literal),
+                # '[]' (empty list), or '[...]' (actual list).
+                # Handle all cases defensively to avoid TypeError on `for a in None`.
+                raw = r["aliases_json"]
+                if not raw or raw == "null":
+                    aliases = []
+                else:
+                    try:
+                        parsed = json.loads(raw)
+                        aliases = parsed if isinstance(parsed, list) else []
+                    except (json.JSONDecodeError, TypeError):
+                        aliases = []
                 content = r["summary"] or r["name"]
                 if not content:
                     continue
