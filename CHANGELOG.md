@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.9 — 2026-07-19
+
+test(locale): add 24 tests for mnelo_locale (0% → 100% coverage)
+
+- Covers previously-untested locale module: get_locale() detection chain (HERMES_MEMORY_LANG > LC_ALL > LANG > system locale > en), _normalize() POSIX parsing (zh_CN/zh_TW/en_US/hyphen forms), current_locale() lazy caching + reload() refresh, t() message resolver with zh/en fallback + format kwargs.
+- Edge cases: _syslocale.getlocale() exception path, format positional IndexError.
+- Total: 171 → 195 passed (1 skipped).
+
 ## v0.3.8 — 2026-07-19
 
 fix(tests): rebind ValidationError via `gc.get_objects()` scan for orphan module dicts
