@@ -4,7 +4,6 @@
 import_identity_facts.py — 从 hermes-memory chunks 中抽取身份陈述类 fact
                             写入 entities + relations (幂等)
 
-[实战]
 - 主人口中 7/18 拍板: A+B+C 三件套的"backfill 身份陈述类 fact"具体实施
 - 输入: hermes-memory.db 的 chunks 表 (valid_until IS NULL)
 - 输出: entities (kind=identity_fact) + relations (user --predicate--> identity:xxx)
@@ -13,9 +12,9 @@ import_identity_facts.py — 从 hermes-memory chunks 中抽取身份陈述类 f
     - relations: (source_id, target_id, relation, valid_until IS NULL) 存在则跳过
 - source 标记: 'identity-fact-extract' (溯源用)
 
-[7/18 实战]
+[7/18 ]
 - 6 个 predicate: lives_in / timezone / telegram_handle / github_handle / display_name / working_lang
-- 不用 LLM 抽取 (实战怕 token 成本 + 不一致), 用严格正则 + 白名单
+- 不用 LLM 抽取 (怕 token 成本 + 不一致), 用严格正则 + 白名单
 """
 import sys
 import re

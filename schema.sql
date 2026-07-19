@@ -1,7 +1,7 @@
 -- ========================================
 -- hermes-memory schema v1.0
 -- 文件: ~/.hermes/memory/schema.sql
--- 实战: 4D 知识图谱 (节点 + 关系 + 时间 + 向量)
+-- : 4D 知识图谱 (节点 + 关系 + 时间 + 向量)
 -- 主人口中 7/18 拍板 review SCHEMA.md
 -- ========================================
 
@@ -35,7 +35,7 @@ CREATE TABLE chunks (
     source TEXT,
     session_id TEXT DEFAULT 'default',
     timestamp TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-    importance REAL DEFAULT 0.5,            -- 0.0-1.0, 实战排序 (entities 表也有, 冗余存方便排序)
+    importance REAL DEFAULT 0.5,            -- 0.0-1.0, 排序 (entities 表也有, 冗余存方便排序)
     metadata_json TEXT,
     superseded_by TEXT,
     valid_until TEXT,
@@ -92,7 +92,7 @@ CREATE TABLE recall_log (
     results_json TEXT,
     graph_hops INTEGER,
     latency_ms REAL,
-    recall_details_json TEXT,   -- [P2+ #3 7/18 patch] 实战 feedback loop: top-5 ranks + method + distance/rrf_score + importance
+    recall_details_json TEXT,   -- [P2+ #3 7/18 patch]  feedback loop: top-5 ranks + method + distance/rrf_score + importance
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 CREATE INDEX idx_recall_query ON recall_log(query);

@@ -3,16 +3,16 @@
 """
 import_holdings.py — 从 ~/.hermes/state/holdings_*.json 导入持仓快照到 hermes-memory
 
-[实战 7/18]
-- 主人 7/17 实战明确: 持仓以截图为准, AI 推测/口头 buy/sell 记忆不靠谱
+[ 7/18]
+- 主人 7/17 明确: 持仓以截图为准, AI 推测/口头 buy/sell 记忆不靠谱
 - 主人口中拍板 C: holdings_correction_2026-07-17.json → hermes-memory + decision-history.md §7
-- 输入: ~/.hermes/state/holdings_*.json (实战: holdings_correction_2026-07-17.json)
+- 输入: ~/.hermes/state/holdings_*.json (holdings_correction_2026-07-17.json)
 - 输出: hermes-memory entities (kind=position_snapshot) + relations (user --holds_position--> :stock)
 - 幂等键:
     - entities: id = holding:{asof}:{symbol_code}
     - relations: (source_id='user', target_id, relation='holds_position', properties['asof'])
 - source 标记: 'holdings-screenshot-ocr' (溯源用)
-- valid_until: 不设 (实战快照是事实陈述, 不假设过期; 新快照 supersede)
+- valid_until: 不设 (快照是事实陈述, 不假设过期; 新快照 supersede)
 """
 import sys
 import json

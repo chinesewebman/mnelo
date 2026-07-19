@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-entity_resolve.py — 实体消歧 (实战: 7/18 主人口中拍板方案 1 实战需求)
+entity_resolve.py — 实体消歧 (7/18 主人口中拍板方案 1 需求)
 
-[实战目的]
-- 实战中常出现 "sh600089" / "特变电工" / "TBEA" / "特变电工股份" 同指一只股
-- 主人口中实战: 报告用 "sh600089 (特变电工)" 双标, 但其他报告用 "特变"
+[目的]
+- 中常出现 "sh600089" / "特变电工" / "TBEA" / "特变电工股份" 同指一只股
+- 主人口中: 报告用 "sh600089 (特变电工)" 双标, 但其他报告用 "特变"
 - 自动合并 alias 相同的 entity, 避免 kg 节点重复
 
 [设计]
 - 1) 别名匹配: aliases_json 数组, 直接匹配 → 合并
-- 2) 相似度合并: 名字相似度 ≥ 0.85 → 合并 (实战: 0.85 = 同股票不同名变体)
-- 3) 实战 review API: find_duplicates() 列出所有疑似重复, 实战人工 review
+- 2) 相似度合并: 名字相似度 ≥ 0.85 → 合并 (0.85 = 同股票不同名变体)
+- 3)  review API: find_duplicates() 列出所有疑似重复, 人工 review
 """
 import json
 import re
@@ -29,7 +29,7 @@ DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')
 
 
 def normalize_text(s: str) -> str:
-    """实战: 标准化字符串 — 去空白 + 去标点 + 小写.
+    """: 标准化字符串 — 去空白 + 去标点 + 小写.
 
     [Round 3 fix] 原实现 r'[\\s\\W_]+' 有 catastrophic backtracking bug
     (\\s 与 \\W 重叠, '\\W' 本身 match \\s 但 \\s 又走 \\W 路径 → 极端输入 hang).
@@ -43,14 +43,14 @@ def normalize_text(s: str) -> str:
 
 
 def alias_match_score(a: str, b: str) -> float:
-    """实战相似度: 同时考虑完全匹配 + difflib 比率."""
+    """相似度: 同时考虑完全匹配 + difflib 比率."""
     a_norm = normalize_text(a)
     b_norm = normalize_text(b)
     if not a_norm or not b_norm:
         return 0.0
     if a_norm == b_norm:
         return 1.0
-    # difflib.SequenceMatcher 实战中较准
+    # difflib.SequenceMatcher 中较准
     return difflib.SequenceMatcher(None, a_norm, b_norm).ratio()
 
 
@@ -88,7 +88,7 @@ def find_duplicate_candidates(
     kind: Optional[str] = None,
     max_pairs: int = 500,
 ) -> List[Tuple[str, str, float, str]]:
-    """实战: 找出所有疑似重复的 entity 对.
+    """: 找出所有疑似重复的 entity 对.
 
     [Round 3 fix] 加 max_pairs cap: live DB 上 5K entities → 12.5M pairs O(N²)
     difflib 比对会 hang 数分钟. 默认 500 上限 + 警告 + 实际 production
@@ -120,7 +120,7 @@ def find_duplicate_candidates(
         if len(ents) < 2:
             continue
         # [Round 3 fix] 单 kind 上限 100 entities (排序取前 100 by name length 短→长,
-        # 实战: 长名更可能有 description, 短名更可能是 symbol — 后者重复概率更高)
+        # : 长名更可能有 description, 短名更可能是 symbol — 后者重复概率更高)
         if len(ents) > 100:
             ents = sorted(ents, key=lambda r: len(r['name'] or ''))[:100]
         for i in range(len(ents)):
@@ -139,14 +139,14 @@ def find_duplicate_candidates(
                 b_id, b_name = ents[j]['id'], (ents[j]['name'] or '')
                 if not a_name or not b_name:
                     continue
-                # 实战: 跳过已 supersede / 完全相同 id
+                # : 跳过已 supersede / 完全相同 id
                 if a_id == b_id:
                     continue
                 score = alias_match_score(a_name, b_name)
                 if score >= threshold:
                     candidates.append((a_id, b_id, score, f'name: "{a_name}" vs "{b_name}"'))
 
-                # 实战: aliases 匹配
+                # : aliases 匹配
                 a_aliases = get_aliases(conn, a_id)
                 b_aliases = get_aliases(conn, b_id)
                 for al in a_aliases:
@@ -169,7 +169,7 @@ def merge_entities(
     1. primary 的 aliases += secondary 的 aliases + name (dedup via dict.fromkeys)
     2. secondary 的所有 relations 重指向 primary (1 个 SQL 同时处理 src + tgt)
     3. secondary soft delete (valid_until = now())
-    4. secondary 的 chunks/embeddings 不动 (保留原 content, 实战审计)
+    4. secondary 的 chunks/embeddings 不动 (保留原 content, 审计)
 
     Args:
         conn: sqlite3.Connection (should be the same Memory._conn)

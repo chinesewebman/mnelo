@@ -12,7 +12,7 @@ INSERT 后 last_insert_rowid 被覆盖. 导致 ~40% chunk 的 vec0 rowid 错位.
 2. 重新嵌入 content
 3. INSERT vec0 用正确 rowid
 
-实战: 不重嵌入不用embedding 模型很难, 必须用 bge-small-zh 重嵌入
+: 不重嵌入不用embedding 模型很难, 必须用 bge-small-zh 重嵌入
 但只针对错位的 chunks (~1591 条), 每次 embed ~1.3ms, ~2 sec
 
 运行:  /Users/apple/hermes-agent/venv/bin/python3 repair_vectors.py [--dry-run]

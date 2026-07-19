@@ -1,9 +1,9 @@
 """
 hermes-memory config — load settings from environment variables or config file.
 
-[实战 7/18 P2]
+[ 7/18 P2]
 来源优先级 (高到低):
-1. 环境变量 HERMES_MEMORY_* (实战部署, systemd/launchd)
+1. 环境变量 HERMES_MEMORY_* (部署, systemd/launchd)
 2. 配置文件 ~/.hermes/memory/config.toml (本地覆盖)
 3. 默认值 (localtime)
 

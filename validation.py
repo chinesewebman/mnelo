@@ -6,8 +6,8 @@ validation.py — input sanitization for memory MCP tool arguments.
 (ValueError with type name only — 不带原始 input, 防止 log 泄露).
 
 边界设计:
-- chunk content: max 8 KB (实战 mnelo 平均 chunk < 500 B; 8 KB 是 backup 块大小)
-- query: max 1 KB (实战平均 50 B; 1 KB 已能容下任何 5+ token 多语种 query)
+- chunk content: max 8 KB ( mnelo 平均 chunk < 500 B; 8 KB 是 backup 块大小)
+- query: max 1 KB (平均 50 B; 1 KB 已能容下任何 5+ token 多语种 query)
 - id (chunk/entity/relation): ^[a-zA-Z0-9_:.-]{1,256}$ (允许 . _ : -, 禁 / 反斜杠 单引号 双引号 分号 NUL 等)
 - entity.name: max 200 chars (OCR 持仓名 + 多语种实体名都够)
 - entity.summary: max 1000 chars (足够放 hold reason / position summary)
@@ -167,7 +167,7 @@ def validate_entity_payload(ent: Dict) -> Dict:
 def validate_holding_payload(h: Dict) -> Dict:
     """[P1-5] import_holdings.py 的 holding dict 字段清洗.
 
-    实战 holdings JSON shape: {symbol_code, name, quantity, cost_price, ...}
+     holdings JSON shape: {symbol_code, name, quantity, cost_price, ...}
     严控 free-form text 字段 (name, direction, notes), 避免恶意 JSON 注入.
     """
     if not isinstance(h, dict):

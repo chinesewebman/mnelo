@@ -3,7 +3,6 @@
 """
 memory.py — hermes-memory 核心 CRUD API
 
-[实战]
 - 6 个核心接口: remember / recall / relate / forget / update / graph_query
 - 3 路召回 (向量 + 图 + 元数据) + RRF 融合
 - 4D 时间维度 (valid_from / valid_until / soft delete + 自动级联)
@@ -90,7 +89,7 @@ def generate_id(prefix: str = 'chunk') -> str:
 def clamp01(value: float, name: str = 'value') -> float:
     """Clamp importance/weight to [0.0, 1.0] with type and NaN validation.
 
-    [P0 审计] 实战: remember(importance) / relate(weight) / update(new_importance)
+    [P0 审计] : remember(importance) / relate(weight) / update(new_importance)
     / _upsert_entity(importance) 之前没 bounds check, 接受任意浮点 (5.0 / -0.3 / NaN).
     加 clamp + 类型校验保证 DB 写入合法.
 
@@ -128,7 +127,7 @@ def clamp01(value: float, name: str = 'value') -> float:
 def _with_row_factory(conn, factory):
     """Temporarily swap conn.row_factory inside a context, restore on exit.
 
-    [P0 审计] 实战: sqlite-vec 0.1.x vec0 query 返回 plain tuple, 不受
+    [P0 审计] : sqlite-vec 0.1.x vec0 query 返回 plain tuple, 不受
     connection.row_factory = sqlite3.Row 控制. 之前在 memory.py / mcp_server.py
     / entity_resolve.py 重复 8 处 (5 + 1 + 2). 现在统一 helper.
 
@@ -154,11 +153,11 @@ def _with_row_factory(conn, factory):
 
 
 class Memory:
-    """实战核心 CRUD 接口."""
+    """核心 CRUD 接口."""
 
     def __init__(self, db_path: Path = DB_PATH):
         self.db_path = db_path
-        # check_same_thread=False — 实战 P2+ #2 让 recall 并发跑 4 路用独立 conn 时,
+        # check_same_thread=False —  P2+ #2 让 recall 并发跑 4 路用独立 conn 时,
         # graph_recall (主 method) 仍然在主 thread 调, 但需要 main conn 也能被 worker 间接用
         # SQLite 检查是 dbapi-level strict — 一切 conn 都允许跨 thread 是务实做法
         self._conn = sqlite3.connect(str(db_path), timeout=30, check_same_thread=False)
@@ -253,7 +252,7 @@ class Memory:
         # 4. 写 vector (sqlite-vec 0.1.x: vec0.rowid = chunks.rowid)
         # [BUG 7/18 fix] 之前用 last_insert_rowid() 但 entities/relations INSERT 后会被覆盖
         # → vector 写到错的 vec0 rowid, _vector_recall 召回失败
-        # 修: 用 SELECT round-trip 拿 chunks.rowid (实战保证 1:1)
+        # 修: 用 SELECT round-trip 拿 chunks.rowid (保证 1:1)
         chunk_rowid = self._conn.execute(
             "SELECT rowid FROM chunks WHERE id = ?", (chunk_id,)
         ).fetchone()[0]
@@ -348,7 +347,7 @@ class Memory:
               importance_value,
               json.dumps({'supersedes': old_id, 'reason': reason}, ensure_ascii=False)))
 
-        # 2. 老 chunk 标 superseded_by + valid_until (实战中 supersede 后不再召回)
+        # 2. 老 chunk 标 superseded_by + valid_until (中 supersede 后不再召回)
         self._conn.execute(
             "UPDATE chunks SET superseded_by = ?, valid_until = ? WHERE id = ? AND valid_until IS NULL",
             (new_id, now(), old_id)
@@ -364,7 +363,7 @@ class Memory:
         cascade: bool = True,
     ) -> Dict[str, int]:
         """软删除: valid_until = now, cascade 级联失效引用边.
-        主人口中实战"删除无用知识" — 不直接物理删, 30 天后 worker 物理清理.
+        主人口中"删除无用知识" — 不直接物理删, 30 天后 worker 物理清理.
         """
         # [7/19 P1-1] id 格式验证
         target_id = validate_id(target_id, 'target_id')
@@ -415,15 +414,15 @@ class Memory:
         strategy: str = 'rrf',
         asof: str = None,
     ) -> List[Dict]:
-        """4 路召回 + RRF 融合 (实战 7/18 加 entity 路).
+        """4 路召回 + RRF 融合 ( 7/18 加 entity 路).
         [7/19 P1-4] query 大小 + 控制字符 + bidi 验证
 
         strategy: 'rrf' / 'vector_only' / 'graph_only' / 'meta_only' / 'entity_only'
-        asof: 时间切片查询 (实战: '2026-07-17T15:00:00')
+        asof: 时间切片查询 ('2026-07-17T15:00:00')
         """
-        # [P2+ #1 7/18 patch] Skip noisy / placeholder queries 实战 recall_log 信号纯度
-        # 实战数据: 24h 919 recall, 80 (8%) 空 hits — 一半是 'anything' / test_crud_xxx 占位符
-        # 这些 query 没实战意义, 不应该污染 recall_log / recall_count / last_recalled
+        # [P2+ #1 7/18 patch] Skip noisy / placeholder queries  recall_log 信号纯度
+        # 数据: 24h 919 recall, 80 (8%) 空 hits — 一半是 'anything' / test_crud_xxx 占位符
+        # 这些 query 没意义, 不应该污染 recall_log / recall_count / last_recalled
         if not query or not query.strip():
             return []
         # [7/19 P1-4] query 验证 (sanitize + size cap) — 必须在 empty check 之后,
@@ -449,18 +448,18 @@ class Memory:
         asof = asof or now()
 
         if strategy == 'rrf':
-            # [P2+ #2 7/18 patch] 4 路召回并发 — 实战 p95 70ms → 25ms 目标
+            # [P2+ #2 7/18 patch] 4 路召回并发 —  p95 70ms → 25ms 目标
             # 串行慢原因: vec0 MATCH ~3.5ms + meta LIKE 0-11ms + entity name ~2-9ms + graph 0-7ms 累加
             # WAL mode SQLite 允许多 conn 并发读, 每路开独立 conn + 共享 Embedder
             # 用 ThreadPoolExecutor 跑 4 task 并行, 取最长耗时 (vs 串行累加)
             from concurrent.futures import ThreadPoolExecutor
             # 4 个独立 SQLite connection (避免同一 conn threading 冲突)
-            # check_same_thread=False 让 conn 跨 thread 可用 (实战: 主 thread 创建, worker 用)
+            # check_same_thread=False 让 conn 跨 thread 可用 (主 thread 创建, worker 用)
             recall_conns = [sqlite3.connect(str(self.db_path), timeout=30, check_same_thread=False) for _ in range(4)]  # noqa: E501
             for c in recall_conns:
                 c.execute('PRAGMA journal_mode = WAL')
                 c.execute('PRAGMA busy_timeout = 30000')
-                # [7/18 patch G] 实战每个 worker conn 也设 64 MB cache
+                # [7/18 patch G] 每个 worker conn 也设 64 MB cache
                 c.execute('PRAGMA cache_size = -64000')
                 c.enable_load_extension(True)
                 sqlite_vec.load(c)
@@ -502,7 +501,7 @@ class Memory:
 
         latency_ms = (time.time() - t0) * 1000
 
-        # 实战 recall audit
+        #  recall audit
         self._log_recall(query, results, graph_hops, latency_ms)
 
         # 更新 recall_count + last_recalled
@@ -522,7 +521,7 @@ class Memory:
     def _vector_recall(self, query: str, top_k: int, filters: Dict, asof: str) -> List[Dict]:
         """路 1: 向量检索 (sqlite-vec 0.1.x vec0 + MATCH)."""
         q_bytes = embed_bytes(query)
-        # [审计 4.3 实战] filter 多时, 多取一些确保过滤后还够 top_k; strategy 也加大召回
+        # [审计 4.3 ] filter 多时, 多取一些确保过滤后还够 top_k; strategy 也加大召回
         fetch_limit = top_k * (8 if (filters or top_k >= 3) else 2)
         # [BUG 7/18 fix] vec0 extension 返回 plain tuple, sqlite3.Row 不生效
         # [P0 审计] 用 _with_row_factory helper 统一处理 (前: 双层 try/finally 嵌套)
@@ -657,7 +656,7 @@ class Memory:
         if not seed_hits:
             return []
         seed_ids = {h['chunk_id'] for h in seed_hits}
-        # [审计 4.1 优化] 1 次 SQL 拿全部 seed chunks 的关联 entities (实战避免 N+1)
+        # [审计 4.1 优化] 1 次 SQL 拿全部 seed chunks 的关联 entities (避免 N+1)
         placeholders = ','.join('?' * len(seed_ids))
         rows = self._conn.execute(f"""
             SELECT source_id, target_id FROM relations
@@ -692,7 +691,7 @@ class Memory:
         if not new_chunks:
             return []
 
-        # [实战 7/18 A 方案] 第一跳就关联的 identity_fact / canonical_fact
+        # [ 7/18 A 方案] 第一跳就关联的 identity_fact / canonical_fact
         # 类高价值 entity 自身已是结构化答案, 直接以 entity 形式返回
         # (不必绕回 chunk)
         entity_hits = []
@@ -723,7 +722,7 @@ class Memory:
             ORDER BY importance DESC, timestamp DESC
         """, list(new_chunks)).fetchall()
         chunk_hits = [self._hit_dict(r, method='graph') for r in rows]
-        # entity 在前 (实战偏重结构化答案)
+        # entity 在前 (偏重结构化答案)
         return entity_hits + chunk_hits
 
     def _meta_recall(self, query: str, top_k: int, filters: Dict, asof: str) -> List[Dict]:
@@ -744,21 +743,21 @@ class Memory:
         return [self._hit_dict(r, method='meta') for r in rows]
 
     def _entity_recall(self, query: str, top_k: int, filters: Dict, asof: str) -> List[Dict]:
-        """路 4: 实体精确/模糊匹配 (实战 7/18 加).
+        """路 4: 实体精确/模糊匹配 ( 7/18 加).
 
         场景: 用户问'我住在哪里' / '主人GitHub' 类强身份事实,
         向量召回可能因为 chunk 文本太长而被埋没; 直接走 entity.name LIKE
         + entity.aliases_json 反查是更稳的路径.
 
-        实战拆词策略:
+        拆词策略:
         - ASCII 单词: 全部按空格切, 全词 LIKE (避免 token 太宽)
         - 中文: 只取 2+ 字连续片段 (避免'我''在'单字噪声); 取所有 2-gram + 3-gram
         - 高优先级 token (主人 / user / 我) 不参与单字 token, 全词 LIKE 即可
 
-        实战降噪: identity_fact / canonical_fact 强优先级, concept 仅补足
-        (concept 类实体大量含'在''住'等单字 token, 实战噪声很大)
+        降噪: identity_fact / canonical_fact 强优先级, concept 仅补足
+        (concept 类实体大量含'在''住'等单字 token, 噪声很大)
 
-        实战意图增强 (7/18): query 含'我'/'主人'/'ling2077'/'2077 Ling'/'user'
+        意图增强 (7/18): query 含'我'/'主人'/'ling2077'/'2077 Ling'/'user'
         等任一时, 直接拉 user 所有 identity_fact 关系 (无需 query-token 重叠,
         这是关键 — '我住在哪里' token 与 '北京市大兴区亦庄镇' 无 2-gram 重叠).
         """
@@ -850,30 +849,30 @@ class Memory:
         """Reciprocal Rank Fusion: score(d) = Σ 1/(k + rank).
 
         [P2+ #4 7/18 patch] stock entity boost:
-        实战: kind=stock 的 entity_hit (e.g. 'sh600089') 是实战关心的高价值答案,
+        : kind=stock 的 entity_hit (e.g. 'sh600089') 是关心的高价值答案,
         默认 RRF 把 chunk 当事实, 但 stock entity 关联 chunk 是结构的语义提升.
-        BOOST = 0.05 / rank^0.5 — 实战 trade-off: 不压倒既有排序, 但实战 stock always 浮顶.
+        BOOST = 0.05 / rank^0.5 —  trade-off: 不压倒既有排序, 但 stock always 浮顶.
         """
         import math
         rrf_score: Dict[str, float] = {}
         rrf_hits: Dict[str, Dict] = {}
         k = 60
-        STOCK_BOOST = 0.05  # 实战 P2+ #4
+        STOCK_BOOST = 0.05  #  P2+ #4
         for hits in hit_lists:
             for rank, h in enumerate(hits):
-                # [实战 7/18] 主键区分实体 vs chunk — 用 chunk_id 字段统一
+                # [ 7/18] 主键区分实体 vs chunk — 用 chunk_id 字段统一
                 # 实体 hit 的 chunk_id = 'entity:<entity_id>'
                 # chunk hit 的 chunk_id = '<chunk_id>'
                 # 同 ID 合并(实体 hit 和 chunk hit 可能是同一事实在不同层的表达)
                 cid = h['chunk_id']
                 rank_score = 1.0 / (k + rank + 1)
-                # [P2+ #4] stock entity boost — 实战让 kind=stock entity (如 'sh600089') 优先
+                # [P2+ #4] stock entity boost — 让 kind=stock entity (如 'sh600089') 优先
                 kind = h.get('entity_kind') or (
                     'stock' if h.get('source', '').startswith('entity:stock') or 'stock' in str(h.get('source', ''))
                     else None
                 )
                 if kind == 'stock' and h.get('method') == 'entity':
-                    # 实战: stock entity 0.05 / rank^0.5 boost — 浮顶但不让压倒 RRF 排序
+                    # : stock entity 0.05 / rank^0.5 boost — 浮顶但不让压倒 RRF 排序
                     boost = STOCK_BOOST / math.sqrt(rank + 1)
                     rank_score += boost
                 rrf_score[cid] = rrf_score.get(cid, 0) + rank_score
@@ -889,12 +888,12 @@ class Memory:
     def _log_recall(self, query: str, results: List[Dict], hops: int, latency_ms: float):
         """[P2+ #3 7/18 patch] 写入 recall_log 审计 (always local time via now() helper).
 
-        实战 feedback loop 数据:
-        - results_json 已存 [chunk_id] 数组 (前: 实战只知道命中哪些 chunk)
+         feedback loop 数据:
+        - results_json 已存 [chunk_id] 数组 (前: 只知道命中哪些 chunk)
         - 新存 recall_details_json: top-K 完整 dict (method, distance/score, importance)
-          让 daily_check / analytics 能分析 实战召回质量 (用什么路召回的, 距离分布)
+          让 daily_check / analytics 能分析 召回质量 (用什么路召回的, 距离分布)
         """
-        # 实战 feedback loop: 每条命中的 method + 距离 + 排名 (top-5 by RRF score)
+        #  feedback loop: 每条命中的 method + 距离 + 排名 (top-5 by RRF score)
         detail = [
             {
                 'rank': i + 1,
@@ -928,7 +927,7 @@ class Memory:
         edge_types: List[str] = None,
         asof: str = None,
     ) -> Dict:
-        """实战子图: start_node 起, max_hops 跳内的所有节点 + 边."""
+        """子图: start_node 起, max_hops 跳内的所有节点 + 边."""
         # [7/19 P1-1] start_node 格式验证
         start_node = validate_id(start_node, 'start_node')
         asof = asof or now()
@@ -1063,7 +1062,7 @@ class Memory:
     _ALLOWED_TABLES = frozenset({'entities', 'chunks', 'relations'})
 
     def stats(self) -> Dict:
-        """实战统计."""
+        """统计."""
         stats = {}
         for t in self._ALLOWED_TABLES:  # 永远是 3 个白名单字符串
             total = self._conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
@@ -1081,7 +1080,7 @@ if __name__ == '__main__':
     with Memory() as m:
         # 1. remember
         cid = m.remember(
-            content='测试: sh600089 实战建仓 12000 @ 18.96',
+            content='测试: sh600089 建仓 12000 @ 18.96',
             source='master:0029',
             importance=0.9,
             entities=[
@@ -1092,14 +1091,14 @@ if __name__ == '__main__':
             ],
             relations=[
                 {'source_id': 'master_2077_ling', 'target_id': 'sh600089',
-                 'relation': '实战_建仓_于', 'weight': 1.0,
+                 'relation': '_建仓_于', 'weight': 1.0,
                  'properties': {'quantity': 12000, 'price': 18.96, 'amount': 227520}},
             ],
         )
         print(f'✅ remember → chunk_id: {cid}')
 
         # 2. relate
-        rid = m.relate('master_2077_ling', 'sh600089', '实战_关注', weight=0.7,
+        rid = m.relate('master_2077_ling', 'sh600089', '_关注', weight=0.7,
                        evidence_chunk_id=cid)
         print(f'✅ relate → relation_id: {rid}')
 
@@ -1118,7 +1117,7 @@ if __name__ == '__main__':
         print(f'✅ stats: {stats}')
 
         # 6. update
-        new_cid = m.update(cid, reason='实战修正', new_content='测试修正: sh600089 实际 7,800')
+        new_cid = m.update(cid, reason='修正', new_content='测试修正: sh600089 实际 7,800')
         print(f'✅ update → new chunk_id: {new_cid}')
 
         # 7. forget

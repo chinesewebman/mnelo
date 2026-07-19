@@ -1,14 +1,14 @@
 """
 i18n_messages.py — mnelo 中英双语 message table.
 
-[7/18 patch F] 实战双语 messages
-- 实战 msg_id 是实战统一 key, all messages 实战 zh + en 双语
-- 实战 contributor 实战: 加新 msg 实战 {key: {zh: '...', en: '...'}} shape
-- 实战 fallback 实战: 实战 locale miss → 'en' → msg_id (实战 debug)
+[7/18 patch F] 双语 messages
+-  msg_id 是统一 key, all messages  zh + en 双语
+-  contributor : 加新 msg  {key: {zh: '...', en: '...'}} shape
+-  fallback :  locale miss → 'en' → msg_id ( debug)
 """
 
-# 实战 message table
-# 规则: 实战 message is short, 实战 in english / 实战中文
+#  message table
+# 规则:  message is short,  in english / 中文
 MESSAGES = {
     # ============================================================
     # 启动 / 初始化 (startup / init)
@@ -50,7 +50,7 @@ MESSAGES = {
         'en': '=== 1. Creating memory.db ===',
     },
     'db.tables_ready': {
-        'zh': '✅ 已建 {count} 张实战表 (含 sqlite-vec)',
+        'zh': '✅ 已建 {count} 张表 (含 sqlite-vec)',
         'en': '✅ {count} tables created (incl. sqlite-vec)',
     },
     'db.connect': {
@@ -106,7 +106,7 @@ MESSAGES = {
     # 召回 (recall)
     # ============================================================
     'recall.skip_placeholder': {
-        'zh': '⚠️  [P2+ #1] 实战跳过占位符 query: {query}',
+        'zh': '⚠️  [P2+ #1] 跳过占位符 query: {query}',
         'en': '⚠️  [P2+ #1] Skipped placeholder query: {query}',
     },
     'recall.no_results': {
@@ -118,7 +118,7 @@ MESSAGES = {
         'en': '✅ query="{query}" recalled {n} hits ({ms}ms)',
     },
     'recall.miss_vec0': {
-        'zh': '❌ [P2+ #3] vec0 MATCH 召回 0 条 (实战 rowid 错位)',
+        'zh': '❌ [P2+ #3] vec0 MATCH 召回 0 条 ( rowid 错位)',
         'en': '❌ [P2+ #3] vec0 MATCH recalled 0 (rowid mismatch)',
     },
 
@@ -130,7 +130,7 @@ MESSAGES = {
         'en': '=== mnelo MCP client selftest ===',
     },
     'client.ok': {
-        'zh': '✅ 自测完成 — 客户端实战可用',
+        'zh': '✅ 自测完成 — 客户端可用',
         'en': '✅ selftest done — client is live',
     },
     'client.error': {
@@ -158,7 +158,7 @@ MESSAGES = {
     # 通用 errors
     # ============================================================
     'error.out_of_range': {
-        'zh': '{name} 必须在 [{lo}, {hi}], 实战 {value}',
+        'zh': '{name} 必须在 [{lo}, {hi}],  {value}',
         'en': '{name} must be in [{lo}, {hi}], got {value}',
     },
     'error.connection': {
@@ -166,7 +166,7 @@ MESSAGES = {
         'en': '❌ MCP server not running: {err}',
     },
     'error.retry_failed': {
-        'zh': '❌ MCP 实战失败重试 {n} 次: {err}',
+        'zh': '❌ MCP 失败重试 {n} 次: {err}',
         'en': '❌ MCP call failed after {n} retries: {err}',
     },
 }

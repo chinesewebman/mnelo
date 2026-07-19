@@ -1,4 +1,4 @@
-# hermes-memory 实战配置示例
+# hermes-memory 配置示例
 # 拷贝此文件为 config.toml (与 memory.db 在同目录) 并按需修改.
 # 或用环境变量覆盖 (优先级高):
 #   HERMES_MEMORY_TIMEZONE=utc
@@ -7,8 +7,8 @@
 #   HERMES_MEMORY_EMBEDDER_DIM=384
 
 [main]
-# 时区选项 (实战默认 'local', 即系统本地时区):
-#   - 'local'    → 用系统时区 (实战: BJT +0800)
+# 时区选项 (默认 'local', 即系统本地时区):
+#   - 'local'    → 用系统时区 (: BJT +0800)
 #   - 'utc'      → 用 UTC
 #   - '<IANA>'   → 任意 IANA tz 名 (e.g. 'Asia/Shanghai', 'America/New_York')
 timezone = 'local'
@@ -27,7 +27,7 @@ warm_up_embedder = true
 #   多语种 (50+):       'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', dim=384
 #                       覆盖: 日本語 / 한국어 / Español / Français / Deutsch / 中文 / English …
 #
-# 实战: 切语言前必须重新 `python3 scripts/init_db.py` — sqlite-vec 表 schema 绑死 dim
+# : 切语言前必须重新 `python3 scripts/init_db.py` — sqlite-vec 表 schema 绑死 dim
 #       (历史 chunk 的 embedding 维度跟新 dim 不一致会冲突, 见 RUNBOOK § migration)
 model = 'BAAI/bge-small-zh-v1.5'
 dim = 512

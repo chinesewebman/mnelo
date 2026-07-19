@@ -113,7 +113,7 @@ def db_stats(db_path):
     """Read entities/chunks/relations counts + size + WAL + recall_log aggregates.
 
     [P1-v2 审计后] 加 recall_log 聚合 (last 24h 总 recall 数, 空 hits 数, latency p50/p95)
-    + kind 分布, 让 daily_check 输出实战可读的统计 (不只是 size/count).
+    + kind 分布, 让 daily_check 输出可读的统计 (不只是 size/count).
     """
     con = sqlite3.connect(str(db_path), timeout=10)
     try:
@@ -157,7 +157,7 @@ def db_stats(db_path):
         # journal_mode (sanity)
         out["journal_mode"] = con.execute("PRAGMA journal_mode").fetchone()[0]
 
-        # [P1-v2 审计后] recall_log 聚合 (24h window, 实战查实战质量)
+        # [P1-v2 审计后] recall_log 聚合 (24h window, 查质量)
         try:
             cutoff = (datetime.now(BJT) - timedelta(hours=24)).isoformat()
             row = con.execute("""
@@ -197,7 +197,7 @@ def db_stats(db_path):
         except Exception as e:
             out["recall_24h_error"] = str(e)[:120]
 
-        # [P1-v2 审计后] kind 分布 (实战 entity kind 单一化预警)
+        # [P1-v2 审计后] kind 分布 ( entity kind 单一化预警)
         try:
             kind_rows = con.execute("""
                 SELECT kind, COUNT(*) as cnt
@@ -216,7 +216,7 @@ def db_stats(db_path):
             if total and kind_rows[0]["cnt"] / total > 0.70 and len(kind_rows) > 1:
                 out["kind_diversity_warning"] = (
                     f"{kind_rows[0]['kind']} 占 {kind_rows[0]['cnt']*100.0/total:.1f}% — "
-                    f"实战 kind 单一化, 考虑提升其他 kind 占比"
+                    f" kind 单一化, 考虑提升其他 kind 占比"
                 )
                 # [7/18 patch F] i18n — expose concept_pct for msg format
                 out["concept_pct"] = round(kind_rows[0]['cnt'] * 100.0 / total, 1)

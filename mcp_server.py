@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-mcp_server.py — hermes-memory MCP Server (实战: 替代 Mnemosyne MCP)
+mcp_server.py — hermes-memory MCP Server (替代 Mnemosyne MCP)
 
-[实战]
 - 主人口中 7/18 拍板 A+C 方案: 写 hermes-memory mcp + 杀 Mnemosyne MCP
 - 接口: memory_remember / memory_recall / memory_relate / memory_forget
        / memory_update / memory_graph_query / memory_stats
 - 7 工具, 与 hermes-memory v1.0 6 API + 1 个 stats 完美对齐
-- SSE transport on 127.0.0.1:8086 (与 Mnemosyne 同端口, 实战无缝替换)
+- SSE transport on 127.0.0.1:8086 (与 Mnemosyne 同端口, 无缝替换)
 
 [运行]
     cd ~/.hermes/memory && python3 mcp_server.py --transport sse
@@ -58,7 +57,7 @@ except ImportError as e:
 # [P0 审计] 复用 memory.now() / memory._with_row_factory, 删 _dt_now 重复
 import memory as memory_module
 
-# 实战: 单进程单 Memory 实例 (实战 lock 风险归零)
+# : 单进程单 Memory 实例 ( lock 风险归零)
 _mem_instance: Optional[Any] = None
 
 
@@ -143,7 +142,7 @@ TOOLS = [
     },
     {
         'name': 'memory_update',
-        'description': '实战"更新": 创建新 chunk + 老 chunk superseded_by. 不覆盖.',
+        'description': '"更新": 创建新 chunk + 老 chunk superseded_by. 不覆盖.',
         'inputSchema': {
             'type': 'object',
             'properties': {
@@ -158,7 +157,7 @@ TOOLS = [
     },
     {
         'name': 'memory_graph_query',
-        'description': '实战图遍历: start_node 起 max_hops 跳内的子图.',
+        'description': '图遍历: start_node 起 max_hops 跳内的子图.',
         'inputSchema': {
             'type': 'object',
             'properties': {
@@ -172,7 +171,7 @@ TOOLS = [
     },
     {
         'name': 'memory_stats',
-        'description': '实战统计: entities/chunks/relations/vectors/recall_log 数量.',
+        'description': '统计: entities/chunks/relations/vectors/recall_log 数量.',
         'inputSchema': {'type': 'object', 'properties': {}},
     },
     # === [v1.1] 新增 3 个工具 ===
@@ -205,7 +204,7 @@ TOOLS = [
         'inputSchema': {
             'type': 'object',
             'properties': {
-                'relation': {'type': 'string', 'description': 'relation 名 (实战: 实战_关注_于 / 翁氏_共振_BUY_于)'},
+                'relation': {'type': 'string', 'description': 'relation 名 (_关注_于 / 翁氏_共振_BUY_于)'},
                 'asof': {'type': 'string'},
                 'limit': {'type': 'integer', 'default': 100},
             },
@@ -429,7 +428,7 @@ if _MCP_AVAILABLE:
 # === 启动入口 ===
 
 async def run_stdio() -> None:
-    """实战: 实战主路径 stdio transport (与 MCP 客户端对接)."""
+    """: 主路径 stdio transport (与 MCP 客户端对接)."""
     if not _MCP_AVAILABLE:
         raise RuntimeError('MCP libraries not available')
     async with stdio_server() as (read_stream, write_stream):
@@ -514,7 +513,7 @@ def _build_sse_app(auth_token: str) -> 'Starlette':
 
 def run_sse(host: Optional[str] = None, port: Optional[int] = None,
             auth_token: Optional[str] = None) -> None:
-    """实战: SSE transport (与 launchd 兼容).
+    """: SSE transport (与 launchd 兼容).
 
     [7/19 P2-1] host 只接受 loopback (127.x / ::1 / localhost), 拒绝 0.0.0.0 / LAN IP
     防止误传把整个 LAN 暴露出去 (本地任何端口暴露都是 P0 风险)
@@ -579,7 +578,7 @@ def main():
     # [P2-1 优化] MCP server 启动时立即 warm-up Memory (含 Embedder)
     # 实测: 不 warm-up 首次 recall ~760ms (Embedder 1s cold start + 实际工作)
     #        warm-up 后首次 recall ~70ms (model 已在 RAM)
-    # 启动慢 1s, 避免实战首 recall spike 1s
+    # 启动慢 1s, 避免首 recall spike 1s
     logger.info('[P2-1] Pre-warming Memory + Embedder at MCP server startup...')
     _get_mem()  # 触发 Memory.__init__() warm-up
 

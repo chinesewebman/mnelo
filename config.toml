@@ -1,4 +1,4 @@
-# 默认 config. 实战不需要改.
+# 默认 config. 不需要改.
 # 优先级: env vars > 此文件 > 代码内默认值
 # 改完后, 重启 MCP server (`launchctl kickstart -k gui/$(id -u)/ai.mnelo.mcp`)
 

@@ -18,7 +18,7 @@ migrate_to_mnelo.py — 从旧 Mnemosyne 导出文件迁数据到 mnelo
 - mnemosyne.triples (8) → entities + relations (subject/relation/object)
 - mnemosyne.annotations (19466) → entities (when kind=stock/concept) + relations
 - mnemosyne.canonical_facts (8) → entities (kind=canonical_fact)
-- embeddings (3103) → vectors 表 (实战 skip: 避免重嵌入 5+ min, 实战新数据靠自己写)
+- embeddings (3103) → vectors 表 ( skip: 避免重嵌入 5+ min, 新数据靠自己写)
 """
 import sys
 import json
@@ -169,11 +169,11 @@ def import_from_export(export_file: Path, batch_size: int = 100):
     cnt = 0
     for a in annotations:
         # annotations 表 schema: id, memory_id, kind, value, source, confidence
-        # 实战: kind+value 是关系 type, memory_id 是 chunk id (via mnemosyne_id)
+        # : kind+value 是关系 type, memory_id 是 chunk id (via mnemosyne_id)
         target_chunk = rid_to_chunk_id.get(a['memory_id'])
         if not target_chunk:
-            continue  # 实战: 没映射到的 chunk 跳过
-        # 实战抽取: kind 当 relation type, value 当 target entity id (虚拟)
+            continue  # : 没映射到的 chunk 跳过
+        # 抽取: kind 当 relation type, value 当 target entity id (虚拟)
         target_entity = f"anno:{a['kind']}:{a['value']}"
         # 确保 target_entity 存在
         existing = m._conn.execute(

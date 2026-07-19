@@ -3,7 +3,6 @@
 """
 embedder.py — fastembed wrapper (configurable model)
 
-[实战]
 - 默认模型: BAAI/bge-small-zh-v1.5 (Chinese-native, 512d)
 - 复用旧系统 (Mnemosyne) 同样的 embedding 模型, 避免迁移时重嵌入
 - 与 hermes-agent/venv 共用, 不重装
@@ -125,5 +124,5 @@ if __name__ == '__main__':
     assert len(v) == 512, f'dim 错误: {len(v)}'
     print(f'✅ 单条: {len(v)} 维')
 
-    vs = e.embed_batch(['sh600089 特变电工', '翁氏 D∩W 实战'])
+    vs = e.embed_batch(['sh600089 特变电工', '翁氏 D∩W '])
     print(f'✅ 批量: {len(vs)} 条 × {len(vs[0])} 维')
