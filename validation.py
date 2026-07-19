@@ -107,9 +107,18 @@ def validate_query(query: str) -> str:
 
 
 def validate_id(value: Any, field: str = 'id') -> str:
-    """[P1-1] chunk/entity/relation/start_node/target_id/old_id 等所有 id 字段."""
+    """[P1-1] chunk/entity/relation/start_node/target_id/old_id 等所有 id 字段.
+
+    Accepts str (chunk_id, entity_id) OR int (relation_id from `Memory.relate()`).
+    Numeric IDs are coerced to str so downstream SQL/JSON serialization stays uniform.
+    """
+    if isinstance(value, bool):
+        # bool is subclass of int — reject to avoid silent True/False → 'True'/'False' IDs
+        raise ValidationError(field, 'must be str or int')
+    if isinstance(value, int):
+        value = str(value)
     if not isinstance(value, str):
-        raise ValidationError(field, 'must be str')
+        raise ValidationError(field, 'must be str or int')
     if not _ID_RE.match(value):
         raise ValidationError(field, f'format mismatch (allowed: [a-zA-Z0-9_:.\\-]{{1,{MAX_ID_LEN}}})')
     return value

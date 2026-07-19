@@ -177,8 +177,8 @@ class TestForgetBranches:
         assert 'queued_purge' in result
 
     def test_forget_relation(self, mem, clean_prefix):
-        # relate 返 int rowid; 但 forget target_id 期望 str (P1-1 validate_id 限制)
-        # 改测: 用 query 拿 relation rowid, 直接 UPDATE 模拟 forget 路径
+        # relate 返 int rowid; forget target_id 现在接受 int (v0.4.3 fix,
+        # validate_id coerces int→str so relation_id from relate() works directly)
         rid_int = mem.relate(f'{clean_prefix}_a', f'{clean_prefix}_b', 'test_forget_rel', weight=0.5)
         assert isinstance(rid_int, int)
         # 模拟 forget 内部: 用 query 拿 source_id/target_id 作 cascade 测试
@@ -186,9 +186,10 @@ class TestForgetBranches:
             "SELECT source_id, target_id FROM relations WHERE id = ?", (rid_int,)
         ).fetchone()
         assert row['source_id'].startswith(clean_prefix)
-        # 验证 validate_id 拒 int (P1-1 设计)
-        with pytest.raises(ValidationError, match='must be str'):
-            mem.forget(rid_int, target_kind='relation')
+        # forget(rid_int) 现在直接成功 (int coerced to str)
+        result = mem.forget(rid_int, target_kind='relation')
+        assert isinstance(result, dict)
+        assert 'edges_invalidated' in result
 
     def test_forget_unknown_kind_raises(self, mem):
         with pytest.raises(ValueError, match='unknown kind'):
