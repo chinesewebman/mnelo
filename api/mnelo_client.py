@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-hermes_memory_client.py — 实战客户端 (SSE)
+mnelo_client.py — 客户端 (SSE)
 
-[实战]
 - 主人口中 7/18 拍板 C 方案: trinity_daily.py 通过 MCP tool 调 hermes-memory
-- 替代直接 import memory.py (实战更解耦, mcp server 可独立升级)
-- 与 cron / 实战脚本解耦: 实战脚本只 import 客户端, 不关心 server 细节
+- 替代直接 import memory.py (更解耦, mcp server 可独立升级)
+- 与 cron / 脚本解耦: 脚本只 import 客户端, 不关心 server 细节
 
 [运行]
-    from hermes_memory_client import MneloClient
+    from mnelo_client import MneloClient
     client = MneloClient()
-    cid = client.remember('实战', source='cron', importance=0.9)
+    cid = client.remember('hello world', source='cron', importance=0.9)
 """
 import sys
 import asyncio
@@ -35,7 +34,7 @@ DEFAULT_SSE_URL = 'http://127.0.0.1:8086/sse'
 
 
 class MneloClient:
-    """实战 MCP 客户端 — 7 个工具的同步包装."""
+    """ MCP 客户端 — 7 个工具的同步包装."""
 
     def __init__(self, sse_url: str = DEFAULT_SSE_URL, timeout: float = 30.0):
         self.sse_url = sse_url
@@ -43,7 +42,7 @@ class MneloClient:
         self._session: Optional[Any] = None
 
     def _ensure_mcp(self) -> Tuple[Any, Any]:
-        """实战: 检查 MCP 库可用, 返回 (ClientSession, sse_client) 类引用."""
+        """: 检查 MCP 库可用, 返回 (ClientSession, sse_client) 类引用."""
         try:
             from mcp import ClientSession
             from mcp.client.sse import sse_client
@@ -52,11 +51,11 @@ class MneloClient:
             raise RuntimeError('MCP 客户端库不可用, 请先: pip install mcp[cli]')
 
     def _call(self, tool_name: str, arguments: Dict) -> Any:
-        """实战: SSE 连接 + 调用 + 关闭, [P2+ #5 7/18] 加重试防 cold-start race."""
+        """: SSE 连接 + 调用 + 关闭, [P2+ #5 7/18] 加重试防 cold-start race."""
         ClientSession, sse_client = self._ensure_mcp()
         last_err = None
         # [P2+ #5] 重试 2 次: 失败后退避 0.3s, 再次尝试
-        # 实战 race: MCP server 启动后 1 秒内有人调 (warm-up 时) 可能 SSE 拒绝
+        #  race: MCP server 启动后 1 秒内有人调 (warm-up 时) 可能 SSE 拒绝
         for attempt in range(2):
             try:
                 return asyncio.run(self._async_call(tool_name, arguments, ClientSession, sse_client))
@@ -75,7 +74,7 @@ class MneloClient:
             async with ClientSession(r, w) as session:
                 await session.initialize()
                 result = await session.call_tool(tool_name, arguments)
-                # 实战: result.content[0].text 是 JSON 字符串
+                # : result.content[0].text 是 JSON 字符串
                 if result.content and hasattr(result.content[0], 'text'):
                     text = result.content[0].text
                     try:
@@ -90,7 +89,7 @@ class MneloClient:
                  entities: List[Dict] = None, relations: List[Dict] = None,
                  tags: List[str] = None, session_id: str = 'default',
                  timestamp: str = None) -> str:
-        """实战: 写入 memory. 返回 chunk_id."""
+        """: 写入 memory. 返回 chunk_id."""
         args = {'content': content, 'source': source, 'importance': importance}
         if entities: args['entities'] = entities
         if relations: args['relations'] = relations
@@ -104,7 +103,7 @@ class MneloClient:
 
     def recall(self, query: str, top_k: int = 5, graph_hops: int = 2,
                filters: Dict = None, strategy: str = 'rrf', asof: str = None) -> List[Dict]:
-        """实战: 3 路 + RRF 召回. 返回 list of hits."""
+        """: 3 路 + RRF 召回. 返回 list of hits."""
         args = {'query': query, 'top_k': top_k, 'graph_hops': graph_hops, 'strategy': strategy}
         if filters: args['filters'] = filters
         if asof: args['asof'] = asof
@@ -113,7 +112,7 @@ class MneloClient:
     def relate(self, source_id: str, target_id: str, relation: str,
                weight: float = 1.0, valid_from: str = None, valid_until: str = None,
                evidence_chunk_id: str = None, properties: Dict = None) -> int:
-        """实战: 新建关系. 返回 relation_id."""
+        """: 新建关系. 返回 relation_id."""
         args = {'source_id': source_id, 'target_id': target_id, 'relation': relation, 'weight': weight}
         if valid_from: args['valid_from'] = valid_from
         if valid_until: args['valid_until'] = valid_until
@@ -126,7 +125,7 @@ class MneloClient:
 
     def forget(self, target_id: str, target_kind: str = 'chunk',
                reason: str = 'outdated', cascade: bool = True) -> Dict:
-        """实战: 软删除."""
+        """: 软删除."""
         return self._call('memory_forget', {
             'target_id': target_id, 'target_kind': target_kind,
             'reason': reason, 'cascade': cascade,
@@ -135,7 +134,7 @@ class MneloClient:
     def update(self, old_id: str, reason: str = 'updated',
                new_content: str = None, new_properties: Dict = None,
                new_importance: float = None) -> str:
-        """实战: 更新 (创建新版本)."""
+        """: 更新 (创建新版本)."""
         args = {'old_id': old_id, 'reason': reason}
         if new_content: args['new_content'] = new_content
         if new_properties: args['new_properties'] = new_properties
@@ -147,14 +146,14 @@ class MneloClient:
 
     def graph_query(self, start_node: str, max_hops: int = 3,
                     edge_types: List[str] = None, asof: str = None) -> Dict:
-        """实战: 图遍历."""
+        """: 图遍历."""
         args = {'start_node': start_node, 'max_hops': max_hops}
         if edge_types: args['edge_types'] = edge_types
         if asof: args['asof'] = asof
         return self._call('memory_graph_query', args)
 
     def stats(self) -> Dict:
-        """实战: 统计."""
+        """: 统计."""
         return self._call('memory_stats', {})
 
 
@@ -163,7 +162,7 @@ _client_instance: Optional[MneloClient] = None
 
 
 def get_client() -> MneloClient:
-    """实战: 复用单例 client (SSE 短连接, 单次 7ms)."""
+    """: 复用单例 client (SSE 短连接, 单次 7ms)."""
     global _client_instance
     if _client_instance is None:
         _client_instance = MneloClient()
@@ -181,14 +180,14 @@ if __name__ == '__main__':
 
     # 2. remember
     cid = client.remember(
-        content='hermes_memory_client 自测: 实战 MCP 客户端可用',
+        content='mnelo_client 自测:  MCP 客户端可用',
         source='client-self-test',
         importance=0.7,
     )
     print(f'✅ remember → {cid}')
 
     # 3. recall
-    results = client.recall('hermes_memory_client 自测', top_k=2)
+    results = client.recall('mnelo_client 自测', top_k=2)
     print(f'✅ recall → {len(results)} hits')
     for r in results[:1]:
         print(f"  [{r.get('method', '?')}] {r.get('content', '')[:80]}")
@@ -205,6 +204,6 @@ if __name__ == '__main__':
     print('✅ 自测完成 — 客户端可用')
 
 
-# ============== Back-compat alias ==============
+# Back-compat alias: HermesMemoryClient → MneloClient
 # 旧代码 (hermes_memory_client.HermesMemoryClient) 仍 work
 HermesMemoryClient = MneloClient

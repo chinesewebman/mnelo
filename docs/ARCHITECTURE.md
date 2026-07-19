@@ -25,7 +25,7 @@
 ├── embedder.py        # 109 行, fastembed wrapper
 ├── entity_resolve.py  # 243 行, alias 合并 + find_duplicates
 └── api/
-    └── hermes_memory_client.py  # 195 行, SSE 客户端
+    └── mnelo_client.py  # SSE 客户端 (MneloClient)
 ```
 
 部署形态: 单进程 + 单文件 SQLite + 127.0.0.1:8086 SSE，跟随 `ai.mnelo.mcp` launchd plist 启动。

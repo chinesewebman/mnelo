@@ -67,8 +67,7 @@ python3 -c "from fastembed import TextEmbedding; t = TextEmbedding('BAAI/bge-sma
 ├── entity_resolve.py         # entity 合并 + alias 解析
 │
 ├── api/
-│   ├── mnelo_client.py       # ★ 客户端 (MneloClient class)
-│   └── hermes_memory_client  # back-compat alias (老代码仍 work)
+│   └── mnelo_client.py       # ★ 客户端 (MneloClient class)
 │
 ├── scripts/
 │   ├── init_db.py            # 第一次创建 db (跑过一次即可)

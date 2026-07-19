@@ -326,8 +326,7 @@ mnelo/
 ├── i18n_messages.py                ← 30+ bilingual msg table (EN + ZH)
 │
 ├── api/
-│   ├── mnelo_client.py             ← MneloClient (SSE client, 7 tools)
-│   └── hermes_memory_client.py     ← back-compat alias
+│   └── mnelo_client.py             ← MneloClient (SSE client, 7 tools)
 │
 ├── scripts/
 │   ├── init_db.py                  ← one-shot DB creation
