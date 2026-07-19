@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.4.13 — 2026-07-19
+
+docs: update README.zh.md — 50 → 429 tests, install.sh in Quick start
+
+- Mirror v0.4.12 README.md updates to Chinese version:
+  - Test coverage: 50 → 429 passed, 12 rounds breakdown.
+  - Quick start: `install.sh` as 2a (recommended), manual as 2b.
+  - Add `LIVE_ROOT=~/.mnelo bash scripts/install.sh` override note.
+- 1 file changed, 20 insertions(+), 8 deletions(-).
+
 ## v0.4.12 — 2026-07-19
 
 docs+infra: B-class foundation — install.sh + plist template + README refresh
