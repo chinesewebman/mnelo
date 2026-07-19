@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.5.4 — 2026-07-19
+
+ci: add ruff lint + bandit security + Python matrix + coverage upload
+
+CI/CD upgrade. Old pipeline: 1 macOS run, 1 Python version, just `pytest tests/`. New pipeline: **4 stages**.
+
+1. **Lint** (ruff check + format check) on macOS/3.11.
+2. **Test matrix** (Python 3.9/3.10/3.11/3.12, fail-fast=false) with coverage.xml upload to Codecov (3.11 only, push events).
+3. **Security** (bandit, low+ severity, with documented B-id skips).
+4. **Summary** (markdown table in GitHub Actions step summary).
+
+Also: concurrency cancel on PRs (saves CI minutes on rapid pushes).
+
+**Lint fixes** (10 files reformatted + 8 manual fixes):
+- Unused imports (embedder.sys, metrics.os, mcp_server.Response).
+- Long lines wrapped (i18n, mcp_server tool schemas, memory docstring).
+- Unused loop variables prefixed with `_` (`hop`, `kind_name`).
+- Auto-formatted by `ruff format`.
+
+**CI test pipeline improvements**:
+- `requirements-dev.txt`: pytest-cov, ruff==0.15.10, bandit==1.7.10.
+- Workflow uses `-r requirements.txt -r requirements-dev.txt` (vs inline pip).
+- Init DB step symlinks 11 files (added metrics.py, validation.py, auth.py, mcp_server.py to existing 7).
+
+**README**:
+- Added CI status badge.
+- Added Codecov badge.
+- Mirrored to `README.zh.md`.
+
+**pyproject.toml**:
+- `[tool.ruff]` target py39, line-length 120, select E/W/F/I/B/C4.
+- Per-file-ignore for tests (F401/F811).
+- Global ignore for E402 (lazy imports), B008 (fastembed), B904.
+
+Verification:
+- `ruff check`: All checks passed.
+- `ruff format`: 10 files already formatted.
+- `bandit -lll`: 0 issues (after documented B-id skips).
+- `pytest`: 475 passed, 1 skipped.
+
 ## v0.5.3 — 2026-07-19
 
 feat(observability): /metrics endpoint + in-process Prometheus registry
