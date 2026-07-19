@@ -1,5 +1,49 @@
 # Changelog
 
+## v0.5.7 — 2026-07-19
+
+feat: scripts/identity_fact_manager.py — 8-predicate CLI for owner identity_facts
+
+**NEW**: `scripts/identity_fact_manager.py` (18.5K, 4 subcommands)
+- **list**: enumerate active identity_facts (filter by `--predicate`, `--json`).
+- **show**: look up one fact by predicate (and optional value).
+- **add**: create/reactivate/supersede a fact (auto-link to master person entity).
+- **remove**: soft-delete with cascade (`--yes` to skip confirmation, `--id` for exact id).
+
+**8 ALLOWED_PREDICATES**:
+- display_name, github_handle, lives_in, timezone, telegram_handle, working_lang (pre-existing)
+- profession, role (NEW v0.5.7)
+
+**Add path** — handles 3 states cleanly (pre-existing bug uncovered by this work):
+- **created**: fresh INSERT (no existing row).
+- **reactivated**: re-uses soft-deleted historical row, clears valid_until (avoids UNIQUE collision).
+- **superseded**: soft-deletes active row, then reactivate with new valid_from + name/summary/importance.
+- **linked_to**: master_*/user entity found → creates 2 relations
+  (`fact --is_identity_fact_for--> master`, `master --has_identity_fact--> fact`).
+
+**Why this matters**:
+- Operators want a `list/add/show/remove` interface; previously required SQL.
+- Cron jobs can call `--json` for monitoring.
+- Typos in predicate names caught at CLI level (allowlist validation).
+- Auto-supersede pattern respects identity_fact immutability (preserves audit trail).
+
+**Tests** — `tests/test_identity_fact_manager_round15.py` (+20 tests)
+- 4 subcommands (list/show/add/remove) — happy path + error cases.
+- Allowlist enforcement (8 predicates only).
+- Cascade behavior: remove(entity) invalidates relations pointing at it.
+- `_extract_json` helper robust to log lines mixed with JSON output.
+- Pre-clean fixture ensures tests don't pollute LIVE DB.
+
+**LIVE state**:
+- 7 active identity_facts (was 6) after demo of profession=engineer.
+- Auto-linked to `master_2077_ling` (12+ relations now from this work).
+
+Verification:
+- 519 tests pass (499 + 20 new).
+- ruff check: All checks passed.
+- ruff format: 19 files already formatted.
+- bandit: 0 issues.
+
 ## v0.5.6 — 2026-07-19
 
 fix: vec0 rowid drift — write-time + batch cleanup
