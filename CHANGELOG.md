@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.5 — 2026-07-19
+
+test: push validation.py 97% → 99%, entity_resolve.py 76% → 81% (+22 tests)
+
+- **validation.py** (97% → 99%): +11 tests for `validate_id`:
+  - `bool` rejection (`True`/`False` explicitly rejected as `int` subclass)
+  - non-str/non-int rejection (`list`/`dict`/`None`/`float`)
+  - int coercion (`42`, `0`, `-1` → `str`)
+  - format mismatch (invalid chars, too-long IDs)
+- **entity_resolve.py** (76% → 81%): +11 tests for:
+  - `normalize_text` empty + Chinese
+  - `alias_match_score` empty/punctuation
+  - `get_aliases` bad JSON + empty name
+  - `find_duplicate_candidates` empty kind / empty name / alias conflict
+  - `merge_entities` success returns rowcount/aliases info
+  - `find_duplicates_report` threshold > 1.0
+- Total: 301 → 323 passed (1 skipped, +22 tests).
+
 ## v0.4.4 — 2026-07-19
 
 test(memory): push memory.py coverage 92% → 93% (+10 branch tests)
