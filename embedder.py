@@ -12,7 +12,7 @@ Model location: fastembed uses the HuggingFace cache, which defaults to
 Override with $HF_HOME or $HUGGINGFACE_HUB_CACHE if you need to relocate.
 
 Model swap: edit [embedder] section in config.toml or set env vars
-$HERMES_MEMORY_EMBEDDER_MODEL / $HERMES_MEMORY_EMBEDDER_DIM (priority: env > file > default).
+$MNELO_MEMORY_EMBEDDER_MODEL / $MNELO_MEMORY_EMBEDDER_DIM (priority: env > file > default).
 """
 import sys
 from typing import List, Optional, Union
@@ -34,7 +34,7 @@ class Embedder:
     (~/.cache/huggingface/hub/models--BAAI--bge-small-zh-v1.5/, 92 MB on disk).
     首次调用时自动下载, 后续启动走 OS page cache, warm-up < 1s.
 
-    切换模型 (config.toml [embedder] 或 env var HERMES_MEMORY_EMBEDDER_MODEL):
+    切换模型 (config.toml [embedder] 或 env var MNELO_MEMORY_EMBEDDER_MODEL):
     - 英文: BAAI/bge-small-en-v1.5, dim=384
     - 多语种 (50+ 语种, 含日/韩/西/法): sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2, dim=384
     """

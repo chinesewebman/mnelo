@@ -290,8 +290,8 @@ class TestCallToolDebugMode:
     """mcp_server.py:402-407 — debug mode shows detail."""
 
     def test_internal_error_detail_in_debug_mode(self, mem, monkeypatch):
-        """HERMES_MEMORY_DEBUG=1 → 'detail' field included for internal errors."""
-        monkeypatch.setenv('HERMES_MEMORY_DEBUG', '1')
+        """MNELO_MEMORY_DEBUG=1 → 'detail' field included for internal errors."""
+        monkeypatch.setenv('MNELO_MEMORY_DEBUG', '1')
         # Trigger an internal error: memory_recall with query=12345 (int)
         # Memory.recall calls .strip() on it → AttributeError → generic Exception
         result = _mcp_repo._call_tool('memory_recall', {'query': 12345})
@@ -301,9 +301,9 @@ class TestCallToolDebugMode:
         assert data.get('detail') is not None
 
     def test_internal_error_no_detail_in_normal_mode(self, mem):
-        """Without HERMES_MEMORY_DEBUG → 'detail' is None."""
+        """Without MNELO_MEMORY_DEBUG → 'detail' is None."""
         # Ensure env var is not set
-        os.environ.pop('HERMES_MEMORY_DEBUG', None)
+        os.environ.pop('MNELO_MEMORY_DEBUG', None)
         result = _mcp_repo._call_tool('memory_recall', {'query': 12345})
         data = json.loads(result)
         assert data.get('type') == 'internal'

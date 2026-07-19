@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-memory.py — hermes-memory 核心 CRUD API
+memory.py — mnelo 核心 CRUD API
 
 - 6 个核心接口: remember / recall / relate / forget / update / graph_query
-- 3 路召回 (向量 + 图 + 元数据) + RRF 融合
+- 4 路召回 (向量 + 图 + 元数据 + 实体) + RRF 融合
 - 4D 时间维度 (valid_from / valid_until / soft delete + 自动级联)
 - 单一 writer (单进程) + WAL + busy_timeout=30s 防 lock
 """

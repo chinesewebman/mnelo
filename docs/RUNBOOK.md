@@ -121,13 +121,13 @@ schema 自动建 11 tables: `chunks`, `entities`, `relations`, `vectors` (sqlite
         <string>--host</string>
         <string>127.0.0.1</string>
         <!-- 不传 --port: argparse default 走 config.server_port.
-             Port 改值: plist 环境变量 HERMES_MEMORY_SERVER_PORT, 或 config.toml [server].port. -->
+             Port 改值: plist 环境变量 MNELO_MEMORY_SERVER_PORT, 或 config.toml [server].port. -->
     </array>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>HERMES_HOME</key>
+        <key>MNELO_HOME</key>
         <string>/Users/you/.hermes</string>
-        <key>HERMES_MEMORY_SERVER_PORT</key>
+        <key>MNELO_MEMORY_SERVER_PORT</key>
         <string>8086</string>
         <key>VIRTUAL_ENV</key>
         <string>/Users/you/hermes-agent/venv</string>
@@ -315,8 +315,8 @@ warm_up_embedder = true      # 启动时预加载 bge-small-zh (避免首次 1s 
 环境变量优先 (env vars > toml > 代码默认):
 
 ```bash
-export HERMES_MEMORY_TIMEZONE=Asia/Shanghai   # 覆盖 timezone
-export HERMES_MEMORY_WARM_UP_EMBEDDER=false   # 启动不预热 (省 500ms)
+export MNELO_MEMORY_TIMEZONE=Asia/Shanghai   # 覆盖 timezone
+export MNELO_MEMORY_WARM_UP_EMBEDDER=false   # 启动不预热 (省 500ms)
 ```
 
 ---

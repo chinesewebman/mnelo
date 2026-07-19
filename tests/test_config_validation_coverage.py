@@ -216,7 +216,7 @@ class TestAuthErrorFullPath:
         """AUTH_TOKEN_FILE exists with non-empty content → returns content."""
         from auth import AuthError, load_auth_token
         # Clear all env vars
-        for var in ('MNEOLO_AUTH_TOKEN', 'HERMES_MEMORY_AUTH_TOKEN'):
+        for var in ('MNEOLO_AUTH_TOKEN', 'MNELO_MEMORY_AUTH_TOKEN'):
             monkeypatch.delenv(var, raising=False)
         # Create a real token file
         import auth as live_auth
@@ -229,7 +229,7 @@ class TestAuthErrorFullPath:
     def test_load_auth_token_empty_file_falls_through(self, monkeypatch, tmp_path):
         """AUTH_TOKEN_FILE exists but empty → falls through → AuthError."""
         from auth import AuthError, load_auth_token
-        for var in ('MNEOLO_AUTH_TOKEN', 'HERMES_MEMORY_AUTH_TOKEN'):
+        for var in ('MNEOLO_AUTH_TOKEN', 'MNELO_MEMORY_AUTH_TOKEN'):
             monkeypatch.delenv(var, raising=False)
         import auth as live_auth
         token_file = tmp_path / 'empty_token'
@@ -242,7 +242,7 @@ class TestAuthErrorFullPath:
     def test_load_auth_token_no_config_raises_auth_error(self, monkeypatch, tmp_path):
         """No env var, no token file → AuthError."""
         from auth import AuthError, load_auth_token
-        for var in ('MNEOLO_AUTH_TOKEN', 'HERMES_MEMORY_AUTH_TOKEN'):
+        for var in ('MNEOLO_AUTH_TOKEN', 'MNELO_MEMORY_AUTH_TOKEN'):
             monkeypatch.delenv(var, raising=False)
         import auth as live_auth
         monkeypatch.setattr(live_auth, 'AUTH_TOKEN_FILE', tmp_path / 'nonexistent_token')

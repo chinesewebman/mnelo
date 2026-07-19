@@ -34,8 +34,8 @@ class TestServerConfig:
     def test_defaults_no_file_no_env(self, monkeypatch, tmp_path):
         # 隔离 config 文件 (用 tmp_path 替代 CONFIG_PATH)
         monkeypatch.setattr(config_mod, 'CONFIG_PATH', tmp_path / 'nonexistent.toml')
-        monkeypatch.delenv('HERMES_MEMORY_SERVER_HOST', raising=False)
-        monkeypatch.delenv('HERMES_MEMORY_SERVER_PORT', raising=False)
+        monkeypatch.delenv('MNELO_MEMORY_SERVER_HOST', raising=False)
+        monkeypatch.delenv('MNELO_MEMORY_SERVER_PORT', raising=False)
         cfg = config_mod.Config()
         assert cfg.server_host == '127.0.0.1'
         assert cfg.server_port == 8086
@@ -44,8 +44,8 @@ class TestServerConfig:
         cfg_file = tmp_path / 'config.toml'
         cfg_file.write_text('[server]\nhost = "192.168.1.10"\nport = 9999\n')
         monkeypatch.setattr(config_mod, 'CONFIG_PATH', cfg_file)
-        monkeypatch.delenv('HERMES_MEMORY_SERVER_HOST', raising=False)
-        monkeypatch.delenv('HERMES_MEMORY_SERVER_PORT', raising=False)
+        monkeypatch.delenv('MNELO_MEMORY_SERVER_HOST', raising=False)
+        monkeypatch.delenv('MNELO_MEMORY_SERVER_PORT', raising=False)
         cfg = config_mod.Config()
         assert cfg.server_host == '192.168.1.10'
         assert cfg.server_port == 9999
@@ -54,8 +54,8 @@ class TestServerConfig:
         cfg_file = tmp_path / 'config.toml'
         cfg_file.write_text('[server]\nport = 9999\n')
         monkeypatch.setattr(config_mod, 'CONFIG_PATH', cfg_file)
-        monkeypatch.setenv('HERMES_MEMORY_SERVER_PORT', '7777')
-        monkeypatch.delenv('HERMES_MEMORY_SERVER_HOST', raising=False)
+        monkeypatch.setenv('MNELO_MEMORY_SERVER_PORT', '7777')
+        monkeypatch.delenv('MNELO_MEMORY_SERVER_HOST', raising=False)
         cfg = config_mod.Config()
         assert cfg.server_port == 7777
 
@@ -63,7 +63,7 @@ class TestServerConfig:
         cfg_file = tmp_path / 'config.toml'
         cfg_file.write_text('[server]\nport = 99999\n')  # out of range
         monkeypatch.setattr(config_mod, 'CONFIG_PATH', cfg_file)
-        monkeypatch.delenv('HERMES_MEMORY_SERVER_PORT', raising=False)
+        monkeypatch.delenv('MNELO_MEMORY_SERVER_PORT', raising=False)
         cfg = config_mod.Config()
         assert cfg.server_port == 8086  # fallback
         # warning 应打到 stderr
@@ -74,7 +74,7 @@ class TestServerConfig:
         cfg_file = tmp_path / 'config.toml'
         cfg_file.write_text('[server]\nport = "not-a-number"\n')
         monkeypatch.setattr(config_mod, 'CONFIG_PATH', cfg_file)
-        monkeypatch.delenv('HERMES_MEMORY_SERVER_PORT', raising=False)
+        monkeypatch.delenv('MNELO_MEMORY_SERVER_PORT', raising=False)
         cfg = config_mod.Config()
         assert cfg.server_port == 8086
 
@@ -83,7 +83,7 @@ class TestServerConfig:
         cfg_file = tmp_path / 'config.toml'
         cfg_file.write_text('[server]\nport = 80\n')
         monkeypatch.setattr(config_mod, 'CONFIG_PATH', cfg_file)
-        monkeypatch.delenv('HERMES_MEMORY_SERVER_PORT', raising=False)
+        monkeypatch.delenv('MNELO_MEMORY_SERVER_PORT', raising=False)
         cfg = config_mod.Config()
         assert cfg.server_port == 8086  # 回落
 
@@ -92,8 +92,8 @@ class TestServerConfig:
         cfg_file = tmp_path / 'config.toml'
         cfg_file.write_text('[server]\nport = 9090\n')
         monkeypatch.setattr(config_mod, 'CONFIG_PATH', cfg_file)
-        monkeypatch.delenv('HERMES_MEMORY_SERVER_HOST', raising=False)
-        monkeypatch.delenv('HERMES_MEMORY_SERVER_PORT', raising=False)
+        monkeypatch.delenv('MNELO_MEMORY_SERVER_HOST', raising=False)
+        monkeypatch.delenv('MNELO_MEMORY_SERVER_PORT', raising=False)
         cfg = config_mod.Config()
         assert cfg.server_port == 9090
         assert cfg.server_host == '127.0.0.1'  # default
@@ -114,7 +114,7 @@ class TestEmbedderConfig:
 
     def test_default_embedder(self, monkeypatch, tmp_path):
         monkeypatch.setattr(config_mod, 'CONFIG_PATH', tmp_path / 'nonexistent.toml')
-        for k in ('HERMES_MEMORY_EMBEDDER_MODEL', 'HERMES_MEMORY_EMBEDDER_DIM'):
+        for k in ('MNELO_MEMORY_EMBEDDER_MODEL', 'MNELO_MEMORY_EMBEDDER_DIM'):
             monkeypatch.delenv(k, raising=False)
         cfg = config_mod.Config()
         assert cfg.embedder_model == 'BAAI/bge-small-zh-v1.5'
@@ -122,7 +122,7 @@ class TestEmbedderConfig:
 
     def test_embedder_from_env(self, monkeypatch, tmp_path):
         monkeypatch.setattr(config_mod, 'CONFIG_PATH', tmp_path / 'nonexistent.toml')
-        monkeypatch.setenv('HERMES_MEMORY_EMBEDDER_MODEL', 'BAAI/bge-small-en-v1.5')
+        monkeypatch.setenv('MNELO_MEMORY_EMBEDDER_MODEL', 'BAAI/bge-small-en-v1.5')
         cfg = config_mod.Config()
         assert cfg.embedder_model == 'BAAI/bge-small-en-v1.5'
 
@@ -141,7 +141,7 @@ class TestDescribe:
         cfg_file = tmp_path / 'config.toml'
         cfg_file.write_text('[server]\nport = 9999\n')
         monkeypatch.setattr(config_mod, 'CONFIG_PATH', cfg_file)
-        for k in ('HERMES_MEMORY_SERVER_HOST', 'HERMES_MEMORY_SERVER_PORT'):
+        for k in ('MNELO_MEMORY_SERVER_HOST', 'MNELO_MEMORY_SERVER_PORT'):
             monkeypatch.delenv(k, raising=False)
         cfg = config_mod.Config()
         d = cfg.describe()

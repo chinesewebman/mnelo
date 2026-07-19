@@ -27,7 +27,7 @@ def get_locale() -> str:
     """: 返回当前 locale code.
 
     Priority (highest first):
-    1. HERMES_MEMORY_LANG env var (e.g. 'zh', 'en-US')
+    1. MNELO_MEMORY_LANG env var (e.g. 'zh', 'en-US')
     2. LANG/LC_ALL env (POSIX standard, e.g. 'zh_CN.UTF-8' → 'zh')
     3. config.toml default → 'en'
 
@@ -35,7 +35,7 @@ def get_locale() -> str:
         'en' | 'zh' | ...
     """
     # 1.  override
-    env_lang = os.environ.get('HERMES_MEMORY_LANG')
+    env_lang = os.environ.get('MNELO_MEMORY_LANG')
     if env_lang:
         return _normalize(env_lang)
 
@@ -86,7 +86,7 @@ def current_locale() -> str:
 
 
 def reload() -> None:
-    """: 重新检测 locale ( HERMES_MEMORY_LANG 实测 changed 后 reload)."""
+    """: 重新检测 locale ( MNELO_MEMORY_LANG 实测 changed 后 reload)."""
     global _current_locale, _current_locale_cache
     _current_locale = get_locale()
     _current_locale_cache = _current_locale

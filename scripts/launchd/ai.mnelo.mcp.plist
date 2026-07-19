@@ -15,11 +15,11 @@
     </array>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>HERMES_HOME</key>
-        <string>__HERMES_HOME__</string>
+        <key>MNELO_HOME</key>
+        <string>__MNELO_HOME__</string>
         <!-- Port 显式走 env (config chain: env > toml > default).
              Plist 不传 --port 让 argparse 走 config.server_port. -->
-        <key>HERMES_MEMORY_SERVER_PORT</key>
+        <key>MNELO_MEMORY_SERVER_PORT</key>
         <string>8086</string>
         <!-- 不显式 PATH, 让 launchd 从 VIRTUAL_ENV prepend venv bin.
              显式 PATH 任何本地 user 可以丢恶意 python3 shim → RCE. -->
@@ -46,9 +46,9 @@
         <integer>1024</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>__HERMES_HOME__/logs/mnelo.mcp.log</string>
+    <string>__MNELO_HOME__/logs/mnelo.mcp.log</string>
     <key>StandardErrorPath</key>
-    <string>__HERMES_HOME__/logs/mnelo.mcp.error.log</string>
+    <string>__MNELO_HOME__/logs/mnelo.mcp.error.log</string>
     <key>WorkingDirectory</key>
     <string>__LIVE_ROOT__</string>
 </dict>

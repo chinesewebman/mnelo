@@ -25,7 +25,7 @@ umask 077  # [P0-1] 默认 0600/0700, 防止其他本地 user 读 mnelo 数据
 
 # ---- 配置 ----
 LIVE_ROOT="${LIVE_ROOT:-$HOME/.hermes/memory}"
-HERMES_HOME="$(dirname "$LIVE_ROOT")"
+MNELO_HOME="$(dirname "$LIVE_ROOT")"
 PLIST_LABEL="ai.mnelo.mcp"
 PLIST_SRC="$(cd "$(dirname "$0")/.." && pwd)/scripts/launchd/${PLIST_LABEL}.plist"
 PLIST_DST="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
@@ -129,7 +129,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
         sed -e "s|__LIVE_ROOT__|$LIVE_ROOT|g" \
             -e "s|__VENV_PY__|$VENV_PY|g" \
             -e "s|__VENV_DIR__|$VENV_DIR|g" \
-            -e "s|__HERMES_HOME__|$HERMES_HOME|g" \
+            -e "s|__MNELO_HOME__|$MNELO_HOME|g" \
             "$PLIST_SRC" > "$PLIST_DST"
         chmod 644 "$PLIST_DST"
 
@@ -137,12 +137,12 @@ if [ "$(uname -s)" = "Darwin" ]; then
         launchctl unload "$PLIST_DST" 2>/dev/null || true
         launchctl load "$PLIST_DST"
         ok "plist 已装 + launchd load 成功"
-        log "日志: tail -f $HERMES_HOME/logs/mnelo.mcp.log"
+        log "日志: tail -f $MNELO_HOME/logs/mnelo.mcp.log"
     else
         warn "plist 模板不存在: $PLIST_SRC (跳过 launchd 装)"
     fi
 else
-    log "非 macOS, 跳过 launchd (手动跑: HERMES_HOME=$HERMES_HOME $VENV_PY $LIVE_ROOT/mcp_server.py --transport sse)"
+    log "非 macOS, 跳过 launchd (手动跑: MNELO_HOME=$MNELO_HOME $VENV_PY $LIVE_ROOT/mcp_server.py --transport sse)"
 fi
 
 # ---- 11. health check ----

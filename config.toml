@@ -11,6 +11,6 @@ warm_up_embedder = true    # Memory 启动时加载 embedding 模型到 RAM, 避
 # 中文 (默认): BAAI/bge-small-zh-v1.5, 512d
 # 英文: BAAI/bge-small-en-v1.5, 384d
 # 多语种 (含日/韩/西/法 等 50+): sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2, 384d
-# 提示: 也可通过环境变量覆盖 — HERMES_MEMORY_EMBEDDER_MODEL / HERMES_MEMORY_EMBEDDER_DIM
+# 提示: 也可通过环境变量覆盖 — MNELO_MEMORY_EMBEDDER_MODEL / MNELO_MEMORY_EMBEDDER_DIM
 model = 'BAAI/bge-small-zh-v1.5'
 dim = 512

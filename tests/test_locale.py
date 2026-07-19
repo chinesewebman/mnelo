@@ -8,7 +8,7 @@ import pytest
 def fresh_locale(monkeypatch):
     """Reload mnelo_locale with cleared env to control detection."""
     # Clear all locale env vars
-    for var in ('HERMES_MEMORY_LANG', 'LC_ALL', 'LANG'):
+    for var in ('MNELO_MEMORY_LANG', 'LC_ALL', 'LANG'):
         monkeypatch.delenv(var, raising=False)
     # Reset the cached module's _current_locale instead of full reload
     # (full reload creates a new module object → coverage fragmentation).
@@ -22,7 +22,7 @@ class TestGetLocale:
     """get_locale() — 4-step detection chain."""
 
     def test_hermes_memory_lang_overrides_all(self, fresh_locale, monkeypatch):
-        monkeypatch.setenv('HERMES_MEMORY_LANG', 'zh')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', 'zh')
         monkeypatch.setenv('LC_ALL', 'en_US.UTF-8')
         monkeypatch.setenv('LANG', 'en_US.UTF-8')
         assert fresh_locale.get_locale() == 'zh'
@@ -39,7 +39,7 @@ class TestGetLocale:
 
     def test_fallback_to_en_when_nothing_set(self, fresh_locale, monkeypatch):
         # All locale env vars cleared; no system locale fallback we can rely on
-        monkeypatch.delenv('HERMES_MEMORY_LANG', raising=False)
+        monkeypatch.delenv('MNELO_MEMORY_LANG', raising=False)
         monkeypatch.delenv('LC_ALL', raising=False)
         monkeypatch.delenv('LANG', raising=False)
         # Result is either 'en' (no fallback path triggered) or system locale.
@@ -87,21 +87,21 @@ class TestCurrentLocale:
     """current_locale() — cached lookup."""
 
     def test_first_call_triggers_get_locale(self, fresh_locale, monkeypatch):
-        monkeypatch.setenv('HERMES_MEMORY_LANG', 'zh')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', 'zh')
         assert fresh_locale.current_locale() == 'zh'
 
     def test_subsequent_calls_use_cache(self, fresh_locale, monkeypatch):
-        monkeypatch.setenv('HERMES_MEMORY_LANG', 'zh')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', 'zh')
         first = fresh_locale.current_locale()
         # Change env after first call — cache should still return 'zh'
-        monkeypatch.setenv('HERMES_MEMORY_LANG', 'en')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', 'en')
         second = fresh_locale.current_locale()
         assert first == second == 'zh'
 
     def test_reload_refreshes_cache(self, fresh_locale, monkeypatch):
-        monkeypatch.setenv('HERMES_MEMORY_LANG', 'zh')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', 'zh')
         assert fresh_locale.current_locale() == 'zh'
-        monkeypatch.setenv('HERMES_MEMORY_LANG', 'en')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', 'en')
         fresh_locale.reload()
         assert fresh_locale.current_locale() == 'en'
 
@@ -110,7 +110,7 @@ class TestT:
     """t() — message resolver with locale + fallback."""
 
     def test_returns_zh_string(self, fresh_locale, monkeypatch):
-        monkeypatch.setenv('HERMES_MEMORY_LANG', 'zh')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', 'zh')
         fresh_locale.reload()
         result = fresh_locale.t('db.stats.retrieved')
         # Should return a non-empty string for known msg_id
@@ -118,21 +118,21 @@ class TestT:
         assert len(result) > 0
 
     def test_returns_en_string_when_locale_en(self, fresh_locale, monkeypatch):
-        monkeypatch.setenv('HERMES_MEMORY_LANG', 'en')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', 'en')
         fresh_locale.reload()
         result = fresh_locale.t('db.stats.retrieved')
         assert isinstance(result, str)
         assert len(result) > 0
 
     def test_unknown_msg_id_returns_id_itself(self, fresh_locale, monkeypatch):
-        monkeypatch.setenv('HERMES_MEMORY_LANG', 'en')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', 'en')
         fresh_locale.reload()
         result = fresh_locale.t('nonexistent.message.id')
         assert result == 'nonexistent.message.id'
 
     def test_format_kwargs_applied(self, fresh_locale, monkeypatch):
         """Pick a msg_id with format placeholders if any."""
-        monkeypatch.setenv('HERMES_MEMORY_LANG', 'en')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', 'en')
         fresh_locale.reload()
         # Try a generic format test — t() with unknown id returns id, no format applied
         result = fresh_locale.t('nonexistent.id', count=42)
@@ -140,7 +140,7 @@ class TestT:
 
     def test_format_kwargs_keyerror_returns_unformatted(self, fresh_locale, monkeypatch):
         """If template has {name} but no name kwarg, return template as-is."""
-        monkeypatch.setenv('HERMES_MEMORY_LANG', 'en')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', 'en')
         fresh_locale.reload()
         # Test with a known msg if it has placeholders; otherwise skip logic check
         from i18n_messages import MESSAGES
@@ -183,7 +183,7 @@ class TestLocaleEdgeCases:
     def test_syslocale_failure_falls_back_to_en(self, fresh_locale, monkeypatch):
         """When Python's _syslocale.getlocale() raises, get_locale() returns 'en'."""
         import locale as _syslocale
-        monkeypatch.setenv('HERMES_MEMORY_LANG', '')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', '')
         monkeypatch.setenv('LC_ALL', '')
         monkeypatch.setenv('LANG', '')
         monkeypatch.setattr(_syslocale, 'getlocale', lambda: (_syslocale.setlocale(_syslocale.LC_ALL, '')))
@@ -195,7 +195,7 @@ class TestLocaleEdgeCases:
 
     def test_format_indexerror_returns_unformatted(self, fresh_locale, monkeypatch):
         """When template has {0} but no positional arg, return template as-is."""
-        monkeypatch.setenv('HERMES_MEMORY_LANG', 'en')
+        monkeypatch.setenv('MNELO_MEMORY_LANG', 'en')
         fresh_locale.reload()
         # Inject a fake msg with positional placeholder
         import i18n_messages

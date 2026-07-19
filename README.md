@@ -102,7 +102,7 @@ Nothing is ever hard-deleted. Updates create new rows with `valid_until` timesta
 When a query matches a stock code (e.g. `sh600089`), the entity hit gets a `0.05/sqrt(rank)` boost in RRF fusion. **Practical**: stock entities float to the top when you ask "sh600089".
 
 ### 🌏 Bilingual out of the box
-- Locale auto-detect: `HERMES_MEMORY_LANG` > `LC_ALL` > `LANG` > `en`
+- Locale auto-detect: `MNELO_MEMORY_LANG` > `LC_ALL` > `LANG` > `en`
 - 30+ user-facing strings, all in both English and 中文
 - Add a new locale by appending to `i18n_messages.py` — no code change needed
 
@@ -210,8 +210,8 @@ dim = 384
 Or via env var (no config edit):
 
 ```bash
-export HERMES_MEMORY_EMBEDDER_MODEL='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
-export HERMES_MEMORY_EMBEDDER_DIM=384
+export MNELO_MEMORY_EMBEDDER_MODEL='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
+export MNELO_MEMORY_EMBEDDER_DIM=384
 launchctl kickstart -k gui/$(id -u)/ai.mnelo.mcp
 ```
 
@@ -401,7 +401,7 @@ python3 scripts/init_db.py
 
 # 4. Start MCP server
 launchctl load ~/Library/LaunchAgents/ai.mnelo.mcp.plist
-# (or: HERMES_MEMORY_SERVER_PORT=8086 python3 mcp_server.py --transport sse)
+# (or: MNELO_MEMORY_SERVER_PORT=8086 python3 mcp_server.py --transport sse)
 
 # 5. Use from Python
 python3 -c "
@@ -419,7 +419,7 @@ for h in c.recall('sh600089 建仓', top_k=5):
 For Chinese locale:
 
 ```bash
-export HERMES_MEMORY_LANG=zh
+export MNELO_MEMORY_LANG=zh
 python3 scripts/health_check.py
 ```
 
@@ -448,7 +448,7 @@ Add a new locale (e.g. Japanese) — 1 edit, no code change:
 },
 ```
 
-Set `HERMES_MEMORY_LANG=ja` to test. Locale miss falls back to `en`, then to `msg_id` (so missing strings are debuggable, not silent).
+Set `MNELO_MEMORY_LANG=ja` to test. Locale miss falls back to `en`, then to `msg_id` (so missing strings are debuggable, not silent).
 
 ---
 

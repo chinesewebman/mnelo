@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-mcp_server.py — hermes-memory MCP Server (替代 Mnemosyne MCP)
+mcp_server.py — mnelo MCP Server (替代 Mnemosyne MCP)
 
-- 主人口中 7/18 拍板 A+C 方案: 写 hermes-memory mcp + 杀 Mnemosyne MCP
+- 主人口中 7/18 拍板 A+C 方案: 写 mnelo (前身 hermes-memory) mcp + 杀 Mnemosyne MCP
+- 7/19 v0.5.0 breaking change: 变量名 `HERMES_MEMORY_*` → `MNELO_MEMORY_*`, `MNELO_HOME` → `MNELO_HOME`
 - 接口: memory_remember / memory_recall / memory_relate / memory_forget
        / memory_update / memory_graph_query / memory_stats
 - 7 工具, 与 hermes-memory v1.0 6 API + 1 个 stats 完美对齐
 - SSE transport on 127.0.0.1:8086 (与 Mnemosyne 同端口, 无缝替换)
 
 [运行]
-    cd ~/.hermes/memory && python3 mcp_server.py --transport sse
-    (port 走 config: env HERMES_MEMORY_SERVER_PORT > toml [server].port > 8086)
+    cd LIVE_ROOT && python3 mcp_server.py --transport sse
+    (port 走 config: env MNELO_MEMORY_SERVER_PORT > toml [server].port > 8086)
 """
 import sys
 import os
@@ -405,8 +406,8 @@ def _call_tool(name: str, args: Dict) -> str:
             'error': type(e).__name__,
             'tool': name,
             'type': 'internal',
-            # 'detail' 字段只在调试模式 (HERMES_MEMORY_DEBUG=1) 暴露
-            'detail': str(e) if os.environ.get('HERMES_MEMORY_DEBUG') == '1' else None,
+            # 'detail' 字段只在调试模式 (MNELO_MEMORY_DEBUG=1) 暴露
+            'detail': str(e) if os.environ.get('MNELO_MEMORY_DEBUG') == '1' else None,
         }, ensure_ascii=False)
 
 

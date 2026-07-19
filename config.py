@@ -1,10 +1,10 @@
 """
-hermes-memory config — load settings from environment variables or config file.
+mnelo config — load settings from environment variables or config file.
 
-[ 7/18 P2]
+[ 7/18 P2, 7/19 v0.5.0]
 来源优先级 (高到低):
-1. 环境变量 HERMES_MEMORY_* (部署, systemd/launchd)
-2. 配置文件 ~/.hermes/memory/config.toml (本地覆盖)
+1. 环境变量 MNELO_MEMORY_* (部署, systemd/launchd)
+2. 配置文件 LIVE_ROOT/config.toml (本地覆盖, 默认 ~/.hermes/memory/config.toml)
 3. 默认值 (localtime)
 
 [配置项]
@@ -37,7 +37,7 @@ except ImportError:
         tomllib = None
 
 
-CONFIG_PATH = Path(os.environ.get('HERMES_MEMORY_CONFIG',
+CONFIG_PATH = Path(os.environ.get('MNELO_MEMORY_CONFIG',
                                   '/Users/apple/.hermes/memory/config.toml'))
 
 
@@ -86,21 +86,21 @@ class Config:
 
         # Timezone: env > file > default (local)
         self.timezone = _resolve_tz(
-            os.environ.get('HERMES_MEMORY_TIMEZONE') or
+            os.environ.get('MNELO_MEMORY_TIMEZONE') or
             self._raw.get('timezone')
         )
 
         # Warm-up: env > file > default (True)
-        warm_str = (os.environ.get('HERMES_MEMORY_WARM_UP_EMBEDDER') or
+        warm_str = (os.environ.get('MNELO_MEMORY_WARM_UP_EMBEDDER') or
                     str(self._raw.get('warm_up_embedder', True)))
         self.warm_up_embedder = warm_str.lower() not in ('false', '0', 'no', 'off')
 
         # Embedder model: env > file > default (bge-small-zh-v1.5, 512d)
-        # 允许 env override (e.g. HERMES_MEMORY_EMBEDDER_MODEL=BAAI/bge-small-en-v1.5)
+        # 允许 env override (e.g. MNELO_MEMORY_EMBEDDER_MODEL=BAAI/bge-small-en-v1.5)
         # TOML key: embedder.model (嵌套 section)
         embedder_section = self._raw.get('embedder', {}) if isinstance(self._raw.get('embedder'), dict) else {}
         self.embedder_model = (
-            os.environ.get('HERMES_MEMORY_EMBEDDER_MODEL')
+            os.environ.get('MNELO_MEMORY_EMBEDDER_MODEL')
             or embedder_section.get('model')
             or self._raw.get('embedder_model')  # 兼容旧扁平 key
             or 'BAAI/bge-small-zh-v1.5'
@@ -109,7 +109,7 @@ class Config:
         # Embedder dim: env > file > default (512)
         # 必须与 model 实际输出维度一致 — 错配会让 sqlite-vec insert 失败
         dim_str = (
-            os.environ.get('HERMES_MEMORY_EMBEDDER_DIM')
+            os.environ.get('MNELO_MEMORY_EMBEDDER_DIM')
             or str(embedder_section.get('dim', ''))
             or str(self._raw.get('embedder_dim', ''))
             or '512'
@@ -123,12 +123,12 @@ class Config:
         # [Round 2 quality audit] server.host + server.port 配置
         server_section = self._raw.get('server', {}) if isinstance(self._raw.get('server'), dict) else {}
         self.server_host = (
-            os.environ.get('HERMES_MEMORY_SERVER_HOST')
+            os.environ.get('MNELO_MEMORY_SERVER_HOST')
             or server_section.get('host')
             or '127.0.0.1'
         )
         port_str = (
-            os.environ.get('HERMES_MEMORY_SERVER_PORT')
+            os.environ.get('MNELO_MEMORY_SERVER_PORT')
             or str(server_section.get('port', ''))
             or ''
         )

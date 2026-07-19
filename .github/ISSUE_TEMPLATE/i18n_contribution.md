@@ -23,4 +23,4 @@ List the `msg_id` keys you'd translate. See `i18n_messages.py` for the full list
 **Acceptance criteria**
 - [ ] Added 2-letter code: {zh, en, ja, ...}
 - [ ] Format placeholders preserved (`{count}`, `{pct:.0f}`)
-- [ ] Smoke tested with `HERMES_MEMORY_LANG=<code>`
+- [ ] Smoke tested with `MNELO_MEMORY_LANG=<code>`

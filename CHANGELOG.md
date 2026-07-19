@@ -64,7 +64,7 @@ docs+infra: B-class foundation — install.sh + plist template + README refresh
   - Runs `health_check.py` to verify.
   - Accepts `LIVE_ROOT=~/.mnelo bash scripts/install.sh` for non-default path.
 - **`scripts/launchd/ai.mnelo.mcp.plist`** (1.8K): parameterized plist template.
-  - `__LIVE_ROOT__` / `__VENV_PY__` / `__VENV_DIR__` / `__HERMES_HOME__` placeholders.
+  - `__LIVE_ROOT__` / `__VENV_PY__` / `__VENV_DIR__` / `__MNELO_HOME__` placeholders.
   - Filled by `install.sh` via `sed`.
 - **`README.md` updates**:
   - Quick start: install.sh as recommended path, manual steps as 2b.
@@ -251,7 +251,7 @@ test(mcp_server): add 13 tests for uncovered dispatcher + SSE paths
 
 test(locale): add 24 tests for mnelo_locale (0% → 100% coverage)
 
-- Covers previously-untested locale module: get_locale() detection chain (HERMES_MEMORY_LANG > LC_ALL > LANG > system locale > en), _normalize() POSIX parsing (zh_CN/zh_TW/en_US/hyphen forms), current_locale() lazy caching + reload() refresh, t() message resolver with zh/en fallback + format kwargs.
+- Covers previously-untested locale module: get_locale() detection chain (MNELO_MEMORY_LANG > LC_ALL > LANG > system locale > en), _normalize() POSIX parsing (zh_CN/zh_TW/en_US/hyphen forms), current_locale() lazy caching + reload() refresh, t() message resolver with zh/en fallback + format kwargs.
 - Edge cases: _syslocale.getlocale() exception path, format positional IndexError.
 - Total: 171 → 195 passed (1 skipped).
 
