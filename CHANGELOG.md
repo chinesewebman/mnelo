@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.4.12 — 2026-07-19
+
+docs+infra: B-class foundation — install.sh + plist template + README refresh
+
+- **`scripts/install.sh`** (5.5K, idempotent): one-shot install for local-first memory layer.
+  - Creates venv, `pip install`, `init_db`, downloads bge-small-zh embedder model (~92 MB).
+  - Generates auth token at `~/.config/mnelo/auth_token` (mode 0600).
+  - Copies repo files to `LIVE_ROOT` with 0600/0700 perms (P0 security).
+  - Installs + loads launchd plist (macOS).
+  - Runs `health_check.py` to verify.
+  - Accepts `LIVE_ROOT=~/.mnelo bash scripts/install.sh` for non-default path.
+- **`scripts/launchd/ai.mnelo.mcp.plist`** (1.8K): parameterized plist template.
+  - `__LIVE_ROOT__` / `__VENV_PY__` / `__VENV_DIR__` / `__HERMES_HOME__` placeholders.
+  - Filled by `install.sh` via `sed`.
+- **`README.md` updates**:
+  - Quick start: install.sh as recommended path, manual steps as 2b.
+  - Test coverage: 50 → 429 tests, 12 rounds (v0.4.0 → v0.4.11), per-module progression.
+  - RRF explanation, install with `cd`, embedding model links — all already present.
+- **`.gitignore`**: add `*.cover` / `.coverage.*` / `.tox/` (coverage annotation files).
+- **`tests/test_mcp_final_branches_round11.py`**: cache `AuthError` class ref (avoid double `_load_from_repo` call).
+
+B-class audit complete:
+- ✅ README + README.zh.md comprehensive (RRF, install, embedding links all present)
+- ✅ `docs/RUNBOOK.md` (13.4K, 10 sections, comprehensive)
+- ✅ `docs/ARCHITECTURE.md` (13.8K)
+- ✅ `docs/SCHEMA.md` (22.8K)
+- ✅ Helper scripts: `init_db.py`, `health_check.py`, `migrate_to_mnelo.py`, `import_holdings.py`, `import_identity_facts.py`, `repair_vectors.py`
+- ✅ Plist Label renamed: `ai.mnelo.mcp`
+- ✅ Post-commit sync hook: `.githooks/post-commit` (6.1K)
+- 🆕 NEW: `install.sh` one-shot install
+
 ## v0.4.11 — 2026-07-19
 
 test(mcp_server): push REPO coverage 94% → 98% via dead-code remediation (+15 tests)
