@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.4.7 — 2026-07-19
+
+test(mcp_server): push REPO coverage 63% → 75% via custom handlers (+18 tests)
+
+- **mcp_server.py** (REPO 63% → 75%): +18 tests using `_load_from_repo` to force REPO module into `sys.modules`.
+  - `_handle_entity_resolve` (lines 295-307): default args / kind filter / max_pairs cap
+  - `_handle_list_entities` (lines 321-334): empty / kind / min_importance / limit / excludes deleted
+  - `_handle_search_relations` (lines 348-364): basic / asof / no results / with limit
+  - `_resolve_server_defaults` (lines 233-234): exception fallback to defaults
+  - `_rate_limit_check` window reset path
+  - Module constants sanity checks (`DEFAULT_SSE_*`, `_TOOL_REGISTRY`, `_CUSTOM_HANDLERS`)
+- Skipped direct rate-limit breach test (already covered by `test_more_coverage.py::TestRateLimitCheck`; cross-test `_RATE_BUCKETS` pollution makes it fragile).
+- Total: 340 → 358 passed (1 skipped, +18 tests).
+
 ## v0.4.6 — 2026-07-19
 
 test(mcp_server): push REPO coverage 56% → 63% (+17 tests via _load_from_repo)
