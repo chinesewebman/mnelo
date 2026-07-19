@@ -6,8 +6,8 @@
     <string>ai.mnelo.mcp</string>
     <key>ProgramArguments</key>
     <array>
-        <string>__VENV_PY__</string>
-        <string>__LIVE_ROOT__/mcp_server.py</string>
+        <string>/Users/apple/hermes-agent/venv/bin/python3</string>
+        <string>/Users/apple/.hermes/memory/mcp_server.py</string>
         <string>--transport</string>
         <string>sse</string>
         <string>--host</string>
@@ -16,21 +16,22 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>MNELO_HOME</key>
-        <string>__MNELO_HOME__</string>
-        <!-- Port 显式走 env (config chain: env > toml > default).
+        <string>/Users/apple/.hermes</string>
+        <!-- [7/19] Port 显式走 env (config chain: env > toml > default).
              Plist 不传 --port 让 argparse 走 config.server_port. -->
         <key>MNELO_MEMORY_SERVER_PORT</key>
         <string>8086</string>
-        <!-- 不显式 PATH, 让 launchd 从 VIRTUAL_ENV prepend venv bin.
-             显式 PATH 任何本地 user 可以丢恶意 python3 shim → RCE. -->
+        <!-- [7/19 P1-7 fix] 去掉显式 PATH, 让 launchd 自动从 VIRTUAL_ENV prepend venv bin.
+             之前的 PATH 包含 /Users/apple/hermes-agent/venv/bin (world-readable),
+             任何本地 user 可以丢恶意 python3 shim → RCE on next kickstart. -->
         <key>VIRTUAL_ENV</key>
-        <string>__VENV_DIR__</string>
+        <string>/Users/apple/hermes-agent/venv</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
-    <!-- 防止 recall 死循环拖垮 stack -->
+    <!-- [7/19 P2-10] ResourceLimits: 防止 recall 死循环拖垮 stack -->
     <key>SoftResourceLimits</key>
     <dict>
         <key>NumberOfFiles</key>
@@ -46,10 +47,10 @@
         <integer>1024</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>__MNELO_HOME__/logs/mnelo.mcp.log</string>
+    <string>/Users/apple/.hermes/logs/mnelo.mcp.log</string>
     <key>StandardErrorPath</key>
-    <string>__MNELO_HOME__/logs/mnelo.mcp.error.log</string>
+    <string>/Users/apple/.hermes/logs/mnelo.mcp.error.log</string>
     <key>WorkingDirectory</key>
-    <string>__LIVE_ROOT__</string>
+    <string>/Users/apple/.hermes/memory</string>
 </dict>
 </plist>

@@ -326,7 +326,7 @@ export MNELO_MEMORY_WARM_UP_EMBEDDER=false   # 启动不预热 (省 500ms)
 ### 9.1 重启
 
 ```bash
-launchctl kickstart -k "gui/$(id -u)/ai.hermes-memory.mcp"
+launchctl kickstart -k "gui/$(id -u)/ai.mnelo.mcp"
 sleep 3
 lsof -tiTCP:8086 -sTCP:LISTEN | xargs -I{} ps -p {}
 ```
@@ -455,7 +455,7 @@ cd ~/.hermes/memory && git pull
 python3 scripts/migrate.py latest
 
 # 4. 重启 MCP
-launchctl kickstart -k "gui/$(id -u)/ai.hermes-memory.mcp"
+launchctl kickstart -k "gui/$(id -u)/ai.mnelo.mcp"
 
 # 5. 跑测试
 python3 -m pytest tests/ -q

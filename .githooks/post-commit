@@ -184,7 +184,7 @@ echo ""
 ok "sync 完成: $SYNCED 成功, $FAILED 失败"
 if [ $SYNCED -gt 0 ]; then
     log "⚠️  live server 还跑着旧的 import 缓存 — 改 memory.py/embedder.py/config.py 后必须重启:"
-    log "    launchctl kickstart -k gui/\$(id -u)/ai.hermes-memory.mcp"
+    log "    launchctl kickstart -k gui/$(id -u)/ai.mnelo.mcp"
 fi
 
 exit $FAILED
