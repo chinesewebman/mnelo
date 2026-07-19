@@ -242,14 +242,21 @@ launchctl kickstart -k gui/$(id -u)/ai.mnelo.mcp
 
 ```
 $ python3 -m pytest tests/ -q
-..................................................   [100%]
-50 passed in ~3s
+........................................................................ [ 84%]
+......................................................................   [100%]
+429 passed, 1 skipped in ~16s
 ```
 
-50 个测试覆盖：
-- 30 个 CRUD + recall（不同 top_k / filters / strategy）
-- 12 个边界 case（placeholder filter、特殊字符、FTS 性能）
-- 8 个边界值检查（`importance ∈ [0, 1]`、`latency ≥ 0`、`valid_until` 链）
+429 个测试分布在 12 轮迭代中（v0.4.0 → v0.4.11）：
+- mcp_server：87% → 98%（+147 测试，通过 `_load_from_repo` 模式以 REPO 为准）
+- entity_resolve：76% → 85%（+38 测试，merge / get_aliases 边界 case）
+- memory：92% → 93%（+10 branch 测试）
+- validation：95% → 99%（+22 测试，接受 int ID + 拒绝 bool）
+- auth：92% → 100%，config：80% → 92%
+- mnelo_locale：0% → 100%
+- i18n_messages / `__main__` 块：通过 `coverage run -m` 子进程测试追踪
+
+跨测试污染（REPO vs LIVE module identity）作为结构性问题接受——coverage 以 REPO 为准。
 
 ---
 
@@ -381,11 +388,14 @@ mnelo/
 git clone https://github.com/chinesewebman/mnelo.git
 cd mnelo
 
-# 安装（需要 Python 3.9+，推荐 venv）
+# 2a. 一键安装（推荐）—— 自动处理 venv、pip、init_db、plist、auth token
+bash scripts/install.sh
+
+# 2b. 或手动逐步：
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# 初始化 db
+# 3. 初始化 db
 python3 scripts/init_db.py
 
 # 4. 启动 MCP server
@@ -402,6 +412,8 @@ for h in c.recall('sh600089 建仓', top_k=5):
     print(h['method'], h['chunk_id'], h['content'][:60])
 "
 ```
+
+`scripts/install.sh` **幂等**——升级后重跑安全。也支持 `LIVE_ROOT=~/.mnelo bash scripts/install.sh` 装到非默认路径。
 
 中文 locale：
 
