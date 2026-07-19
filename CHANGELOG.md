@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.4 — 2026-07-19
+
+test(memory): push memory.py coverage 92% → 93% (+10 branch tests)
+
+- **memory.py** (92% → 93%): +10 tests for previously-uncovered branches:
+  - `forget(entity)` path (line 381)
+  - `_vector_recall_with_conn` exception path (lines 574-576, closed connection)
+  - `_entity_recall_with_conn` skip empty name+summary (line 635)
+  - Alias match boosts importance by +0.2 (line 648)
+  - `_graph_recall` seed_entities / seed_chunks expansion (lines 669, 687)
+  - `_graph_recall` empty new_chunks returns `[]` (line 692)
+  - `graph_entity` hit for `identity_fact` / `canonical_fact` (line 706)
+  - Chinese bigram tokenization (line 799, query "中文")
+  - Single ASCII char token (line 799, query "a")
+  - `_entity_recall` empty hits returns `[]` (line 807)
+  - `_entity_recall` `seen_ids` dedup (line 833)
+- Total: 291 → 301 passed (1 skipped, +10 tests).
+
 ## v0.4.3 — 2026-07-19
 
 fix(validation): accept int IDs in validate_id + subprocess smoke tests
