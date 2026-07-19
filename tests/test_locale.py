@@ -1,6 +1,5 @@
 """Tests for mnelo_locale.py — locale detection + i18n message resolver."""
 import os
-import importlib
 
 import pytest
 
@@ -11,10 +10,12 @@ def fresh_locale(monkeypatch):
     # Clear all locale env vars
     for var in ('HERMES_MEMORY_LANG', 'LC_ALL', 'LANG'):
         monkeypatch.delenv(var, raising=False)
-    # Reload module to reset _current_locale cache
-    import mnelo_locale
-    importlib.reload(mnelo_locale)
-    yield mnelo_locale
+    # Reset the cached module's _current_locale instead of full reload
+    # (full reload creates a new module object → coverage fragmentation).
+    import mnelo_locale as _mod
+    _mod._current_locale = None
+    _mod._current_locale_cache = None
+    yield _mod
 
 
 class TestGetLocale:
