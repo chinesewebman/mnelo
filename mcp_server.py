@@ -3,11 +3,11 @@
 """
 mcp_server.py — mnelo MCP Server (替代 Mnemosyne MCP)
 
-- 主人口中 7/18 拍板 A+C 方案: 写 mnelo (前身 hermes-memory) mcp + 杀 Mnemosyne MCP
+- 主人口中 7/18 拍板 A+C 方案: 写 mnelo (前身 mnelo) mcp + 杀 Mnemosyne MCP
 - 7/19 v0.5.0 breaking change: 变量名 `HERMES_MEMORY_*` → `MNELO_MEMORY_*`, `MNELO_HOME` → `MNELO_HOME`
 - 接口: memory_remember / memory_recall / memory_relate / memory_forget
        / memory_update / memory_graph_query / memory_stats
-- 7 工具, 与 hermes-memory v1.0 6 API + 1 个 stats 完美对齐
+- 7 工具, 与 mnelo v0.5.x 6 API + 1 个 stats 完美对齐
 - SSE transport on 127.0.0.1:8086 (与 Mnemosyne 同端口, 无缝替换)
 
 [运行]
@@ -68,7 +68,7 @@ def _get_mem() -> Any:
     if _mem_instance is None:
         from memory import Memory
         _mem_instance = Memory()
-        logger.info(f'hermes-memory MCP ready (db: {Path("/Users/apple/.hermes/memory/memory.db")})')
+        logger.info(f'mnelo MCP ready (db: {Path("/Users/apple/.hermes/memory/memory.db")})')
     return _mem_instance
 
 
@@ -77,7 +77,7 @@ def _get_mem() -> Any:
 TOOLS = [
     {
         'name': 'memory_remember',
-        'description': '写入一条 chunk + 实体 + 关系到 hermes-memory. 返回 chunk_id.',
+        'description': '写入一条 chunk + 实体 + 关系到 mnelo. 返回 chunk_id.',
         'inputSchema': {
             'type': 'object',
             'properties': {
@@ -414,7 +414,7 @@ def _call_tool(name: str, args: Dict) -> str:
 # === MCP server ===
 
 if _MCP_AVAILABLE:
-    server = Server('hermes-memory')
+    server = Server('mnelo')
 
     @server.list_tools()
     async def list_tools() -> List[Tool]:

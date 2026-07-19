@@ -3,7 +3,7 @@
 """
 mnelo_client.py — 客户端 (SSE)
 
-- 主人口中 7/18 拍板 C 方案: trinity_daily.py 通过 MCP tool 调 hermes-memory
+- 主人口中 7/18 拍板 C 方案: trinity_daily.py 通过 MCP tool 调 mnelo
 - 替代直接 import memory.py (更解耦, mcp server 可独立升级)
 - 与 cron / 脚本解耦: 脚本只 import 客户端, 不关心 server 细节
 
@@ -171,7 +171,7 @@ def get_client() -> MneloClient:
 
 # === 自测 ===
 if __name__ == '__main__':
-    print('=== hermes-memory MCP 客户端自测 ===')
+    print('=== mnelo MCP 客户端自测 ===')
     client = MneloClient()
 
     # 1. stats

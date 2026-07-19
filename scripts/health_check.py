@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-hermes-memory daily health check (~30s).
+mnelo daily health check (~30s).
 Runs at 02:00 daily via cron.
 
 What it does:

@@ -21,7 +21,7 @@ def fresh_locale(monkeypatch):
 class TestGetLocale:
     """get_locale() — 4-step detection chain."""
 
-    def test_hermes_memory_lang_overrides_all(self, fresh_locale, monkeypatch):
+    def test_mnelo_memory_lang_overrides_all(self, fresh_locale, monkeypatch):
         monkeypatch.setenv('MNELO_MEMORY_LANG', 'zh')
         monkeypatch.setenv('LC_ALL', 'en_US.UTF-8')
         monkeypatch.setenv('LANG', 'en_US.UTF-8')

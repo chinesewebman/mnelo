@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-test_edge_cases.py — hermes-memory v1.1 边界/异常/性能 测试
+test_edge_cases.py — mnelo v0.5.x 边界/异常/性能 测试
 
 [目的 - 主人口中 7/18 拍板]
 1. 补齐 CRUD 边界 (空 query / 大 query / top_k=0 / 不存在的 old_id)

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-import_holdings.py — 从 ~/.hermes/state/holdings_*.json 导入持仓快照到 hermes-memory
+import_holdings.py — 从 ~/.hermes/state/holdings_*.json 导入持仓快照到 mnelo
 
 [ 7/18]
 - 主人 7/17 明确: 持仓以截图为准, AI 推测/口头 buy/sell 记忆不靠谱
-- 主人口中拍板 C: holdings_correction_2026-07-17.json → hermes-memory + decision-history.md §7
+- 主人口中拍板 C: holdings_correction_2026-07-17.json → mnelo + decision-history.md §7
 - 输入: ~/.hermes/state/holdings_*.json (holdings_correction_2026-07-17.json)
-- 输出: hermes-memory entities (kind=position_snapshot) + relations (user --holds_position--> :stock)
+- 输出: mnelo entities (kind=position_snapshot) + relations (user --holds_position--> :stock)
 - 幂等键:
     - entities: id = holding:{asof}:{symbol_code}
     - relations: (source_id='user', target_id, relation='holds_position', properties['asof'])

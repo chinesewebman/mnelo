@@ -1,6 +1,6 @@
-# hermes-memory 架构与知识图谱分析
+# mnelo 架构与知识图谱分析
 
-> **项目**: hermes-memory (HM)
+> **项目**: mnelo (mnelo)
 > **位置**: `~/.hermes/memory/`
 > **版本**: v1.2 (P0/P1/P2 审计后)
 > **分析日期**: 2026-07-18
@@ -13,7 +13,7 @@
 
 ## 1. 系统定位
 
-**hermes-memory** 是 Hermes Agent 的本地知识图谱记忆系统，2026-07-17 拍板自建、7/18 上线替换原 Mnemosyne。物理形态：
+**mnelo** 是 Hermes Agent 的本地知识图谱记忆系统，2026-07-17 拍板自建、7/18 上线替换原 Mnemosyne。物理形态：
 
 ```
 ~/.hermes/memory/
@@ -267,7 +267,7 @@ relation sh600089 --[mentioned_in]--> chunk_20260718_103045_xxx
 
 ## 5. 与典型 RAG 系统的对比
 
-| 维度 | 传统 RAG (向量库 + LLM) | hermes-memory |
+| 维度 | 传统 RAG (向量库 + LLM) | mnelo |
 |---|---|---|
 | 数据模型 | 单层向量（chunk + embedding） | 4 维（chunk + entity + relation + vector） |
 | 时态 | 无 / 只有 created_at | 双时态（事务 + 有效），4D 时间切片 |
@@ -278,7 +278,7 @@ relation sh600089 --[mentioned_in]--> chunk_20260718_103045_xxx
 | 可解释性 | 黑盒（"chunk X 跟 query 相似"） | 白盒（"chunk X 引用 entity Y，weight=0.9"） |
 | 规模 | 100K-10M chunks | 5K-50K 实体级（个人 AI agent 范围） |
 
-**本质差异**：hermes-memory 是**结构化 + 时态** 的知识图谱，传统 RAG 是**非结构化 + 单维度**。
+**本质差异**：mnelo 是**结构化 + 时态** 的知识图谱，传统 RAG 是**非结构化 + 单维度**。
 
 ---
 

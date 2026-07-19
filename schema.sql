@@ -1,5 +1,5 @@
 -- ========================================
--- hermes-memory schema v1.0
+-- mnelo schema v1.0
 -- 文件: ~/.hermes/memory/schema.sql
 -- : 4D 知识图谱 (节点 + 关系 + 时间 + 向量)
 -- 主人口中 7/18 拍板 review SCHEMA.md
@@ -148,7 +148,7 @@ INSERT INTO meta (key, value) VALUES
     ('embedding_model', '{EMBED_MODEL}'),
     ('embedding_dim', '{EMBED_DIM}'),
     ('created_at', datetime('now', 'localtime')),
-    ('created_by', 'hermes-memory v1.0');
+    ('created_by', 'mnelo v0.5.x');
 
 -- ========================================
 -- 启用 WAL mode + busy_timeout (避免 lock 复发!)

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-import_identity_facts.py — 从 hermes-memory chunks 中抽取身份陈述类 fact
+import_identity_facts.py — 从 mnelo chunks 中抽取身份陈述类 fact
                             写入 entities + relations (幂等)
 
 - 主人口中 7/18 拍板: A+B+C 三件套的"backfill 身份陈述类 fact"具体实施
-- 输入: hermes-memory.db 的 chunks 表 (valid_until IS NULL)
+- 输入: mnelo.db 的 chunks 表 (valid_until IS NULL)
 - 输出: entities (kind=identity_fact) + relations (user --predicate--> identity:xxx)
 - 幂等键:
     - entities: id = identity:{predicate}:{slug(value)} (slugify 后唯一)

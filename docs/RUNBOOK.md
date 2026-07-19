@@ -73,7 +73,7 @@ python3 -c "from fastembed import TextEmbedding; t = TextEmbedding('BAAI/bge-sma
 │   ├── init_db.py            # 第一次创建 db (跑过一次即可)
 │   ├── health_check.py       # 每天自检 (source-of-truth)
 │   ├── repair_vectors.py     # 一次性 vec0 rowid 修复 (post-import)
-│   └── migrate_to_hermes_memory.py  # 从旧 Mnemosyne 迁移 (可选)
+│   └── migrate_to_mnelo.py  # 从旧 Mnemosyne 迁移 (可选)
 │
 ├── tests/
 │   ├── test_memory.py        # 50 测试覆盖 CRUD/recall/bounds/clamp

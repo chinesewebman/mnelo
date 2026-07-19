@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-test_memory.py — hermes-memory v1.0 测试
+test_memory.py — mnelo v0.5.x 测试
 
 [测试目标 - 主人口中 7/18 拍板]
 1. CRUD 6 API (remember/recall/relate/forget/update/graph_query)
@@ -9,7 +9,7 @@ test_memory.py — hermes-memory v1.0 测试
 3. 软删除 (valid_until) + 触发器自动级联
 4. 4D 时间维度 (valid_from/valid_until 语义)
 5. 实体消歧 (entity_resolve.py merge)
-6. shim 已删 (7/18 , 走 hermes-memory MCP 客户端)
+6. shim 已删 (7/18 , 走 mnelo MCP 客户端)
 
 [运行]
   /Users/apple/hermes-agent/venv/bin/python3 /Users/apple/.hermes/memory/tests/test_memory.py

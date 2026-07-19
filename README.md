@@ -340,7 +340,7 @@ mnelo/
 │   ├── init_db.py                  ← one-shot DB creation
 │   ├── health_check.py             ← daily 9-line summary (i18n)
 │   ├── repair_vectors.py           ← vec0 rowid fix (post-import)
-│   ├── migrate_to_hermes_memory.py ← from old Mnemosyne → mnelo
+│   ├── migrate_to_mnelo.py ← from old Mnemosyne → mnelo
 │   ├── import_holdings.py          ← portfolio snapshots → entities
 │   └── import_identity_facts.py    ← identity facts → canonical_fact
 │

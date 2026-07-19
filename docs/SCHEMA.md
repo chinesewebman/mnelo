@@ -1,6 +1,6 @@
 # 自建知识图谱记忆系统 — Schema 设计文档
 
-> **项目代号**: `hermes-memory` (HM, 后简称 hm_)
+> **项目代号**: `mnelo` (HM, 后简称 hm_)
 > **位置**: `~/.hermes/memory/`
 > **目的**: 替换频繁出问题的 Mnemosyne, 主人口中 7/17 拍板 (本地 0 预算 + 知识图谱)
 > **版本**: v1.0 draft — 等主人口中 review
