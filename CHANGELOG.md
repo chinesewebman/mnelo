@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.14 — 2026-07-19
+
+test(i18n): every key in MESSAGES resolvable + zh/en pair + format args (+21 tests)
+
+- **`tests/test_i18n_keys_round14.py`** (8.1K, +21 tests):
+  - Every key in `MESSAGES` has both `'zh'` and `'en'` translations (no empty strings).
+  - Every key resolves via `t()` for both locales (no `msg_id` fallback = missing translation).
+  - Total key count `>= 33` (documents 33-message table).
+  - Format args for keys with placeholders: `startup.config_loaded`, `db.exists`, `check.db_stats`, `check.recall_24h`, `check.kind_top`, `recall.ok`, `error.out_of_range`, `error.retry_failed`.
+  - Fallback chain tests:
+    - Unknown `msg_id` returns `msg_id`.
+    - Invalid locale (e.g. `'ja'`) falls back to `'en'`.
+    - Missing `'zh'` falls back to `'en'`.
+    - Missing both `'zh'` + `'en'` returns `msg_id`.
+  - Domain sanity checks (`startup`/`db`/`check`/`recall`/`error` prefixes each have N keys).
+- `i18n_messages.py` is a 1-statement dict literal (pytest-cov reports 100% trivially), but **key-level** coverage is the real signal.
+- Total: 429 → 450 passed (1 skipped, +21 tests).
+
 ## v0.4.13 — 2026-07-19
 
 docs: update README.zh.md — 50 → 429 tests, install.sh in Quick start
