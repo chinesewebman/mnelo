@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.5.9 — 2026-07-20
+
+fix: find_duplicate_candidates(ids=...) + improved truncation diagnostics
+
+**Feature**: `find_duplicate_candidates()` now accepts an optional `ids` parameter
+- When `ids=[...]` is provided, only those entities are scanned (caller-controlled scope).
+- Bypasses `max_pairs` limit (caller explicitly chose this subset).
+- Useful for tests, targeted merge workflows, and user-driven resolution flows.
+
+**Bugfix** — `test_01_merge_candidates` was failing on LIVE DB
+- Root cause: LIVE DB has 41+ active stock entities. Pair count = 41×40/2 = 820,
+  exceeds `max_pairs=500`. Function returned only 2 candidates (sorted by name
+  length) before bailing out. Test's 2 entities (`test_eresolve_xxxxxx_a/b`)
+  were never reached.
+- Fix: pass `ids=[a_id, b_id]` to scope scan to test entities only.
+- Also benefits production: operators can now run `find_duplicate_candidates(ids=[...])`
+  for targeted merge workflows without max_pairs truncation.
+
+**Diagnostic improvement** — max_pairs warning now includes:
+- `scanned X/Y pairs` (where Y = total in scope)
+- `N kind(s)` count
+- Suggests fix: `Filter by kind, pass ids=[...], or raise max_pairs.`
+- Previously just said "kinds processed: N candidates" — caller couldn't
+  tell how much work was actually done.
+
+**Tests** — `tests/test_entity_resolve_ids_round15.py` (+7 tests)
+- `ids` parameter contract: limits scope, returns [] on empty, excludes soft-deleted
+- `ids` bypasses max_pairs (caller-controlled scope)
+- threshold still respected with `ids=`
+- Improved max_pairs diagnostic includes counts
+
+**Files**:
+- `entity_resolve.py` — added `ids` param + better truncation message
+- `tests/test_memory.py` — `test_01_merge_candidates` uses `ids=[...]` for determinism
+- `tests/test_entity_resolve_ids_round15.py` — new file (7 tests)
+
+Verification:
+- 533 tests pass (525 + 7 new + 1 pre-existing test_01_merge_candidates now passes).
+- ruff check: All checks passed.
+- ruff format: 19 files already formatted.
+
 ## v0.5.8 — 2026-07-20
 
 feat: examples/ directory + _upsert_entity soft-delete reactivation

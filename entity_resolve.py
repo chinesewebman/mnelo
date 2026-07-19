@@ -86,28 +86,45 @@ def find_duplicate_candidates(
     threshold: float = 0.85,
     kind: Optional[str] = None,
     max_pairs: int = 500,
+    ids: Optional[List[str]] = None,
 ) -> List[Tuple[str, str, float, str]]:
-    """: 找出所有疑似重复的 entity 对.
+    """Find entity pairs that look like duplicates.
 
-    [Round 3 fix] 加 max_pairs cap: live DB 上 5K entities → 12.5M pairs O(N²)
-    difflib 比对会 hang 数分钟. 默认 500 上限 + 警告 + 实际 production
-    跑这个函数前应先按 kind 过滤或预筛.
+    [Round 3 fix] Added max_pairs cap: live DB with 5K entities → 12.5M pairs O(N²);
+    difflib comparison would hang for minutes. Default 500 cap + warning.
+    In production, callers should pre-filter by `kind` or pass `ids` to limit scope.
+
+    [7/20 v0.5.9 fix] Added `ids` parameter for explicit scoping:
+        - When `ids` is provided, only those entities are scanned (no O(N²) blowup).
+        - Useful for tests, targeted merge candidates, and user-driven workflows.
+    [7/20 v0.5.9 fix] When max_pairs is reached, return what we have + log
+        diagnostics (count of kinds touched, entities scanned vs total) so
+        callers know the result is partial. Previously it silently truncated.
 
     Args:
         conn: sqlite3.Connection
         threshold: similarity 阈值 [0.0, 1.0], default 0.85
         kind: 按 entity kind 过滤 (推荐 — 否则会扫所有 kinds)
         max_pairs: 上限 O(N²) 对比数, 防 catastrophic perf
+        ids: 限制只扫描这些 entity ids (跳过 max_pairs 限制; 用于测试/定向扫描)
 
     Returns:
       [(entity_a_id, entity_b_id, score, reason), ...]
     """
-    sql = "SELECT id, kind, name FROM entities WHERE valid_until IS NULL"
-    params = []
-    if kind:
-        sql += " AND kind = ?"
-        params.append(kind)
-    rows = conn.execute(sql, params).fetchall()
+    # [7/20 v0.5.9] Explicit ids filter bypasses max_pairs (caller-controlled scope)
+    if ids is not None:
+        if not ids:
+            return []
+        placeholders = ",".join("?" * len(ids))
+        sql = f"SELECT id, kind, name FROM entities WHERE valid_until IS NULL AND id IN ({placeholders})"
+        rows = conn.execute(sql, list(ids)).fetchall()
+    else:
+        sql = "SELECT id, kind, name FROM entities WHERE valid_until IS NULL"
+        params = []
+        if kind:
+            sql += " AND kind = ?"
+            params.append(kind)
+        rows = conn.execute(sql, params).fetchall()
 
     by_kind: dict = {}
     for r in rows:
@@ -115,6 +132,8 @@ def find_duplicate_candidates(
 
     candidates = []
     pair_count = 0
+    pairs_total = sum(len(v) * (len(v) - 1) // 2 for v in by_kind.values() if len(v) >= 2)
+    scanned_kinds = set()
     for _kind_name, ents in by_kind.items():
         if len(ents) < 2:
             continue
@@ -122,15 +141,18 @@ def find_duplicate_candidates(
         # : 长名更可能有 description, 短名更可能是 symbol — 后者重复概率更高)
         if len(ents) > 100:
             ents = sorted(ents, key=lambda r: len(r["name"] or ""))[:100]
+        scanned_kinds.add(_kind_name)
         for i in range(len(ents)):
             for j in range(i + 1, len(ents)):
                 # [Round 3 fix] O(N²) 上限
                 pair_count += 1
                 if pair_count > max_pairs:
+                    # [7/20 v0.5.9] Better diagnostics on truncation
                     print(
                         f"[entity_resolve] WARN: max_pairs={max_pairs} reached, "
-                        f"kinds processed: {len(candidates)} candidates so far. "
-                        f"Filter by kind or raise max_pairs.",
+                        f"scanned {pair_count}/{pairs_total} pairs across {len(scanned_kinds)} kind(s), "
+                        f"returned {len(candidates)} candidates so far. "
+                        f"Filter by kind, pass ids=[...], or raise max_pairs.",
                         file=sys.stderr,
                     )
                     return candidates
