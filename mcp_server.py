@@ -477,10 +477,13 @@ def _build_sse_app(auth_token: str) -> 'Starlette':
     from starlette.responses import JSONResponse
 
     class _BearerAuthMiddleware(BaseHTTPMiddleware):
-        """校验 Authorization: Bearer <token> header. 用 hmac.compare_digest 防 timing attack."""
+        """校验 Authorization: Bearer *** header. 用 hmac.compare_digest 防 timing attack."""
+        # [7/19 v0.5.3] Public paths (no auth required)
+        _PUBLIC_PATHS = frozenset({'/health', '/metrics'})
+
         async def dispatch(self, request, call_next):
-            # /health 路径不需 auth (允许健康检查 / 监控)
-            if request.url.path == '/health':
+            # Public paths: /health (健康检查) + /metrics (Prometheus scrape)
+            if request.url.path in self._PUBLIC_PATHS:
                 return await call_next(request)
             # SSE + messages 路由都需 Bearer token
             auth_header = request.headers.get('authorization', '')
@@ -502,9 +505,31 @@ def _build_sse_app(auth_token: str) -> 'Starlette':
         async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
             await server.run(read_stream, write_stream, server.create_initialization_options())
 
+    async def handle_metrics(request):
+        """[7/19 v0.5.3] /metrics endpoint (Prometheus text format).
+
+        Bypasses Bearer auth (like /health in RUNBOOK spec). Refreshes DB
+        stats with TTL caching so scrape doesn't hammer SQLite.
+        """
+        from starlette.responses import PlainTextResponse
+        from metrics import get_registry
+        reg = get_registry()
+        # Refresh DB gauges (TTL=10s inside registry)
+        try:
+            target = _mem_instance
+            if target is None:
+                from memory import Memory as _Memory
+                target = _Memory()
+            reg.refresh_db_stats(target)
+        except Exception:
+            pass
+        body = reg.render()
+        return PlainTextResponse(body, media_type='text/plain; version=0.0.4')
+
     app = Starlette(
         routes=[
             Route('/sse', endpoint=handle_sse),
+            Route('/metrics', endpoint=handle_metrics),  # [7/19 v0.5.3] Prometheus
             Mount('/messages/', app=sse.handle_post_message),
         ]
     )

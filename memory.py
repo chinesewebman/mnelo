@@ -35,6 +35,7 @@ from validation import (
     validate_chunk_content, validate_query, validate_id, validate_entity_payload,
     ValidationError,
 )
+from metrics import get_registry as _metrics_registry  # [7/19 v0.5.3] observability
 
 DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')
 # 注: embedding 模型 + dim 不再在此处硬编码 — 见 embedder.py 从 config 读 (config.toml [embedder])
@@ -263,6 +264,8 @@ class Memory:
         )
 
         self._conn.commit()
+        # [7/19 v0.5.3] metrics
+        _metrics_registry().remember_total.inc(source=source or 'unknown')
         return chunk_id
 
     def relate(
@@ -290,6 +293,8 @@ class Memory:
               json.dumps(properties or {}, ensure_ascii=False),
               valid_from or now(), valid_until, evidence_chunk_id))
         self._conn.commit()
+        # [7/19 v0.5.3] metrics
+        _metrics_registry().relate_total.inc()
         return cur.lastrowid
 
     def update(
@@ -353,6 +358,8 @@ class Memory:
             (new_id, now(), old_id)
         )
         self._conn.commit()
+        # [7/19 v0.5.3] metrics
+        _metrics_registry().update_total.inc()
         return new_id
 
     def forget(
@@ -401,6 +408,8 @@ class Memory:
         """, (target_id, target_kind))
 
         self._conn.commit()
+        # [7/19 v0.5.3] metrics
+        _metrics_registry().forget_total.inc(kind=target_kind or 'unknown')
         return {'edges_invalidated': edges_invalidated, 'queued_purge': 1}
 
     # === R = Recall (3 路 + RRF) ===================
@@ -443,7 +452,7 @@ class Memory:
         query = clean
 
         import time
-        t0 = time.time()
+        t0_start = time.time()
 
         asof = asof or now()
 
@@ -466,40 +475,63 @@ class Memory:
                 c.enable_load_extension(False)
                 c.row_factory = sqlite3.Row
 
-            # vector 跑完后续可以并行
+            # [7/19 v0.5.3] Per-lane timing for metrics (vector first, parallel meta/entity/graph)
             with ThreadPoolExecutor(max_workers=4) as ex:
-                # vector 先 (graph 依赖)
+                t_vec_0 = time.time()
                 f_vec = ex.submit(self._vector_recall_with_conn, recall_conns[0], query, top_k * 2, filters, asof)
-                # meta/entity 跟 vector 独立并行
                 f_meta = ex.submit(self._meta_recall_with_conn, recall_conns[1], query, top_k * 2, filters, asof)
                 f_entity = ex.submit(self._entity_recall_with_conn, recall_conns[2], query, top_k * 2, filters, asof)
 
                 vector_hits = f_vec.result()
+                vec_ms = (time.time() - t_vec_0) * 1000
                 # graph 等 vector 完成再开始 (graph 依赖 vector_hits 作为 seed)
+                t_graph_0 = time.time()
                 f_graph = ex.submit(self._graph_recall, vector_hits, graph_hops, asof)
                 meta_hits = f_meta.result()
                 entity_hits = f_entity.result()
                 graph_hits = f_graph.result()
+                graph_ms = (time.time() - t_graph_0) * 1000
 
             # 关独立连接
             for c in recall_conns:
                 c.close()
 
             results = self._rrf_fuse([vector_hits, graph_hits, meta_hits, entity_hits], top_k)
+            # meta/entity roughly parallel (no separate timers; record 0 to skip metric)
+            lane_latencies = {'vector': vec_ms, 'graph': graph_ms, 'meta': 0.0, 'entity': 0.0}
         elif strategy == 'vector_only':
+            t0 = time.time()
             results = self._vector_recall(query, top_k, filters, asof)
+            lane_latencies = {'vector': (time.time() - t0) * 1000}
         elif strategy == 'graph_only':
+            t0 = time.time()
             vector_hits = self._vector_recall(query, top_k, filters, asof)
             graph_hits = self._graph_recall(vector_hits, graph_hops, asof)
             results = graph_hits[:top_k]
+            lane_latencies = {
+                'vector': (time.time() - t0) * 1000, 'graph': 0.0,
+            }
         elif strategy == 'meta_only':
+            t0 = time.time()
             results = self._meta_recall(query, top_k, filters, asof)
+            lane_latencies = {'meta': (time.time() - t0) * 1000}
         elif strategy == 'entity_only':
+            t0 = time.time()
             results = self._entity_recall(query, top_k, filters, asof)
+            lane_latencies = {'entity': (time.time() - t0) * 1000}
         else:
             raise ValueError(f'unknown strategy: {strategy}')
 
-        latency_ms = (time.time() - t0) * 1000
+        latency_ms = (time.time() - t0_start) * 1000
+
+        # [7/19 v0.5.3] metrics: per-lane counter + latency + hit count + top_k
+        _reg = _metrics_registry()
+        for lane, lane_ms in lane_latencies.items():
+            _reg.recall_total.inc(method=lane)
+            if lane_ms > 0:
+                _reg.recall_latency.observe(lane_ms / 1000.0, method=lane)
+        _reg.recall_hits.inc(result='empty' if not results else 'non_empty')
+        _reg.recall_top_k.inc(k=str(top_k))
 
         #  recall audit
         self._log_recall(query, results, graph_hops, latency_ms)
