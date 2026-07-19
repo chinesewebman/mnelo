@@ -1,5 +1,55 @@
 # Changelog
 
+## v0.5.11 — 2026-07-20
+
+feat: register mnelo MCP server in Hermes config.yaml
+
+**Why**: 主人 asked how Hermes knows about mnelo. Two prior attempts:
+- v0.5.10 added MEMORY.md entry (weak — agent has to read it)
+- This release: register mnelo as a real MCP stdio server (strong — Hermes auto-discovers)
+
+**What changed**:
+- `~/.hermes/config.yaml` got a new entry under `mcp_servers`:
+  ```yaml
+  mnelo:
+    command: /Users/apple/hermes-agent/venv/bin/python3
+    args:
+      - /Users/apple/projects/mnelo/mcp_server.py
+      - --transport
+      - stdio
+    env:
+      MNELO_HOME: /Users/apple/.hermes
+      VIRTUAL_ENV: /Users/apple/hermes-agent/venv
+  ```
+- Live launchd SSE server (port 8086) **temporarily stopped** + plist **unloaded**
+  for the registration window (avoids double processes sharing the SQLite).
+  Plist reloaded at end of round (PID 53320, port 8086 back up, health_check ✅).
+
+**Activation**:
+- Standalone `discover_mcp_tools()` call (offline test) confirms Hermes registers
+  **10 mnelo tools** as `mcp__mnelo__*`:
+  - memory_remember, memory_recall, memory_relate, memory_forget
+  - memory_update, memory_graph_query, memory_stats
+  - memory_entity_resolve, memory_list_entities, memory_search_relations
+- The **running gateway (PID 40468) was not restarted** — agent (this session) still
+  uses path C (Python API via mnelo_echo.py 🌳 wrapper).
+- To activate in next session: `/restart-gateway` from Telegram, OR run
+  `hermes gateway restart` from a separate shell (Hermes blocks the call when
+  issued from inside the gateway process — safety feature).
+
+**MEMORY.md updated** (1506 → 1827 chars / 2200 limit):
+- mnelo entry now lists 3 call entry points (MCP stdio > mnelo_echo 🌳 > raw Python API)
+- Note that MCP stdio requires gateway restart to activate
+
+**Files**:
+- `~/.hermes/config.yaml` — added mnelo entry under `mcp_servers`
+- `~/.hermes/memories/MEMORY.md` — extended mnelo path entry with MCP info
+
+Verification:
+- 541 tests pass (no code change to mnelo this round; registration is config-only).
+- standalone `discover_mcp_tools()` returns 10 mcp__mnelo__* tools.
+- launchd SSE back up: PID 53320, port 8086, health_check ✅.
+
 ## v0.5.10 — 2026-07-20
 
 feat: scripts/mnelo_echo.py — 🌳-prefix wrapper for path-B operations
