@@ -73,6 +73,57 @@ def pytest_collection_finish(session):
             mod.ValidationError = repo_ve
 
 
+@pytest.fixture(autouse=True)
+def _rebind_test_validation_error(request):
+    """[Round 4 fix] before each test, rebind test module's ValidationError attr to
+    current sys.modules['validation'].ValidationError + rebind ValidationError
+    on sys.modules['validation'].__dict__ itself.
+
+    Why: pytest_collection_finish rebinds ONCE at collection end. But test body may
+    do `from validation import validate_id` which captures CURRENT validate_id. If
+    the validate_id function's __globals__ is OLD validation module (from earlier
+    _load_from_repo), its __dict__['ValidationError'] is also OLD, even though test
+    module's ValidationError attr is the new one. So pytest.raises fails.
+
+    Fix: also mutate the OLD validation module's __dict__['ValidationError'] to repo_ve.
+    Find it by walking sys.modules' validation module objects + functions with
+    __globals__['__name__'] == 'validation'.
+    """
+    repo_validation = sys.modules.get('validation')
+    if not repo_validation:
+        yield
+        return
+    repo_ve = repo_validation.ValidationError
+    # Rebind test module's ValidationError attr
+    test_mod = sys.modules.get(request.module.__name__)
+    if test_mod is not None and hasattr(test_mod, 'ValidationError'):
+        test_mod.ValidationError = repo_ve
+    # Rebind sys.modules['validation'].__dict__['ValidationError']
+    repo_validation.ValidationError = repo_ve
+    # Also find and rebind any OTHER module dicts held by function __globals__
+    # (e.g., OLD memory module dicts whose functions raise ValidationError)
+    # Use gc to find ALL function objects, even those held only by class methods.
+    seen_dicts = set()
+    import gc as _gc
+    for obj in _gc.get_objects():
+        try:
+            if not (callable(obj) and hasattr(obj, '__globals__')):
+                continue
+            globs = obj.__globals__
+            # Only process actual dicts (not descriptors)
+            if not isinstance(globs, dict):
+                continue
+            mod_name = globs.get('__name__', '')
+            if (mod_name in ('validation', 'memory')
+                    and id(globs) not in seen_dicts):
+                seen_dicts.add(id(globs))
+                if globs.get('ValidationError') is not repo_ve:
+                    globs['ValidationError'] = repo_ve
+        except Exception:
+            continue
+    yield
+
+
 @pytest.fixture(scope='session', autouse=True)
 def _clean_test_data_session():
     """[7/19] session 开始前清空跨 class 残留的 test 数据.
