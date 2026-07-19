@@ -1,5 +1,61 @@
 # Changelog
 
+## v0.5.6 — 2026-07-19
+
+fix: vec0 rowid drift — write-time + batch cleanup
+
+**Root cause**:
+vec0 internal counter drifts from `chunks.rowid` over time. Two accumulation paths:
+1. **Soft-deleted chunks** (forgotten/updated, `valid_until IS NOT NULL`) leave their
+   embedding in vec0. `_vector_recall` filters them out, so they waste storage and
+   bloat the kNN search.
+2. **Truly orphan vectors** (vec0 rowid doesn't match any chunks rowid) — from
+   crashed inserts, manual SQL, or earlier migration scripts.
+
+**Pre-existing bug uncovered by the fix**: `update()` created a new chunk WITHOUT
+embedding its content. This was masked because old vectors weren't cleaned up
+(old embedding still in vec0, so vector search still hit something close to
+new content). Now that we delete old vectors, the new chunk MUST be re-embedded.
+
+**Fix #1** — `forget(chunk)` now deletes the vector row at write time
+- Soft-deleted chunk → its vec0 row deleted in the same transaction.
+- vec0 stays aligned with active chunks; future inserts never collide.
+
+**Fix #2** — `update()` deletes OLD chunk's vector + embeds NEW chunk's content
+- Old vector row deleted (same as forget).
+- New chunk content re-embedded and inserted into vec0.
+- This restores vector recall for updated chunks (was broken before).
+
+**Fix #3** — New `Memory.cleanup_orphan_vectors(dry_run=False)` method
+- Two categories cleaned:
+  - Vectors for soft-deleted chunks (`JOIN chunks ON rowid WHERE valid_until IS NOT NULL`)
+  - Truly orphan vectors (`NOT EXISTS chunks WHERE rowid = v.rowid`)
+- Returns `{soft_deleted_cleaned, truly_orphan_cleaned, vectors_remaining, dry_run}`.
+- Use `--dry-run` to inspect counts before deleting.
+
+**Fix #4** — New `scripts/maintain_vectors.py` CLI wrapper
+- `python scripts/maintain_vectors.py --dry-run` — show counts.
+- `python scripts/maintain_vectors.py --yes` — confirm + cleanup.
+- `python scripts/maintain_vectors.py --json` — machine-readable.
+- Exit codes: 0 (success), 1 (error), 2 (user cancelled).
+
+**Tests** — `tests/test_drift_fix_round15.py` (+10 tests)
+- `cleanup_orphan_vectors()` dry_run / actual_run / clean_db cases.
+- `forget(chunk)` deletes the vector row (write-time cleanup).
+- `update()` deletes old vector + embeds new content (write-time cleanup + bug fix).
+- `scripts/maintain_vectors.py` CLI: --dry-run / --dry-run --json / --help.
+
+**Verification on LIVE DB**:
+- Before cleanup: 4635 vectors, 583 orphans (12.6% wasted).
+- After cleanup: 4052 vectors (583 freed).
+- New drift-free state maintained by write-time cleanup in forget() + update().
+
+Verification:
+- 499 tests pass (489 + 10 new).
+- ruff check: All checks passed.
+- ruff format: 18 files already formatted.
+- `scripts/maintain_vectors.py --dry-run` reports 0 orphans on LIVE.
+
 ## v0.5.5 — 2026-07-19
 
 feat: scripts/benchmark.py — reproducible latency benchmark

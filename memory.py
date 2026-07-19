@@ -404,6 +404,41 @@ class Memory:
             "UPDATE chunks SET superseded_by = ?, valid_until = ? WHERE id = ? AND valid_until IS NULL",
             (new_id, now(), old_id),
         )
+        # [7/19 v0.5.6] Drift fix: delete old chunk's vector (same rationale as forget()).
+        old_rowid = old["rowid"] if "rowid" in old.keys() else None
+        if old_rowid is None:
+            old_rowid_row = self._conn.execute("SELECT rowid FROM chunks WHERE id = ?", (old_id,)).fetchone()
+            old_rowid = old_rowid_row[0] if old_rowid_row else None
+        if old_rowid is not None:
+            try:
+                self._conn.execute("DELETE FROM vectors WHERE rowid = ?", (old_rowid,))
+            except sqlite3.OperationalError as e:
+                logger.warning(f"vector cleanup failed for old chunk {old_id}: {e}")
+
+        # [7/19 v0.5.6] Embed the NEW chunk's content for vector search.
+        # Previously update() created a new chunk without embedding it, leaving it
+        # invisible to vector recall. This was masked because old vector wasn't
+        # cleaned up (so old embedding was still in vec0). Now that we delete
+        # the old vector, we MUST re-embed the new content.
+        new_chunk_rowid = self._conn.execute("SELECT rowid FROM chunks WHERE id = ?", (new_id,)).fetchone()[0]
+        new_content_for_embed = new_content if new_content is not None else old["content"]
+        try:
+            v_bytes = embed_bytes(new_content_for_embed)
+            try:
+                self._conn.execute(
+                    "INSERT INTO vectors (rowid, embedding) VALUES (?, ?)",
+                    (new_chunk_rowid, v_bytes),
+                )
+            except sqlite3.IntegrityError:
+                logger.warning(f"vector rowid {new_chunk_rowid} already exists — replacing (new chunk_id={new_id})")
+                self._conn.execute("DELETE FROM vectors WHERE rowid = ?", (new_chunk_rowid,))
+                self._conn.execute(
+                    "INSERT INTO vectors (rowid, embedding) VALUES (?, ?)",
+                    (new_chunk_rowid, v_bytes),
+                )
+        except Exception as e:
+            logger.warning(f"failed to embed new chunk {new_id} during update: {e}")
+
         self._conn.commit()
         # [7/19 v0.5.3] metrics
         _metrics_registry().update_total.inc()
@@ -425,6 +460,16 @@ class Memory:
             self._conn.execute(
                 "UPDATE chunks SET valid_until = ? WHERE id = ? AND valid_until IS NULL", (now(), target_id)
             )
+            # [7/19 v0.5.6] Drift fix: also delete the vector row.
+            # Soft-deleted chunks are filtered out by `_vector_recall` (valid_until IS NULL),
+            # so the embedding is dead — keeping it bloats vec0 and risks rowid collisions
+            # on future INSERTs (vec0 internal counter drifts from chunks.rowid).
+            chunk_rowid = self._conn.execute("SELECT rowid FROM chunks WHERE id = ?", (target_id,)).fetchone()
+            if chunk_rowid:
+                try:
+                    self._conn.execute("DELETE FROM vectors WHERE rowid = ?", (chunk_rowid[0],))
+                except sqlite3.OperationalError as e:
+                    logger.warning(f"vector cleanup failed for chunk {target_id}: {e}")
         elif target_kind == "entity":
             self._conn.execute(
                 "UPDATE entities SET valid_until = ? WHERE id = ? AND valid_until IS NULL", (now(), target_id)
@@ -1224,6 +1269,80 @@ class Memory:
         stats["vectors"] = self._conn.execute("SELECT count(*) FROM vectors").fetchone()[0]
         stats["recall_log"] = self._conn.execute("SELECT count(*) FROM recall_log").fetchone()[0]
         return stats
+
+    def cleanup_orphan_vectors(self, dry_run: bool = False) -> Dict[str, int]:
+        """[7/19 v0.5.6] Drift fix: clean up orphan vectors in vec0.
+
+        Three categories of orphan vectors accumulate over time:
+        1. **Soft-deleted chunks** — `chunks.valid_until IS NOT NULL` (forgotten/updated).
+           Their embeddings are excluded by `_vector_recall` filter, so they waste space.
+        2. **Truly orphan** — `vectors.rowid` doesn't match any `chunks.rowid`.
+           These come from crashed inserts, manual SQL, or earlier migration scripts.
+        3. **Stale** — could not be identified by SQL alone (e.g. vector with valid
+           rowid but mismatched chunk_id). Not handled here; out of scope.
+
+        Args:
+            dry_run: if True, report counts without deleting (for safe inspection).
+
+        Returns:
+            Dict with counts:
+              - `soft_deleted_cleaned`: vectors whose chunks have valid_until IS NOT NULL.
+              - `truly_orphan_cleaned`: vectors with no matching chunk rowid.
+              - `vectors_remaining`: count after cleanup.
+              - `dry_run`: True if no changes were made.
+        """
+        # Category 1: vectors for soft-deleted chunks
+        soft_deleted_rows = self._conn.execute(
+            """
+            SELECT v.rowid FROM vectors v
+            JOIN chunks c ON c.rowid = v.rowid
+            WHERE c.valid_until IS NOT NULL
+            """
+        ).fetchall()
+        soft_deleted_count = len(soft_deleted_rows)
+
+        # Category 2: truly orphan vectors (no matching chunk)
+        truly_orphan_rows = self._conn.execute(
+            """
+            SELECT v.rowid FROM vectors v
+            WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.rowid = v.rowid)
+            """
+        ).fetchall()
+        truly_orphan_count = len(truly_orphan_rows)
+
+        if dry_run:
+            return {
+                "soft_deleted_cleaned": soft_deleted_count,
+                "truly_orphan_cleaned": truly_orphan_count,
+                "vectors_remaining": self._conn.execute("SELECT count(*) FROM vectors").fetchone()[0],
+                "dry_run": True,
+            }
+
+        # Apply cleanup
+        all_orphan_rowids = [r[0] for r in soft_deleted_rows] + [r[0] for r in truly_orphan_rows]
+        if all_orphan_rowids:
+            placeholders = ",".join("?" * len(all_orphan_rowids))
+            try:
+                self._conn.execute(
+                    f"DELETE FROM vectors WHERE rowid IN ({placeholders})",
+                    all_orphan_rowids,
+                )
+            except sqlite3.OperationalError as e:
+                logger.warning(f"orphan vector cleanup failed: {e}")
+                return {
+                    "soft_deleted_cleaned": 0,
+                    "truly_orphan_cleaned": 0,
+                    "vectors_remaining": self._conn.execute("SELECT count(*) FROM vectors").fetchone()[0],
+                    "error": str(e),
+                }
+
+        self._conn.commit()
+        return {
+            "soft_deleted_cleaned": soft_deleted_count,
+            "truly_orphan_cleaned": truly_orphan_count,
+            "vectors_remaining": self._conn.execute("SELECT count(*) FROM vectors").fetchone()[0],
+            "dry_run": False,
+        }
 
 
 # === 自测 ===
