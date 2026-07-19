@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.8 — 2026-07-19
+
+fix(tests): rebind ValidationError via `gc.get_objects()` scan for orphan module dicts
+
+- Round 4 cross-test pollution completion. Earlier `_force_repo_validation` + `pytest_collection_finish` only rebinded test module attrs and `sys.modules['validation']`, but multiple `_load_from_repo` calls left ORPHANED module dicts held alive by function `__globals__` (e.g., `Memory._upsert_entity.__globals__` pointed to OLD memory module whose `__dict__['ValidationError']` was still OLD).
+- New autouse fixture `_rebind_test_validation_error` walks `gc.get_objects()` to find all function objects with `__globals__['__name__'] in ('validation', 'memory')` and rebinds their `__dict__['ValidationError']` to `repo_ve`.
+- Result: **171 passed, 1 skipped, 0 failed** (was 165/172 with 6 cross-test pollution failures).
+
 ## v0.3.7 — 2026-07-19
 
 cleanup: drop 实战 pollution from tests + docs (188 occurrences)
