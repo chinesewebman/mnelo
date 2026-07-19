@@ -5,9 +5,9 @@
 > **版本**: v1.2 (P0/P1/P2 审计后)
 > **分析日期**: 2026-07-18
 > **分析范围**: schema.sql (155 行) + memory.py (836 行) + mcp_server.py (410 行) + entity_resolve.py (243 行) + embedder.py (109 行)
-> **配套文档**: `SCHEMA.md` (设计), `ARCHITECTURE.md` (本文件, 分析), `RUNBOOK.md` (实战过程 + 替换模板), `AUDIT-REPORT.md` (7/18 小默审计报告)
+> **配套文档**: `SCHEMA.md` (设计), `ARCHITECTURE.md` (本文件, 分析), `RUNBOOK.md` (过程 + 替换模板), `AUDIT-REPORT.md` (7/18 小默审计报告)
 > **相关 skill**: `~/.hermes/skills/agent-memory-design/`
-> **实战要求**: "调研笔记 / 评估文档" 默认简体中文 (SOUL.md carve-out 2026-06-26)
+> **要求**: "调研笔记 / 评估文档" 默认简体中文 (SOUL.md carve-out 2026-06-26)
 
 ---
 
@@ -57,8 +57,8 @@ CREATE TABLE entities (
 ```
 
 **关键设计**：
-- **节点身份** = `id`（主键，无 auto-increment）。实战中用语义 id（股票代码、人名 slug），避免大整数 PK 在 import/migration 时混乱
-- **`kind`** 决定节点语义，是 schema 的"模式"。实战 kind：stock / concept / event / person / canonical_fact / identity_fact
+- **节点身份** = `id`（主键，无 auto-increment）。中用语义 id（股票代码、人名 slug），避免大整数 PK 在 import/migration 时混乱
+- **`kind`** 决定节点语义，是 schema 的"模式"。 kind：stock / concept / event / person / canonical_fact / identity_fact
 - **`aliases_json`** 支持一实体多名，自动合并（`entity_resolve.py`）
 - **`importance`** 全表统一 [0, 1]，P0 审计后由 `clamp01()` 强制
 
@@ -100,12 +100,12 @@ CREATE TABLE relations (
     valid_until TEXT,
     source TEXT,
     confidence REAL DEFAULT 1.0,
-    evidence_chunk_id TEXT      -- ← 实战: 哪条 chunk 创立的这条边
+    evidence_chunk_id TEXT      -- ← : 哪条 chunk 创立的这条边
 );
 ```
 
 **关键设计**：
-- **通用 RDFS 风格**：`relation` 是 string label（不限枚举），实战灵活扩展
+- **通用 RDFS 风格**：`relation` 是 string label（不限枚举），灵活扩展
 - `evidence_chunk_id` 是**关键创新** — 任何边都"生于"一条原文 chunk，可回溯
 - `weight` + `confidence` 双字段：weight = 边强度，confidence = 来源可信度
 - **`valid_from/until` 让边也有 4D 时态**（删除 entity 自动级联，见 §2.5）
@@ -121,7 +121,7 @@ CREATE VIRTUAL TABLE vectors USING vec0(
 **关键设计**：
 - **单列虚拟表** + `rowid` ↔ `chunks.rowid` 1:1 映射
 - 模型：bge-small-zh-v1.5（Chinese-native，512 维，C-MTEB 强）
-- 实战用 `_with_row_factory()` context manager 处理 vec0 返回 plain tuple 的 quirk（sqlite-vec 0.1.x 已知 bug）
+- 用 `_with_row_factory()` context manager 处理 vec0 返回 plain tuple 的 quirk（sqlite-vec 0.1.x 已知 bug）
 
 ### 2.5 触发器 (4 个) — 自动维护的核心
 
@@ -152,7 +152,7 @@ END;
 ### 2.6 辅助表 (3 个)
 
 - **meta**: 系统元数据（schema_version, embedding_model 等）
-- **recall_log**: 每次 recall 的审计日志（query / results / latency_ms）— 实战分析召回质量
+- **recall_log**: 每次 recall 的审计日志（query / results / latency_ms）— 分析召回质量
 - **purged_queue**: 软删除 30 天后才物理清理的待办队列
 
 ---
@@ -184,7 +184,7 @@ recall(query, top_k=5, graph_hops=2, strategy='rrf', asof=None)
 score(d) = Σ 1/(k + rank)  for each route r where d in top_k(r)
 ```
 
-实战中 `k=60`（标准值）。RRF **不需要各路分数归一化**（比加权融合简单），对单路噪声鲁棒。
+中 `k=60`（标准值）。RRF **不需要各路分数归一化**（比加权融合简单），对单路噪声鲁棒。
 
 ### 3.3 4D 时间切片 (`asof` 参数)
 
@@ -194,7 +194,7 @@ score(d) = Σ 1/(k + rank)  for each route r where d in top_k(r)
 - meta: chunk.valid_until 过滤
 - entity: entity.valid_until 过滤
 
-**实战价值**：能问"2026-06-01 时点持有 sh600089 的依据是什么"（历史回放）。
+**价值**：能问"2026-06-01 时点持有 sh600089 的依据是什么"（历史回放）。
 
 ---
 
@@ -209,7 +209,7 @@ score(d) = Σ 1/(k + rank)  for each route r where d in top_k(r)
 | **事务时间** | `created_at` / `updated_at` | DB 写入时间 (实务时间) |
 | **有效时间** | `valid_from` / `valid_until` | 知识"事实存在"的时间段 |
 
-实战中 trinity_daily 写入 7/15 sh600089 建仓，valid_from=2026-07-15；后续 update 会建新版本，老版本标 superseded_by + valid_until=now。**历史不丢，但默认召回只看到活跃版本**。
+中 trinity_daily 写入 7/15 sh600089 建仓，valid_from=2026-07-15；后续 update 会建新版本，老版本标 superseded_by + valid_until=now。**历史不丢，但默认召回只看到活跃版本**。
 
 ### 4.2 不可变历史 (Immutable History)
 
@@ -217,13 +217,13 @@ score(d) = Σ 1/(k + rank)  for each route r where d in top_k(r)
 - `forget()` 是软删除（valid_until=now，30 天后 purged_queue 才物理清理）
 - 触发器保证：supersede 一节点 → 所有引用边自动级联失效
 
-**实战价值**：实战派审计"5/25 我为什么买 sh600021" — 5/25 那条决策 chunk 现在还在 DB 里。
+**价值**：派审计"5/25 我为什么买 sh600021" — 5/25 那条决策 chunk 现在还在 DB 里。
 
 ### 4.3 触发器驱动的数据一致性
 
 4 个触发器让"复杂一致性逻辑"下推到 DB：
 
-| 触发器 | 维护什么 | 实战收益 |
+| 触发器 | 维护什么 | 收益 |
 |---|---|---|
 | `trg_entities_updated` | 自动 updated_at | 应用层不用手动维护 |
 | `trg_chunks_updated` | 防 created_at 被改 | 保留事务时间 |
@@ -242,7 +242,7 @@ score(d) = Σ 1/(k + rank)  for each route r where d in top_k(r)
 
 - vec0 MATCH 是 ANN（HNSW-like），召回时间 O(log N) 与数据集大小弱相关
 - 与图遍历正交：纯语义（向量）/ 纯结构（图）/ 时间（meta）/ 实体（entity）4 路各占一边
-- 实战 2487 vectors + 4185 entities + 15745 relations 规模下，recall < 50ms
+-  2487 vectors + 4185 entities + 15745 relations 规模下，recall < 50ms
 
 ### 4.5 证据可回溯 (Evidence Provenance)
 
@@ -252,16 +252,16 @@ score(d) = Σ 1/(k + rank)  for each route r where d in top_k(r)
 relation sh600089 --[mentioned_in]--> chunk_20260718_103045_xxx
 ```
 
-实战中能用 1 个 SQL 找出"所有引用 sh600089 的关系都来自哪几条原文"。这是 LLM 用 RAG 时的关键信任链。
+中能用 1 个 SQL 找出"所有引用 sh600089 的关系都来自哪几条原文"。这是 LLM 用 RAG 时的关键信任链。
 
 ### 4.6 双视角 (Entity + Chunk 分离)
 
 | 视角 | 表 | 形态 | 何时用 |
 |---|---|---|---|
 | **Entity 视角** | entities | 概念身份（"sh600089 是特变电工"） | 召回回答"X 是什么" |
-| **Chunk 视角** | chunks | 原文陈述（"7/15 实战建仓 sh600089"） | 召回回答"为什么 X 怎么样" |
+| **Chunk 视角** | chunks | 原文陈述（"7/15 建仓 sh600089"） | 召回回答"为什么 X 怎么样" |
 
-实战 `_entity_recall`（line 511-560）做了"实体直接作为高价值答案"——identity_fact / canonical_fact 类 entity 第一跳直接返回，不用绕回 chunk。
+ `_entity_recall`（line 511-560）做了"实体直接作为高价值答案"——identity_fact / canonical_fact 类 entity 第一跳直接返回，不用绕回 chunk。
 
 ---
 
@@ -282,7 +282,7 @@ relation sh600089 --[mentioned_in]--> chunk_20260718_103045_xxx
 
 ---
 
-## 6. 实战中的设计取舍
+## 6. 中的设计取舍
 
 ### 6.1 为什么选 SQLite + vec0 而非专用图 DB (Neo4j / Memgraph)?
 
@@ -298,11 +298,11 @@ relation sh600089 --[mentioned_in]--> chunk_20260718_103045_xxx
 
 | 取舍 | 理由 |
 |---|---|
-| ✅ 不可变历史 | 实战派需要"5/25 决策 6/29 错的"完整链路 |
+| ✅ 不可变历史 | 派需要"5/25 决策 6/29 错的"完整链路 |
 | ✅ 触发器级联 | 一致性自动保证 |
 | ✅ 召回可按时间切片 | `asof=2026-06-01` 看历史时点知识状态 |
 | ⚠️ 物理空间增长 | 30 天后 purged_queue 才清理（防止误删） |
-| ⚠️ 召回需多带 WHERE valid_until IS NULL | 实战中所有召回都加了（已审计） |
+| ⚠️ 召回需多带 WHERE valid_until IS NULL | 中所有召回都加了（已审计） |
 
 ### 6.3 为什么 single-process single-Memory 而非多 writer?
 
@@ -310,15 +310,15 @@ relation sh600089 --[mentioned_in]--> chunk_20260718_103045_xxx
 |---|---|
 | ✅ WAL + busy_timeout=30s | 单进程足够，lock 风险归零 |
 | ✅ LaunchAgent 单实例 | `ai.mnelo.mcp.plist` KeepAlive 保证 |
-| ❌ 不支持并发写 | 实战场景是单用户 cron + 偶尔手动调用，无并发需求 |
+| ❌ 不支持并发写 | 场景是单用户 cron + 偶尔手动调用，无并发需求 |
 
 ---
 
 ## 7. 4 路召回的语义对应
 
-| 路 | 数据源 | 适合 query 类型 | 实战命中率 |
+| 路 | 数据源 | 适合 query 类型 | 命中率 |
 |---|---|---|---|
-| `vector` | vec0 HNSW | 长查询 / 抽象概念（"实战派哲学"） | 中 |
+| `vector` | vec0 HNSW | 长查询 / 抽象概念（"派哲学"） | 中 |
 | `graph` | relations 2-hop | 关联查询（"X 跟 Y 有什么关系"） | 高 |
 | `meta` | LIKE + timestamp | 短查询 / 时间敏感（"今天加了啥"） | 中 |
 | `entity` | name + aliases 精确 | 短代码（"sh600089" / "特变电工"） | 高 |
@@ -335,8 +335,8 @@ RRF 融合让 4 路互补：entity 命中强时直接把 identity_fact 当答案
 4. **4 路召回 + RRF**: 语义 / 结构 / 时间 / 实体 互补融合
 5. **证据可回溯**: 每条 relation → evidence_chunk_id → 原文
 
-适合**个人 AI agent + 实战派**场景：单用户、几千-几万实体、需要时态和可解释性、不需要百万级 QPS。
+适合**个人 AI agent + 派**场景：单用户、几千-几万实体、需要时态和可解释性、不需要百万级 QPS。
 
 ---
 
-*分析依据：schema.sql + memory.py + mcp_server.py + entity_resolve.py 全文 + 50 测试覆盖 + 7/18 实战 1 周观察期*
+*分析依据：schema.sql + memory.py + mcp_server.py + entity_resolve.py 全文 + 50 测试覆盖 + 7/18  1 周观察期*

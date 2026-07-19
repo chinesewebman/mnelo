@@ -138,7 +138,7 @@ class TestNowTzFallback:
         from memory import now
         result = now()
         # local time ISO 格式: 'YYYY-MM-DDTHH:MM:SS' (naive ISO, 不带 tz offset)
-        # 实战中 caller 自己 know 时区
+        # 中 caller 自己 know 时区
         assert 'T' in result
         assert len(result) >= 19  # 'YYYY-MM-DDTHH:MM:SS' = 19 chars
 

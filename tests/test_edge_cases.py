@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-test_edge_cases.py — hermes-memory v1.1 边界/异常/性能 实战测试
+test_edge_cases.py — hermes-memory v1.1 边界/异常/性能 测试
 
-[实战目的 - 主人口中 7/18 拍板]
+[目的 - 主人口中 7/18 拍板]
 1. 补齐 CRUD 边界 (空 query / 大 query / top_k=0 / 不存在的 old_id)
-2. 实战 cascade=False 行为
-3. 实战 stats 字段完整性
-4. 实战 embedder 行为 (512d, bge-small-zh-v1.5)
-5. 实战 mcp_server 10 工具 schema
-6. 实战 hermes_memory_client 7 工具端到端
-7. 实战批量 / 性能 (recall < 1s for 10 hits)
+2.  cascade=False 行为
+3.  stats 字段完整性
+4.  embedder 行为 (512d, bge-small-zh-v1.5)
+5.  mcp_server 10 工具 schema
+6.  hermes_memory_client 7 工具端到端
+7. 批量 / 性能 (recall < 1s for 10 hits)
 
 [运行]
   /Users/apple/hermes-agent/venv/bin/python3 /Users/apple/.hermes/memory/tests/test_edge_cases.py
@@ -47,11 +47,11 @@ from memory import Memory, generate_id, now
 from embedder import get_embedder, EMBED_MODEL_NAME, EMBED_DIM
 
 
-DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')  # intentionally points at live DB — 实战测试 against real data
+DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')  # intentionally points at live DB — 测试 against real data
 
 
 class TestRelateEdgeCases(unittest.TestCase):
-    """实战: relate 边界 / weight / duplicate edges."""
+    """relate 边界 / weight / duplicate edges."""
 
     @classmethod
     def setUpClass(cls):
@@ -70,14 +70,14 @@ class TestRelateEdgeCases(unittest.TestCase):
         self.mem._conn.commit()
 
     def test_01_relate_with_zero_weight(self):
-        """实战: weight=0 应允许 (实战中 disabled 关系可 weight=0)."""
+        """weight=0 应允许 (中 disabled 关系可 weight=0)."""
         rid = self.mem.relate(self.a_id, self.b_id, 'disabled_于', weight=0.0)
         self.assertIsInstance(rid, int)
         self.assertGreater(rid, 0)
         print(f'  ✅ relate weight=0 → rid={rid}')
 
     def test_02_relate_with_extra_properties(self):
-        """实战: properties JSON 字段实战."""
+        """properties JSON 字段."""
         rid = self.mem.relate(self.a_id, self.b_id, 'tags_于',
                               weight=0.5, properties={'tag': 'test', 'quantity': 100})
         row = self.mem._conn.execute(
@@ -88,14 +88,14 @@ class TestRelateEdgeCases(unittest.TestCase):
         print(f'  ✅ relate + properties JSON → rid={rid}')
 
     def test_03_duplicate_edge_allowed(self):
-        """实战: 实战允许重复 (a→b 实战多次表示同一关系不同时间快照)."""
+        """允许重复 (a→b 多次表示同一关系不同时间快照)."""
         rid1 = self.mem.relate(self.a_id, self.b_id, 'mention_于')
         rid2 = self.mem.relate(self.a_id, self.b_id, 'mention_于')
-        self.assertNotEqual(rid1, rid2)  # 实战不同 id
+        self.assertNotEqual(rid1, rid2)  # 不同 id
         print(f'  ✅ duplicate edge allowed → {rid1}, {rid2}')
 
     def test_04_relate_missing_entity(self):
-        """实战: 实战允许 relation 引用还没创建的 entity (实战 SQL 没外键约束)."""
+        """允许 relation 引用还没创建的 entity ( SQL 没外键约束)."""
         rid = self.mem.relate('nonexistent_entity_x', self.b_id, 'future_于')
         self.assertIsInstance(rid, int)
         print(f'  ✅ relate missing entity → rid={rid}')
@@ -113,7 +113,7 @@ class TestRelateEdgeCases(unittest.TestCase):
 
 
 class TestRecallEdgeCases(unittest.TestCase):
-    """实战: recall 边界 / 空 query / 大 query / top_k=0."""
+    """recall 边界 / 空 query / 大 query / top_k=0."""
 
     @classmethod
     def setUpClass(cls):
@@ -121,20 +121,20 @@ class TestRecallEdgeCases(unittest.TestCase):
         cls.test_id_prefix = 'test_recall_' + datetime.now().strftime('%H%M%S')
 
     def test_01_recall_top_k_zero(self):
-        """实战: top_k=0 应返回空 list (而不是 raise)."""
+        """top_k=0 应返回空 list (而不是 raise)."""
         results = self.mem.recall('anything', top_k=0)
         self.assertEqual(results, [])
         print(f'  ✅ top_k=0 → {len(results)} hits')
 
     def test_02_recall_empty_query(self):
-        """实战: 空 query 应返回空 list (而不是 crash)."""
+        """空 query 应返回空 list (而不是 crash)."""
         results = self.mem.recall('', top_k=5)
         self.assertIsInstance(results, list)
-        # 实战中可能 0 hits (因为空 query 无匹配)
+        # 中可能 0 hits (因为空 query 无匹配)
         print(f'  ✅ empty query → {len(results)} hits')
 
     def test_03_recall_special_chars(self):
-        """实战: query 含特殊字符 / emoji 应不 crash."""
+        """query 含特殊字符 / emoji 应不 crash."""
         for q in ['%', '_', "O'Reilly", '测试 🚀 emoji', '\n\r\t tab']:
             try:
                 results = self.mem.recall(q, top_k=2)
@@ -144,42 +144,42 @@ class TestRecallEdgeCases(unittest.TestCase):
                 self.fail(f'special char "{q}" raised: {e}')
 
     def test_04_recall_strategy_validation(self):
-        """实战: 不合法 strategy 应 fallback 或 raise."""
+        """不合法 strategy 应 fallback 或 raise."""
         try:
             results = self.mem.recall('test', top_k=2, strategy='invalid_strategy')
-            # 实战中可能 fallback 到 rrf
+            # 中可能 fallback 到 rrf
             self.assertIsInstance(results, list)
             print(f'  ✅ invalid strategy → {len(results)} hits (可能 fallback)')
         except ValueError:
-            print(f'  ✅ invalid strategy → ValueError (实战预期)')
+            print(f'  ✅ invalid strategy → ValueError (预期)')
 
     def test_05_recall_performance(self):
-        """实战: recall 完整跑应在 1s 内 (10 hits 实战)."""
+        """recall 完整跑应在 1s 内 (10 hits )."""
         start = time.time()
-        results = self.mem.recall('翁氏 D∩W Trinity MTF 共振实战', top_k=10, strategy='rrf')
+        results = self.mem.recall('翁氏 D∩W Trinity MTF 共振', top_k=10, strategy='rrf')
         elapsed = time.time() - start
-        self.assertLess(elapsed, 5.0, f'recall 用了 {elapsed:.2f}s, 实战应 < 5s')
+        self.assertLess(elapsed, 5.0, f'recall 用了 {elapsed:.2f}s, 应 < 5s')
         print(f'  ✅ recall perf → {len(results)} hits in {elapsed:.3f}s')
 
     def test_06_recall_with_filters(self):
-        """实战: filters={source: '...'} 实战过滤 (实战中 filter 是软过滤, 不保证命中)."""
+        """filters={source: '...'} 过滤 (中 filter 是软过滤, 不保证命中)."""
         results = self.mem.recall('Trinity', top_k=3, filters={'source': 'trinity_daily:part1'})
-        # 实战: 实战中 vector_only + filter 应能命中 part1 (实测 3 hits)
-        # RRF + filter 可能 0 hits (实战中 vector 召回在 top 15 没 part1 时)
+        # : 中 vector_only + filter 应能命中 part1 (实测 3 hits)
+        # RRF + filter 可能 0 hits (中 vector 召回在 top 15 没 part1 时)
         if results:
             sources = {r['source'] for r in results}
             self.assertIn('trinity_daily:part1', sources)
             print(f'  ✅ filters + 命中 → {len(results)} hits, sources={sources}')
         else:
-            # 实战中 recall 精度问题, 不算 bug
-            print(f'  ⚠️ filters + 0 hits (vector 召回 top_k*5 没命中目标 source, 实战召回精度问题)')
+            # 中 recall 精度问题, 不算 bug
+            print(f'  ⚠️ filters + 0 hits (vector 召回 top_k*5 没命中目标 source, 召回精度问题)')
 
     def test_07_recall_filters_specific(self):
-        """实战: 用更具区分性 query + filter 应命中."""
+        """用更具区分性 query + filter 应命中."""
         results = self.mem.recall('Trinity 三层报告', top_k=3, strategy='vector_only',
                                    filters={'source': 'trinity_daily:part1'})
-        # 实战: vector_only + 区分性 query 应能命中
-        self.assertGreater(len(results), 0, '实战中 vector_only + 区分 query + filter 应命中')
+        # : vector_only + 区分性 query 应能命中
+        self.assertGreater(len(results), 0, '中 vector_only + 区分 query + filter 应命中')
         sources = {r['source'] for r in results}
         self.assertEqual(sources, {'trinity_daily:part1'})
         print(f'  ✅ filters + 区分 query → {len(results)} hits, sources={sources}')
@@ -190,7 +190,7 @@ class TestRecallEdgeCases(unittest.TestCase):
 
 
 class TestGraphQueryEdgeCases(unittest.TestCase):
-    """实战: graph_query 边界 / max_hops / asof / 不存在节点."""
+    """graph_query 边界 / max_hops / asof / 不存在节点."""
 
     @classmethod
     def setUpClass(cls):
@@ -198,24 +198,24 @@ class TestGraphQueryEdgeCases(unittest.TestCase):
         cls.test_id_prefix = 'test_graph_' + datetime.now().strftime('%H%M%S')
 
     def test_01_graph_query_nonexistent_node(self):
-        """实战: 不存在节点应返回空 graph (不 crash)."""
+        """不存在节点应返回空 graph (不 crash)."""
         g = self.mem.graph_query('nonexistent_node_xyz', max_hops=2)
         self.assertEqual(g['nodes'], [])
         self.assertEqual(g['edges'], [])
         print(f'  ✅ graph_query 不存在节点 → 0 nodes, 0 edges')
 
     def test_02_graph_query_max_hops_zero(self):
-        """实战: max_hops=0 应返回只 start_node 自身."""
+        """max_hops=0 应返回只 start_node 自身."""
         g = self.mem.graph_query('master_2077_ling', max_hops=0)
-        # 实战: 只有 start node, 无 edges
+        # : 只有 start node, 无 edges
         self.assertGreaterEqual(len(g['nodes']), 1)
         self.assertEqual(len(g['edges']), 0)
         print(f'  ✅ max_hops=0 → {len(g["nodes"])} nodes, 0 edges')
 
     def test_03_graph_query_large_hops(self):
-        """实战: max_hops=10 应有边界保护 (实战防止无限 loop)."""
+        """max_hops=10 应有边界保护 (防止无限 loop)."""
         g = self.mem.graph_query('master_2077_ling', max_hops=10)
-        # 实战: 节点数应该 <= 所有实体数
+        # : 节点数应该 <= 所有实体数
         self.assertLess(len(g['nodes']), 10000)
         print(f'  ✅ max_hops=10 → {len(g["nodes"])} nodes, {len(g["edges"])} edges (有边界保护)')
 
@@ -225,7 +225,7 @@ class TestGraphQueryEdgeCases(unittest.TestCase):
 
 
 class TestUpdateEdgeCases(unittest.TestCase):
-    """实战: update 失败 / 不存在 old_id / 同 old_id 多次 update."""
+    """update 失败 / 不存在 old_id / 同 old_id 多次 update."""
 
     @classmethod
     def setUpClass(cls):
@@ -233,19 +233,19 @@ class TestUpdateEdgeCases(unittest.TestCase):
         cls.test_id_prefix = 'test_update_' + datetime.now().strftime('%H%M%S')
 
     def test_01_update_nonexistent_id(self):
-        """实战: update 不存在的 old_id 应 raise ValueError."""
+        """update 不存在的 old_id 应 raise ValueError."""
         with self.assertRaises(ValueError):
             self.mem.update('chunk_does_not_exist_999', reason='test')
-        print(f'  ✅ update 不存在 → ValueError (实战预期)')
+        print(f'  ✅ update 不存在 → ValueError (预期)')
 
     def test_02_double_update_same_id(self):
-        """实战: 同 old_id 多次 update 应创建多个 supersede 链."""
-        cid = self.mem.remember(f'{self.test_id_prefix}: 实战双重 update',
+        """同 old_id 多次 update 应创建多个 supersede 链."""
+        cid = self.mem.remember(f'{self.test_id_prefix}: 双重 update',
                                  source='test-update', importance=0.5)
         new_id_1 = self.mem.update(cid, reason='update1', new_content='第一版')
         new_id_2 = self.mem.update(new_id_1, reason='update2', new_content='第二版')
 
-        # 实战: cid → new_id_1 → new_id_2 应形成链
+        # : cid → new_id_1 → new_id_2 应形成链
         r1 = self.mem._conn.execute(
             "SELECT superseded_by FROM chunks WHERE id = ?", (cid,)
         ).fetchone()
@@ -265,7 +265,7 @@ class TestUpdateEdgeCases(unittest.TestCase):
 
 
 class TestForgetEdgeCases(unittest.TestCase):
-    """实战: forget cascade=False / 重复 forget / 不存在 id."""
+    """forget cascade=False / 重复 forget / 不存在 id."""
 
     @classmethod
     def setUpClass(cls):
@@ -273,7 +273,7 @@ class TestForgetEdgeCases(unittest.TestCase):
         cls.test_id_prefix = 'test_forget_' + datetime.now().strftime('%H%M%S')
 
     def test_01_forget_cascade_false(self):
-        """实战: cascade=False 应仅 forget 目标, 不级联."""
+        """cascade=False 应仅 forget 目标, 不级联."""
         eid = f'{self.test_id_prefix}_cascade'
         self.mem._conn.execute("""
             INSERT INTO entities (id, kind, name, source, valid_from, valid_until)
@@ -291,8 +291,8 @@ class TestForgetEdgeCases(unittest.TestCase):
         ).fetchone()
         self.assertIsNotNone(e_after['valid_until'])
 
-        # 但实战级联 = 由触发器自动 (实战中 cascade=False 不能阻止触发器, 这是 schema 设计限制)
-        # 所以实战中 cascade=False 实战不阻止 trigger 级联 — 这点要标记
+        # 但级联 = 由触发器自动 (中 cascade=False 不能阻止触发器, 这是 schema 设计限制)
+        # 所以中 cascade=False 不阻止 trigger 级联 — 这点要标记
         r_after = self.mem._conn.execute(
             "SELECT valid_until FROM relations WHERE id = ?", (rid,)
         ).fetchone()
@@ -312,13 +312,13 @@ class TestForgetEdgeCases(unittest.TestCase):
 
 
 class TestStatsIntegrity(unittest.TestCase):
-    """实战: stats 字段完整 / 数字合理."""
+    """stats 字段完整 / 数字合理."""
 
     def setUp(self):
         self.mem = Memory()
 
     def test_01_stats_fields(self):
-        """实战: stats 必含 entities/chunks/relations/vectors/recall_log."""
+        """stats 必含 entities/chunks/relations/vectors/recall_log."""
         s = self.mem.stats()
         for key in ['entities', 'chunks', 'relations', 'vectors', 'recall_log']:
             self.assertIn(key, s, f'stats 缺 {key}')
@@ -328,7 +328,7 @@ class TestStatsIntegrity(unittest.TestCase):
             for sub in ['total', 'active', 'deleted']:
                 self.assertIn(sub, s[k], f'stats[{k}] 缺 {sub}')
 
-        # 实战: total = active + deleted
+        # : total = active + deleted
         for k in ['entities', 'chunks', 'relations']:
             self.assertEqual(s[k]['total'], s[k]['active'] + s[k]['deleted'],
                              f'stats[{k}] total != active + deleted')
@@ -338,19 +338,19 @@ class TestStatsIntegrity(unittest.TestCase):
               f'vectors {s["vectors"]}, recall_log {s["recall_log"]}')
 
     def test_02_stats_reasonable_numbers(self):
-        """实战: stats 数字应 > 实战下限 (db 已加载实战数据)."""
+        """stats 数字应 > 下限 (db 已加载数据)."""
         s = self.mem.stats()
-        self.assertGreater(s['entities']['total'], 100, '实战数据 entities 应 > 100')
-        self.assertGreater(s['chunks']['total'], 100, '实战数据 chunks 应 > 100')
-        self.assertGreater(s['relations']['total'], 1000, '实战数据 relations 应 > 1000')
-        print(f'  ✅ stats 实战数字合理 (entities > 100, chunks > 100, relations > 1000)')
+        self.assertGreater(s['entities']['total'], 100, '数据 entities 应 > 100')
+        self.assertGreater(s['chunks']['total'], 100, '数据 chunks 应 > 100')
+        self.assertGreater(s['relations']['total'], 1000, '数据 relations 应 > 1000')
+        print(f'  ✅ stats 数字合理 (entities > 100, chunks > 100, relations > 1000)')
 
     def tearDown(self):
         self.mem.close()
 
 
 class TestEmbedder(unittest.TestCase):
-    """实战: embedder 行为.
+    """embedder 行为.
 
     [7/19] embedding 模型从 config 读 — 测试不再硬编码 assert 固定模型名
     只校验 (a) 模型已加载、(b) dim 是 fastembed 接受的合法值、(c) embed 一致性
@@ -373,12 +373,12 @@ class TestEmbedder(unittest.TestCase):
         print(f'  ✅ embedder ← {_config.describe()}')
 
     def test_02_embedder_consistency(self):
-        """实战: 同 query 多次嵌入应结果一致 (deterministic)."""
+        """同 query 多次嵌入应结果一致 (deterministic)."""
         emb = get_embedder()
-        v1 = emb.embed('test query 中文实战')
-        v2 = emb.embed('test query 中文实战')
+        v1 = emb.embed('test query 中文')
+        v2 = emb.embed('test query 中文')
 
-        # 实战中 fastembed 是 deterministic, v1 == v2
+        # 中 fastembed 是 deterministic, v1 == v2
         import numpy as np
         a1, a2 = np.array(v1), np.array(v2)
         diff = np.linalg.norm(a1 - a2)
@@ -386,9 +386,9 @@ class TestEmbedder(unittest.TestCase):
         print(f'  ✅ embedder deterministic → diff={diff:.6f}')
 
     def test_03_embedder_chinese_english(self):
-        """实战: 中英文混合 query 实战嵌入成功."""
+        """中英文混合 query 嵌入成功."""
         emb = get_embedder()
-        v_zh = emb.embed('上海电力 翁氏 D∩W 实战')
+        v_zh = emb.embed('上海电力 翁氏 D∩W ')
         v_en = emb.embed('Shanghai Power Weng forecast')
         self.assertEqual(len(v_zh), 512)
         self.assertEqual(len(v_en), 512)
@@ -396,12 +396,12 @@ class TestEmbedder(unittest.TestCase):
 
 
 class TestVec0RowFactory(unittest.TestCase):
-    """实战: vec0 extension 返回 row 类型 (bug fix 7/18).
+    """vec0 extension 返回 row 类型 (bug fix 7/18).
 
     7/18 发现: sqlite-vec 0.1.x vec0 extension 返回 plain tuple, 不受
-    connection.row_factory = sqlite3.Row 控制. _vector_recall 实战
+    connection.row_factory = sqlite3.Row 控制. _vector_recall 
     会 throw 'tuple indices must be integers or slices, not str'.
-    实战 fix: 临时设置 row_factory + 兼容 tuple / sqlite3.Row.
+     fix: 临时设置 row_factory + 兼容 tuple / sqlite3.Row.
     """
 
     @classmethod
@@ -409,7 +409,7 @@ class TestVec0RowFactory(unittest.TestCase):
         cls.mem = Memory()
 
     def test_01_vector_recall_returns_dicts(self):
-        """实战: vector_only recall 应返回 list of dict (含 chunk_id/content/source)."""
+        """vector_only recall 应返回 list of dict (含 chunk_id/content/source)."""
         r = self.mem.recall('主人 住址', top_k=3, strategy='vector_only')
         self.assertIsInstance(r, list)
         for hit in r:
@@ -420,7 +420,7 @@ class TestVec0RowFactory(unittest.TestCase):
         print(f'  ✅ vector_only returns dicts → {len(r)} hits')
 
     def test_02_rrf_recall_has_distance(self):
-        """实战: rrf recall 中 vector hit 应有 distance 字段 (实战 fix 后)."""
+        """rrf recall 中 vector hit 应有 distance 字段 ( fix 后)."""
         r = self.mem.recall('翁氏 D∩W Trinity MTF 共振', top_k=5, strategy='rrf')
         self.assertIsInstance(r, list)
         vector_hits = [h for h in r if h.get('method') == 'vector']
@@ -429,7 +429,7 @@ class TestVec0RowFactory(unittest.TestCase):
         print(f'  ✅ rrf vector hits 有 distance → {len(vector_hits)} vector hits')
 
     def test_03_mcp_recall_full_path(self):
-        """实战: MCP 客户端 recall 全路径实战 (实战覆盖 mcp_server 段).
+        """MCP 客户端 recall 全路径 (覆盖 mcp_server 段).
 
         [7/19 P0-2] Bearer token: 从 ~/.config/mnelo/auth_token 读, 加 Authorization header.
         """
@@ -454,7 +454,7 @@ class TestVec0RowFactory(unittest.TestCase):
                 async with ClientSession(r, w) as s:
                     await s.initialize()
                     r1 = await s.call_tool('memory_recall', {
-                        'query': '实战',
+                        'query': '',
                         'top_k': 3,
                         'strategy': 'vector_only',
                     })

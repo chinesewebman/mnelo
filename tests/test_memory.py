@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-test_memory.py — hermes-memory v1.0 实战测试
+test_memory.py — hermes-memory v1.0 测试
 
 [测试目标 - 主人口中 7/18 拍板]
 1. CRUD 6 API (remember/recall/relate/forget/update/graph_query)
-2. 3 路召回 + RRF 融合 (实战 recall 准确率)
+2. 3 路召回 + RRF 融合 ( recall 准确率)
 3. 软删除 (valid_until) + 触发器自动级联
-4. 4D 时间维度 (valid_from/valid_until 实战语义)
+4. 4D 时间维度 (valid_from/valid_until 语义)
 5. 实体消歧 (entity_resolve.py merge)
-6. shim 已删 (7/18 实战, 走 hermes-memory MCP 客户端)
+6. shim 已删 (7/18 , 走 hermes-memory MCP 客户端)
 
 [运行]
   /Users/apple/hermes-agent/venv/bin/python3 /Users/apple/.hermes/memory/tests/test_memory.py
@@ -36,7 +36,7 @@ DB_PATH = Path('/Users/apple/.hermes/memory/memory.db')
 
 
 class TestMemoryCRUD(unittest.TestCase):
-    """实战测试 1: CRUD 6 API"""
+    """测试 1: CRUD 6 API"""
 
     @classmethod
     def setUpClass(cls):
@@ -51,9 +51,9 @@ class TestMemoryCRUD(unittest.TestCase):
         print(f'\n--- {cls.test_id_prefix} ---')
 
     def test_01_remember_basic(self):
-        """实战: 写入 chunk + entity + relation."""
+        """写入 chunk + entity + relation."""
         cid = self.mem.remember(
-            content=f'{self.test_id_prefix}: 实战 sh600089 建仓 12,000 @ 18.96',
+            content=f'{self.test_id_prefix}:  sh600089 建仓 12,000 @ 18.96',
             source='test_crud',
             importance=0.9,
             entities=[
@@ -64,7 +64,7 @@ class TestMemoryCRUD(unittest.TestCase):
                 {
                     'source_id': f'{self.test_id_prefix}_master',
                     'target_id': f'{self.test_id_prefix}_sh600089',
-                    'relation': '实战_建仓_于',
+                    'relation': '_建仓_于',
                     'weight': 1.0,
                     'properties': {'quantity': 12000, 'price': 18.96},
                 },
@@ -74,11 +74,11 @@ class TestMemoryCRUD(unittest.TestCase):
         print(f'  ✅ remember → {cid}')
 
     def test_02_relate(self):
-        """实战: 新建边."""
+        """新建边."""
         rid = self.mem.relate(
             f'{self.test_id_prefix}_master',
             f'{self.test_id_prefix}_sh600089',
-            '实战_关注',
+            '_关注',
             weight=0.7,
         )
         self.assertIsInstance(rid, int)
@@ -86,9 +86,9 @@ class TestMemoryCRUD(unittest.TestCase):
         print(f'  ✅ relate → relation_id={rid}')
 
     def test_03_recall_vector(self):
-        """实战: 向量召回. query 应匹配 chunk 实际内容."""
+        """向量召回. query 应匹配 chunk 实际内容."""
         # [P2 实测修复 7/18 PM] 测试 query 跟 chunk content 应在 bge-small-zh 嵌入空间相似
-        # 旧 query '特变电工' 跟 chunk '实战 sh600089 建仓' 距离太大, vec0 MATCH 召回空
+        # 旧 query '特变电工' 跟 chunk ' sh600089 建仓' 距离太大, vec0 MATCH 召回空
         # 新 query '建仓' 直接匹配 chunk content
         results = self.mem.recall(
             f'{self.test_id_prefix} 建仓',
@@ -100,21 +100,21 @@ class TestMemoryCRUD(unittest.TestCase):
         print(f'  ✅ vector_only recall → {len(results)} hits')
 
     def test_04_recall_meta(self):
-        """实战: 元数据召回 (LIKE)."""
-        # 实战: 用稳定 prefix 模式 (避免 timestamp 干扰)
+        """元数据召回 (LIKE)."""
+        # : 用稳定 prefix 模式 (避免 timestamp 干扰)
         results = self.mem.recall(
             f'test_crud',  # LIKE %test_crud%
             top_k=3, strategy='meta_only',
         )
         # 注: meta_only 召回源 source='test_crud' 的 chunks (可能已被 tearDown 清理)
-        # 实战意义: 不严格断言, 至少能跑通
+        # 意义: 不严格断言, 至少能跑通
         self.assertIsInstance(results, list)
         print(f'  ✅ meta_only recall → {len(results)} hits (may be 0 after cleanup)')
 
     def test_05_recall_rrf(self):
-        """实战: 3 路 + RRF 融合."""
+        """3 路 + RRF 融合."""
         results = self.mem.recall(
-            f'{self.test_id_prefix} 实战',
+            f'{self.test_id_prefix} ',
             top_k=3, strategy='rrf',
         )
         # RRF 应返回方法字段, 含至少 vector/meta
@@ -122,7 +122,7 @@ class TestMemoryCRUD(unittest.TestCase):
         print(f'  ✅ rrf recall → {len(results)} hits, methods={methods}')
 
     def test_06_graph_query(self):
-        """实战: 图遍历."""
+        """图遍历."""
         g = self.mem.graph_query(
             f'{self.test_id_prefix}_sh600089',
             max_hops=2,
@@ -132,7 +132,7 @@ class TestMemoryCRUD(unittest.TestCase):
         print(f'  ✅ graph_query → {len(g["nodes"])} nodes, {len(g["edges"])} edges')
 
     def test_07_update(self):
-        """实战: update 创建新版本 + 老版本 superseded."""
+        """update 创建新版本 + 老版本 superseded."""
         # 拿第一个测试 chunk
         old = self.mem._conn.execute(
             f"SELECT id FROM chunks WHERE source = 'test_crud' AND valid_until IS NULL ORDER BY rowid LIMIT 1"
@@ -143,7 +143,7 @@ class TestMemoryCRUD(unittest.TestCase):
         new_id = self.mem.update(
             old_id=old_id,
             reason='test_update',
-            new_content=f'{old_id} 实战修正',
+            new_content=f'{old_id} 修正',
         )
         # 老 chunk valid_until 应不为 NULL
         old_after = self.mem._conn.execute(
@@ -155,7 +155,7 @@ class TestMemoryCRUD(unittest.TestCase):
         print(f'  ✅ update → old superseded_by={old_id[-12:]}={new_id[-12:]}, valid_until={old_after["valid_until"]}')
 
     def test_08_forget_soft_delete(self):
-        """实战: 软删除 entity + cascade 边."""
+        """软删除 entity + cascade 边."""
         # 建一个测试 entity
         eid = f'{self.test_id_prefix}_to_forget'
         self.mem._conn.execute("""
@@ -168,7 +168,7 @@ class TestMemoryCRUD(unittest.TestCase):
             f'{self.test_id_prefix}_master', eid, 'owns', weight=0.5,
         )
 
-        # 实战 forget
+        #  forget
         result = self.mem.forget(target_id=eid, target_kind='entity', reason='test')
         self.assertEqual(result['queued_purge'], 1)
 
@@ -220,7 +220,7 @@ class TestMemoryCRUD(unittest.TestCase):
 
 
 class TestTemporalDimension(unittest.TestCase):
-    """实战测试 2: 4D 时间维度."""
+    """测试 2: 4D 时间维度."""
 
     @classmethod
     def setUpClass(cls):
@@ -228,7 +228,7 @@ class TestTemporalDimension(unittest.TestCase):
         cls.test_id_prefix = 'test_temporal_' + datetime.now().strftime('%H%M%S')
 
     def test_01_temporal_query(self):
-        """实战: 时间切片查询 — 关系 valid_from ≤ asof < valid_until."""
+        """时间切片查询 — 关系 valid_from ≤ asof < valid_until."""
         eid = f'{self.test_id_prefix}_e'
         self.mem._conn.execute("""
             INSERT INTO entities (id, kind, name, source, valid_from, valid_until)
@@ -269,17 +269,17 @@ class TestTemporalDimension(unittest.TestCase):
 
 
 class TestEntityResolve(unittest.TestCase):
-    """实战测试 4: 实体消歧."""
+    """测试 4: 实体消歧."""
 
     def setUp(self):
         self.mem = Memory()
         self.test_prefix = 'test_eresolve_' + datetime.now().strftime('%H%M%S')
 
     def test_01_merge_candidates(self):
-        """实战: 建两个相似 name 的 entity, 跑 find_duplicate_candidates."""
+        """建两个相似 name 的 entity, 跑 find_duplicate_candidates."""
         a_id = f'{self.test_prefix}_a'
         b_id = f'{self.test_prefix}_b'
-        for ent_id, name in [(a_id, '测试公司'), (b_id, '测试公司')]:  # 实战: 完全同名
+        for ent_id, name in [(a_id, '测试公司'), (b_id, '测试公司')]:  # : 完全同名
             self.mem._conn.execute("""
                 INSERT INTO entities (id, kind, name, source, valid_from, valid_until)
                 VALUES (?, 'stock', ?, 'test-eresolve', ?, NULL)
@@ -293,7 +293,7 @@ class TestEntityResolve(unittest.TestCase):
         print(f'  ✅ find_duplicate_candidates → {len(cands)} candidates (含测试 a/b)')
 
     def test_02_merge(self):
-        """实战: 合并 a→b."""
+        """合并 a→b."""
         a_id = f'{self.test_prefix}_ma'
         b_id = f'{self.test_prefix}_mb'
         for ent_id, name in [(a_id, '测试合并A'), (b_id, '测试合并B')]:
@@ -442,7 +442,7 @@ class TestP0BoundsCheck(unittest.TestCase):
         print('  ✅ clamp01(NaN) → ValueError')
 
     def test_07_clamp01_rejects_bool(self):
-        """实战: True/False 是 int 子类, 不应被当 1.0/0.0 接受."""
+        """True/False 是 int 子类, 不应被当 1.0/0.0 接受."""
         from memory import clamp01
         with self.assertRaises(TypeError):
             clamp01(True)

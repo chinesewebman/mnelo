@@ -99,7 +99,7 @@ query → RRF ──→ ├─ meta（LIKE 搜索）
 从不硬删除。更新创建新行并打 `valid_until` 时间戳；级联在 recall 时运行。零额外工作量获得**自动版本历史**。
 
 ### 🧪 股票实体 RRF boost
-当 query 匹配股票代码（如 `sh600089`），entity hit 在 RRF 融合时获得 `0.05/sqrt(rank)` boost。**实战**：查 "sh600089" 时股票实体永远浮顶。
+当 query 匹配股票代码（如 `sh600089`），entity hit 在 RRF 融合时获得 `0.05/sqrt(rank)` boost。****：查 "sh600089" 时股票实体永远浮顶。
 
 ### 🌏 开箱即用双语
 - locale 自动检测：`HERMES_MEMORY_LANG` > `LC_ALL` > `LANG` > `en`
@@ -535,4 +535,4 @@ MIT. 见 [`LICENSE`](LICENSE)。
 > Hermes = 众神信使。
 > mnelo = 他的记忆层。
 >
-> 实战拍板 2026-07-18 by [chinesewebman](https://github.com/chinesewebman) + [Hermes Agent](https://nousresearch.com/hermes)。
+> 拍板 2026-07-18 by [chinesewebman](https://github.com/chinesewebman) + [Hermes Agent](https://nousresearch.com/hermes)。

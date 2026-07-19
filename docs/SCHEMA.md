@@ -13,11 +13,11 @@
 - **替换 Mnemosyne** (sqlite + sqlite-vec + fastembed 三层架构, 频繁 lock)
 - **本地方案, 0 预算** (Python + sqlite + NetworkX + fastembed)
 - **不只向量检索**: 知识图谱模式 (nodes + edges + 时间维度)
-- **支持 CRUD 实战**: 增 / 删 / 改 / 查 一气呵成
-- **实战可用**: trinity_daily cron 16:05 + weng 早报 08:06 + part 3 锚漂移 → 直接对接
+- **支持 CRUD **: 增 / 删 / 改 / 查 一气呵成
+- **可用**: trinity_daily cron 16:05 + weng 早报 08:06 + part 3 锚漂移 → 直接对接
 
 ### 1.2 非目标
-- ❌ 不追求多用户 / 多 session 隔离 (实战: 单一主人 = `default`)
+- ❌ 不追求多用户 / 多 session 隔离 (单一主人 = `default`)
 - ❌ 不做实时同步 / 跨设备 (本地优先)
 - ❌ 不做 LLM 自动 entity 抽取 (1.0 手工/规则抽取; 2.0 加 LLM)
 - ❌ 不做图可视化 UI (1.0 CLI + Markdown 输出)
@@ -30,11 +30,11 @@
 |---|---|
 | Neo4j Property Graph | nodes + edges + properties 通用 KG 模型 |
 | Memgraph Temporal KG | edges 带 `valid_from / valid_until` (4D 知识图谱) |
-| Cassandra tombstone | soft delete + 异步 purge (实战"删除"≠ 物理删除) |
+| Cassandra tombstone | soft delete + 异步 purge ("删除"≠ 物理删除) |
 | GraphRAG (微软) | community detection + multi-hop retrieval |
 | Cognee | dual-layer graph (semantic + lexical) |
 | Notion / Obsidian | 双向链接 + backlinks |
-| Mnemosyne 7 个月实战数据 | schema 直接 export 看字段真实形状 |
+| Mnemosyne 7 个月数据 | schema 直接 export 看字段真实形状 |
 
 ---
 
@@ -61,7 +61,7 @@ CREATE TABLE entities (
     -- 元数据
     source TEXT,                            -- 提取来源: 'mnemosyne-import' / 'manual' / 'trinity_daily' / 'cron'
     importance REAL DEFAULT 0.5,            -- 0.0-1.0, 用于排序
-    recall_count INTEGER DEFAULT 0,         -- 实战被 recall 次数
+    recall_count INTEGER DEFAULT 0,         -- 被 recall 次数
     last_recalled TEXT
 );
 
@@ -71,7 +71,7 @@ CREATE INDEX idx_entities_valid ON entities(valid_from, valid_until);
 CREATE INDEX idx_entities_supersede ON entities(superseded_by) WHERE superseded_by IS NOT NULL;
 ```
 
-**实战映射 (Mnemosyne → hm_entities)**:
+**映射 (Mnemosyne → hm_entities)**:
 - `triples.subject/object` 中的 subject/object → entity (kind 提取)
 - `canonical_facts` (8 条) → kind='canonical_fact' 的 entity + properties_json 存 body
 - `annotations.kind+value` → 当 kind/value 是 stock/concept 时升级为 entity
@@ -88,7 +88,7 @@ CREATE TABLE chunks (
     session_id TEXT DEFAULT 'default',
     timestamp TEXT NOT NULL,
     metadata_json TEXT,
-    -- 实战更新语义
+    -- 更新语义
     superseded_by TEXT,                     -- 指向新版本 chunk (与 Mnemosyne working_memory.superseded_by 一致)
     valid_until TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -100,7 +100,7 @@ CREATE INDEX idx_chunks_session ON chunks(session_id);
 CREATE INDEX idx_chunks_valid ON chunks(valid_until) WHERE valid_until IS NOT NULL;
 ```
 
-**实战映射**:
+**映射**:
 - `mnemosyne.working_memory` 3560 条 → chunks 主体
 - `mnemosyne.episodic_memory` 334 条 → 也是 chunk (但加 `metadata.is_summary=true`)
 
@@ -113,10 +113,10 @@ CREATE TABLE relations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id TEXT NOT NULL,                -- entity 或 chunk id
     target_id TEXT NOT NULL,                -- entity 或 chunk id
-    relation TEXT NOT NULL,                 -- '翁氏_共振_于' / '实战_建仓_于' / '盈利_于' / 'belongs_to' / 'mentions'
+    relation TEXT NOT NULL,                 -- '翁氏_共振_于' / '_建仓_于' / '盈利_于' / 'belongs_to' / 'mentions'
     weight REAL DEFAULT 1.0,                -- 关系强度, 同 relation 多次出现会累加
     properties_json TEXT,
-    -- 4D 时间维度 (实战关键!)
+    -- 4D 时间维度 (关键!)
     valid_from TEXT,                        -- '2026-07-15T14:00:00'
     valid_until TEXT,                       -- 关系结束时间 (NULL = 永久)
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -133,11 +133,11 @@ CREATE INDEX idx_relations_valid ON relations(valid_from, valid_until);
 CREATE INDEX idx_relations_evidence ON relations(evidence_chunk_id);
 ```
 
-**实战关系类型 (待扩展)**:
+**关系类型 (待扩展)**:
 ```
 '翁氏_共振_于'        (e.g. sh600089 --翁氏_共振_于--> 2026-08-14_anchor)
-'实战_建仓_于'        (master --实战_建仓_于--> sh600021 @ 14.22 on 2026-07-15)
-'实战_减仓_于'        (同上, 减仓操作)
+'_建仓_于'        (master --_建仓_于--> sh600021 @ 14.22 on 2026-07-15)
+'_减仓_于'        (同上, 减仓操作)
 '浮盈亏_于'           (sh600021 --浮盈_于--> 6,486 on 2026-07-17)
 '翁氏_命中_于'        (chunk --翁氏_命中_于--> date)
 'mentions'            (chunk --mentions--> entity)
@@ -158,7 +158,7 @@ CREATE VIRTUAL TABLE vectors USING vss0(
 );
 ```
 
-**实战映射**:
+**映射**:
 - `mnemosyne.legacy_embeddings` 3103 条 → vectors 表
 - `mnemosyne.episodic_embeddings` 328 条 → vectors 表
 - 新写入: `embedder.py` 用 fastembed 算
@@ -181,7 +181,7 @@ CREATE TABLE meta (
 -- INSERT INTO meta (key, value) VALUES ('created_from', 'mnemosyne-7.17-migration');
 ```
 
-### 4.2 `recall_log` — 实战 recall 审计
+### 4.2 `recall_log` —  recall 审计
 
 ```sql
 CREATE TABLE recall_log (
@@ -196,7 +196,7 @@ CREATE TABLE recall_log (
 CREATE INDEX idx_recall_query ON recall_log(query);
 ```
 
-**实战价值**: 主人口中能看 recall 的历史, 调优 threshold/过滤。
+**价值**: 主人口中能看 recall 的历史, 调优 threshold/过滤。
 
 ### 4.3 `purged_queue` — 软删除转物理删除的待办
 
@@ -208,7 +208,7 @@ CREATE TABLE purged_queue (
     purged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     done INTEGER DEFAULT 0
 );
--- 实战: 主人口中 forget → soft delete → 当晚 cron worker 跑物理删除
+-- : 主人口中 forget → soft delete → 当晚 cron worker 跑物理删除
 ```
 
 ---
@@ -246,7 +246,7 @@ END;
 
 ---
 
-## 6. CRUD 实战 API
+## 6. CRUD  API
 
 ### 6.1 `remember` (写入)
 
@@ -330,7 +330,7 @@ def memory_update(
     new_importance: float = None,
     reason: str = 'updated',
 ) -> str:
-    """实战"更新知识": 不 UPDATE, 而创建新 chunk/entity.
+    """"更新知识": 不 UPDATE, 而创建新 chunk/entity.
     老 chunk/entity 通过 superseded_by 指向新版本 (触发器自动级联).
     
     Returns: new_id
@@ -349,17 +349,17 @@ def memory_graph_query(
 ) -> dict:
     """返回 subgraph = {'nodes': [...], 'edges': [...], 'paths': [...]}
     
-    实战:
+    :
       - graph_query('sh600089', hops=2) → 找出与特变电工相关的所有 2-hop 内节点 + 边
-      - graph_query('翁氏_D∩W', hops=3, edge_types=['实战_建仓_于']) → 所有翁氏实战过的股票
+      - graph_query('翁氏_D∩W', hops=3, edge_types=['_建仓_于']) → 所有翁氏过的股票
     """
 ```
 
 ---
 
-## 7. 删除/更新/检索三大能力的实战实现
+## 7. 删除/更新/检索三大能力的实现
 
-### 7.1 删除 (实战: 主人口中"删除无用知识")
+### 7.1 删除 (主人口中"删除无用知识")
 
 **问题**: 物理删除 = 数据丢失 = 后悔了找不到
 **方案**: Tombstone (Cassandra 模式) — soft delete + 异步 worker 物理删除
@@ -373,7 +373,7 @@ def memory_forget(target_id, reason='outdated', cascade=True):
         WHERE id = ? AND valid_until IS NULL
     """, (now(), target_id))
     
-    # 2. cascade 失效边 (实战: 不级联 = 留下幽灵关系)
+    # 2. cascade 失效边 (不级联 = 留下幽灵关系)
     if cascade:
         cur.execute("""
             UPDATE relations
@@ -390,9 +390,9 @@ def memory_forget(target_id, reason='outdated', cascade=True):
     return {'entities_deleted': 1, 'edges_invalidated': N, 'queued_purge': True}
 ```
 
-**主人口中实战**: `memory_forget('2026-07-15-trinity_old')` 删除过时报告, **召回时这些 entity 不会出现 (valid_until IS NULL 过滤)**, 但 30 天内可查.
+**主人口中**: `memory_forget('2026-07-15-trinity_old')` 删除过时报告, **召回时这些 entity 不会出现 (valid_until IS NULL 过滤)**, 但 30 天内可查.
 
-### 7.2 更新 (实战: 主人口中"更新知识")
+### 7.2 更新 (主人口中"更新知识")
 
 **问题**: 直接 UPDATE = 失去历史
 **方案**: Append-only + superseded_by 链 (跟 Mnemosyne 一致)
@@ -422,7 +422,7 @@ def memory_update(old_id, new_content=None, new_properties=None, new_importance=
         WHERE id = ? AND valid_until IS NULL
     """, (new_id, old_id))
     
-    # 4. 复制老 entity 的入边/出边到新 entity (实战: 关系网迁移)
+    # 4. 复制老 entity 的入边/出边到新 entity (关系网迁移)
     cur.execute("""
         INSERT INTO relations (source_id, target_id, relation, weight, properties_json,
                                valid_from, valid_until, source, confidence, evidence_chunk_id)
@@ -442,9 +442,9 @@ def memory_update(old_id, new_content=None, new_properties=None, new_importance=
     return new_id
 ```
 
-**主人口中实战**: sh600089 持仓从 18.96 → 19.12 → 18.99 → 18.77 (4 次操作) → 每次都是新 chunk + edges, **历史完整可追溯**.
+**主人口中**: sh600089 持仓从 18.96 → 19.12 → 18.99 → 18.77 (4 次操作) → 每次都是新 chunk + edges, **历史完整可追溯**.
 
-### 7.3 检索 (实战: 主人口中"检索相关知识")
+### 7.3 检索 (主人口中"检索相关知识")
 
 **问题**: 向量检索忽略图结构, 纯图遍历忽略语义
 **方案**: 3 路并行 + RRF 融合
@@ -516,25 +516,25 @@ def memory_recall(query, top_k=5, graph_hops=2, filters=None):
     return format_results(top, G)
 ```
 
-**主人口中实战**: recall("翁氏 D∩W 实战 7/20")
+**主人口中**: recall("翁氏 D∩W  7/20")
 - 向量: 找翁氏共振段 (5 条)
 - 图: 翁氏 → 2026-08-14 anchor → sh600089/sh600021/sh600021/sh300058/sh300446/sh300364 → 共振类型
 - 元: 最近 30 天 + LIKE
-- RRF 融合: 实战最相关 = 8/14 anchor + 实战 record (翁氏的 5 标的共振 + 主人口中建仓动作)
+- RRF 融合: 最相关 = 8/14 anchor +  record (翁氏的 5 标的共振 + 主人口中建仓动作)
 
 ---
 
-## 8. 实战主键关系表
+## 8. 主键关系表
 
-| 主键 | 实战意义 |
+| 主键 | 意义 |
 |---|---|
-| `entities.id` | 实战 ID 例如 `sh600089` / `翁氏_D∩W` / `2026-08-14-anchor` |
+| `entities.id` |  ID 例如 `sh600089` / `翁氏_D∩W` / `2026-08-14-anchor` |
 | `chunks.id` | UUID 风格 (`chunk_20260718_07_04_001`) |
 | `relations.id` | AUTOINCREMENT INTEGER |
 | `vectors.rowid` | AUTOINCREMENT (sqlite-vss 内部) |
 | `meta.key` | 系统级 key-value |
 
-**实战 ID 命名规则 (entities)**:
+** ID 命名规则 (entities)**:
 - 股票: `sh600021` / `sz300058` (与交易代码一致)
 - 概念: `翁氏_D∩W` / `Trinity_3层`
 - 事件: `2026-07-17-trinity-anchor` / `2026-08-14-anchor`
@@ -543,9 +543,9 @@ def memory_recall(query, top_k=5, graph_hops=2, filters=None):
 
 ---
 
-## 9. 时间维度实战
+## 9. 时间维度
 
-| 实战类型 | 实现 |
+| 类型 | 实现 |
 |---|---|
 | **持续有效** | `valid_until IS NULL` (默认) |
 | **软删除** | `valid_until = '2026-07-17T15:00:00'` (查询自动过滤) |
@@ -566,7 +566,7 @@ def memory_recall(query, top_k=5, graph_hops=2, filters=None):
 | 5 | import_from_mnemosyne.py (Mnemosyne → hm_ 全量迁移) | `scripts/import_from_mnemosyne.py` | 1-2 小时 |
 | 6 | entity_resolve.py (alias + 相似度合并) | `entity_resolve.py` | 1 小时 |
 | 7 | api/ 4 MCP tool (memory_remember / memory_recall / memory_relate / memory_forget) | `api/*.py` | 2 小时 |
-| 8 | 实战 cron 接入: trinity_daily.py Part 3 + weng 早报 (替换 mnemosyne_*) | `cron/` | 1-2 小时 |
+| 8 |  cron 接入: trinity_daily.py Part 3 + weng 早报 (替换 mnemosyne_*) | `cron/` | 1-2 小时 |
 | 9 | tests/ (CRUD + 3 路 recall + soft delete + 4D 时间) | `tests/test_*.py` | 1-2 小时 |
 
 总: 1-2 天可跑通基础闭环 (步骤 1-5)。
@@ -575,7 +575,7 @@ def memory_recall(query, top_k=5, graph_hops=2, filters=None):
 
 ## 11. 与 Mnemosyne 兼容层 (过渡期)
 
-实战: 主人口中拍板"接口不保留原名" — 但实战中如果 trinity_daily 还在调 `mnemosyne_remember`, 过渡期需要 shim:
+: 主人口中拍板"接口不保留原名" — 但中如果 trinity_daily 还在调 `mnemosyne_remember`, 过渡期需要 shim:
 
 ```python
 # ~/.hermes/memory/api/mnemosyne_shim.py
@@ -587,7 +587,7 @@ def mnemosyne_recall(query, **kwargs):
     return memory_recall(query=query, **kwargs)
 ```
 
-**实战期**: shim 只为兜底, **主路径全部用 memory_*** (1 周过渡, 之后删 shim).
+**期**: shim 只为兜底, **主路径全部用 memory_*** (1 周过渡, 之后删 shim).
 
 ---
 
@@ -599,7 +599,7 @@ def mnemosyne_recall(query, **kwargs):
 | 实体消歧冲突 | alias 数组 + 相似度阈值 + 人工 review API |
 | 向量索引大 | 复用 bge-small-zh-v1.5 (90MB, 3123 条 < 5MB) |
 | 关系稀疏 | LLM 抽取 2.0 (1.0 手工/规则) |
-| 时间维度边界 | 实战中 valid_until 偶尔冲突, 实战时人工确认 |
+| 时间维度边界 | 中 valid_until 偶尔冲突, 时人工确认 |
 
 ---
 
@@ -611,10 +611,10 @@ def mnemosyne_recall(query, **kwargs):
 - [ ] **删除策略**: soft delete + 30 天延迟 purge (yes / no / other?)
 - [ ] **更新策略**: 不 UPDATE, 创建新版本 + superseded_by 链 (yes / no / other?)
 - [ ] **检索策略**: 3 路并行 + RRF 融合 (yes / no / other?)
-- [ ] **实体 ID 命名**: 实战 ID (sh600089 / 翁氏_D∩W / 2026-08-14-anchor)
+- [ ] **实体 ID 命名**:  ID (sh600089 / 翁氏_D∩W / 2026-08-14-anchor)
 - [ ] **时间维度**: 4D (valid_from / valid_until / soft delete) (yes / no / other?)
 - [ ] **过渡策略**: 1 周 shim, 主路径用 memory_*(yes / no / other?)
 - [ ] **嵌入模型**: 复用 bge-small-zh-v1.5 (512d, 90MB) (yes / no / other?)
-- [ ] **关系类型集**: 我列了 10 类 ('翁氏_共振_于' / '实战_建仓_于' / ...) — 实战够用吗?
+- [ ] **关系类型集**: 我列了 10 类 ('翁氏_共振_于' / '_建仓_于' / ...) — 够用吗?
 
 主人口中 review 后告诉我哪些改, 哪些保留, 接下来开始 Step 1-5 实施.
