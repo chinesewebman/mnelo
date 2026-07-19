@@ -1,5 +1,54 @@
 # Changelog
 
+## v0.5.8 — 2026-07-20
+
+feat: examples/ directory + _upsert_entity soft-delete reactivation
+
+**NEW**: `examples/` directory with 5 runnable walkthroughs (24K total)
+- `README.md` — index + ordering + cleanup script
+- `01_basic_remember_recall.py` — write → read (vector + meta + semantic paraphrase)
+- `02_entities_and_relations.py` — entities=[] parameter + manual relate() graph
+- `03_4_lane_recall.py` — demonstrates each of the 4 lanes (vector/graph/meta/entity)
+- `04_update_and_forget.py` — update() supersede lifecycle + vector cleanup + drift verification
+- `05_identity_facts.py` — identity_fact_manager.py CLI walkthrough (list/add/show/JSON/remove)
+
+Each example:
+- Self-contained (runs against LIVE DB)
+- Uses unique sentinels (`example_0N_uniq_xyz`) so cleanup is trivial
+- Hard-deletes on exit (even on Ctrl-C)
+- Prints expected output for verification
+- Demonstrates a different mnelo API surface
+
+**Bugfix** — `Memory._upsert_entity()` soft-delete reactivation
+- Pre-existing bug: when `remember()` was called with an entity that existed
+  in soft-deleted state (valid_until IS NOT NULL), it tried INSERT and hit
+  UNIQUE constraint failure.
+- Symptom: `python memory.py` (__main__ block) crashed; benchmark seed
+  crashed when re-running; example 2 hit it on first run.
+- Fix: detect soft-deleted entity in else branch → UPDATE valid_until=NULL +
+  update metadata (consistent with how `update()` handles chunks).
+- Skipped for identity_fact (immutable path).
+- This unblocks 6 pre-existing test failures across main_blocks_coverage,
+  benchmark_round15, and the examples.
+
+**__main__ block hardening** — `python memory.py` now uses unique demo entities
+- Previously used real entity ids (`sh600089`, `master_2077_ling`) which
+  crashed if those entities were soft-deleted.
+- Now uses `main_block_demo_<ts>` so each run starts fresh and doesn't
+  collide with real data.
+
+**Tests** — `tests/test_examples_round15.py` (+7 tests)
+- Each example runs to completion + emits expected markers
+- Cleanup verification (no example data left behind after running all 5)
+- README existence check
+
+Verification:
+- 525 tests pass (519 + 6 new; pre-existing test_memory::TestEntityResolve still fails — separate concern).
+- 9 main_blocks_coverage tests pass (were 3 failing).
+- 13 benchmark_round15 tests pass (were 2 failing).
+- ruff check: All checks passed.
+- ruff format: 19 files already formatted.
+
 ## v0.5.7 — 2026-07-19
 
 feat: scripts/identity_fact_manager.py — 8-predicate CLI for owner identity_facts

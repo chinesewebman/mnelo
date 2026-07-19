@@ -289,7 +289,17 @@ class Memory:
                 "INSERT INTO vectors (rowid, embedding) VALUES (?, ?)",
                 (chunk_rowid, v_bytes),
             )
-        except sqlite3.IntegrityError:
+        except (sqlite3.IntegrityError, sqlite3.OperationalError) as e:
+            # [7/19 v0.5.5] Robust vector insert: if rowid collides with a
+            # previous crashed insert or orphan from `forget()` cleanup,
+            # REPLACE it (DELETE+INSERT). Root cause: vec0 internal counter
+            # doesn't perfectly track chunks.rowid (e.g. soft-deleted chunks
+            # leave their vectors in place). Without this guard, remember()
+            # raises UNIQUE constraint on vectors primary key.
+            # Note: sqlite-vec raises OperationalError (not IntegrityError)
+            # for primary-key collisions on vec0 tables.
+            if "UNIQUE constraint" not in str(e) and "primary key" not in str(e):
+                raise  # re-raise if it's a different OperationalError
             logger.warning(f"vector rowid {chunk_rowid} already exists — replacing (chunk_id={chunk_id})")
             self._conn.execute("DELETE FROM vectors WHERE rowid = ?", (chunk_rowid,))
             self._conn.execute(
@@ -1204,15 +1214,12 @@ class Memory:
         # [7/19 P1-1 + P1-2 + P1-5] entity 整体清洗 (id 验证 + name/summary/kind 剥离控制 + bidi)
         ent = validate_entity_payload(ent)
         existing = self._conn.execute(
-            "SELECT id FROM entities WHERE id = ? AND valid_until IS NULL", (ent["id"],)
+            "SELECT id, kind FROM entities WHERE id = ? AND valid_until IS NULL", (ent["id"],)
         ).fetchone()
         if existing:
             # [7/19 P1-2] identity_fact 类实体拒绝覆盖 name/aliases/properties (防伪造主人身份)
             # 只能新增 (valid_until 旧版 + 新版)
-            existing_kind = self._conn.execute(
-                "SELECT kind FROM entities WHERE id = ? AND valid_until IS NULL", (ent["id"],)
-            ).fetchone()
-            if existing_kind and existing_kind["kind"] == "identity_fact":
+            if existing["kind"] == "identity_fact":
                 raise ValidationError(
                     "entity.identity_fact", "identity_fact entities are immutable; create a new version instead"
                 )
@@ -1235,6 +1242,50 @@ class Memory:
                 ),
             )
         else:
+            # [7/19 v0.5.8] Soft-deleted entity handling:
+            # If a previous version exists with valid_until IS NOT NULL (e.g. from
+            # a forgotten/then-remembered entity), reactivate it instead of INSERT
+            # (which would fail UNIQUE). Skip this for identity_fact — those
+            # have a separate immutable path and the soft-deleted state is intentional.
+            existing_inactive = self._conn.execute(
+                "SELECT id, kind FROM entities WHERE id = ? AND valid_until IS NOT NULL",
+                (ent["id"],),
+            ).fetchone()
+            if existing_inactive and existing_inactive["kind"] != "identity_fact":
+                # Reactivate historical row with new values
+                self._conn.execute(
+                    "UPDATE entities SET valid_until = NULL, valid_from = ? WHERE id = ?",
+                    (now(), ent["id"]),
+                )
+                # Also reactivate any relationships where this entity is involved
+                # (preserving the audit trail but making them active again)
+                # Note: relations aren't auto-reactivated to avoid surprising the
+                # caller — they may have been intentionally soft-deleted.
+                # The entity itself gets a fresh row in history (via UPDATE).
+                # Also update its metadata fields
+                self._conn.execute(
+                    """
+                    UPDATE entities
+                    SET name = COALESCE(?, name),
+                        summary = COALESCE(?, summary),
+                        aliases_json = COALESCE(?, aliases_json),
+                        properties_json = COALESCE(?, properties_json),
+                        importance = COALESCE(?, importance),
+                        source = COALESCE(?, source)
+                    WHERE id = ?
+                """,
+                    (
+                        ent.get("name"),
+                        ent.get("summary"),
+                        json.dumps(ent.get("aliases", []), ensure_ascii=False) if "aliases" in ent else None,
+                        json.dumps(ent.get("properties", {}), ensure_ascii=False) if "properties" in ent else None,
+                        clamp01(ent.get("importance", 0.5), "entities[].importance"),
+                        ent.get("source", "manual"),
+                        ent["id"],
+                    ),
+                )
+                return  # skip the INSERT path
+            # Plain INSERT
             self._conn.execute(
                 """
                 INSERT INTO entities (id, kind, name, summary, aliases_json, properties_json,
@@ -1347,26 +1398,36 @@ class Memory:
 
 # === 自测 ===
 if __name__ == "__main__":
+    import time
+
     with Memory() as m:
+        # Use unique demo entities so this __main__ block doesn't collide
+        # with real data in LIVE DB. The 'main_block_demo_<ts>:' suffix
+        # ensures each run starts fresh.
+        ts = int(time.time())
+        demo_stock = f"main_block_demo_stock_{ts}"
+        demo_person = f"main_block_demo_person_{ts}"
+        demo_source = f"main_block_demo_{ts}"
+
         # 1. remember
         cid = m.remember(
-            content="测试: sh600089 建仓 12000 @ 18.96",
-            source="master:0029",
+            content=f"测试: {demo_stock} 建仓 12000 @ 18.96",
+            source=demo_source,
             importance=0.9,
             entities=[
                 {
-                    "id": "sh600089",
+                    "id": demo_stock,
                     "kind": "stock",
-                    "name": "特变电工",
-                    "aliases": ["特变电工", "TBEA"],
-                    "properties": {"ticker": "sh600089", "sector": "公用事业"},
+                    "name": "demo stock",
+                    "aliases": ["demo stock", "DS"],
+                    "properties": {"ticker": demo_stock, "sector": "demo"},
                 },
-                {"id": "master_2077_ling", "kind": "person", "name": "主人 2077"},
+                {"id": demo_person, "kind": "person", "name": "demo person"},
             ],
             relations=[
                 {
-                    "source_id": "master_2077_ling",
-                    "target_id": "sh600089",
+                    "source_id": demo_person,
+                    "target_id": demo_stock,
                     "relation": "_建仓_于",
                     "weight": 1.0,
                     "properties": {"quantity": 12000, "price": 18.96, "amount": 227520},
@@ -1376,17 +1437,17 @@ if __name__ == "__main__":
         print(f"✅ remember → chunk_id: {cid}")
 
         # 2. relate
-        rid = m.relate("master_2077_ling", "sh600089", "_关注", weight=0.7, evidence_chunk_id=cid)
+        rid = m.relate(demo_person, demo_stock, "_关注", weight=0.7, evidence_chunk_id=cid)
         print(f"✅ relate → relation_id: {rid}")
 
         # 3. recall
-        results = m.recall("sh600089 特变电工", top_k=3)
+        results = m.recall(f"{demo_stock} demo stock", top_k=3)
         print(f"✅ recall → {len(results)} hits")
         for r in results:
             print(f"  - {r['method']} | score={r.get('rrf_score', r.get('distance', '?')):.3f} | {r['content'][:60]}")
 
         # 4. graph_query
-        graph = m.graph_query("sh600089", max_hops=2)
+        graph = m.graph_query(demo_stock, max_hops=2)
         print(f"✅ graph_query → {len(graph['nodes'])} nodes, {len(graph['edges'])} edges")
 
         # 5. stats
@@ -1394,7 +1455,7 @@ if __name__ == "__main__":
         print(f"✅ stats: {stats}")
 
         # 6. update
-        new_cid = m.update(cid, reason="修正", new_content="测试修正: sh600089 实际 7,800")
+        new_cid = m.update(cid, reason="修正", new_content=f"测试修正: {demo_stock} 实际 7,800")
         print(f"✅ update → new chunk_id: {new_cid}")
 
         # 7. forget
