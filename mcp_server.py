@@ -438,14 +438,120 @@ def _call_tool(name: str, args: Dict) -> str:
 if _MCP_AVAILABLE:
     server = Server("mnelo")
 
+    # MCP echo — visual marker (🌳) so agent + 主人 can distinguish mnelo
+    # operations from Hermes `memory` tool (🧠). Set MNELO_ECHO=0 to disable.
+    _ECHO = "🌳"
+    _ECHO_LABEL = "mnelo"
+
     @server.list_tools()
     async def list_tools() -> List[Tool]:
         return [Tool(**t) for t in TOOLS]
 
+    def _build_echo(name: str, args: Dict, result_json: str) -> str:
+        """Render a one-line 🌳 summary from tool name + args + result.
+
+        Design: parse the JSON the handler returned (cheap, since handler just
+        json.dump'd it), extract the most useful single fact, and emit a fixed-
+        width line. Errors get 🌳 too (with the type field) so the prefix is
+        consistent regardless of success/failure.
+
+        Format: 🌳 mnelo {verb} {key_fact}
+        Examples:
+          🌳 mnelo    +chunk_20260720_xxx  (importance=0.7)
+          🌳 mnelo    ~5 hits  "query"  (top=vector rrf=0.0164)
+          🌳 mnelo    -chunk:chunk_xxx  (1 edge purged)
+          🌳 mnelo    stats: chunks=4156 entities=4394 vectors=4105
+        """
+        if os.environ.get("MNELO_ECHO") == "0":
+            return ""
+        try:
+            data = json.loads(result_json)
+        except Exception:
+            # handler didn't return JSON (shouldn't happen, but be safe)
+            return f"{_ECHO} {_ECHO_LABEL}    {name} (unparseable response)"
+
+        # Error responses: show type, no decorative wrapper
+        if isinstance(data, dict) and "error" in data:
+            err_type = data.get("type", "error")
+            return f"{_ECHO} {_ECHO_LABEL}    ✗{err_type}: {name}"
+
+        # Per-tool compact echoes
+        if name == "memory_remember":
+            # handler returns {chunk_id, status}
+            cid = data.get("chunk_id", "?") if isinstance(data, dict) else "?"
+            imp = args.get("importance", "?")
+            return f"{_ECHO} {_ECHO_LABEL}    +{cid}  (importance={imp})"
+        if name == "memory_recall":
+            # handler returns a list of {chunk_id, content, method, rrf_score, ...}
+            hits = data if isinstance(data, list) else []
+            query = args.get("query", "")[:30]
+            if hits:
+                top = hits[0]
+                method = top.get("method", "?") if isinstance(top, dict) else "?"
+                rrf = top.get("rrf_score", "?")
+                try:
+                    rrf = f"{float(rrf):.4f}"
+                except (TypeError, ValueError):
+                    pass
+                return f'{_ECHO} {_ECHO_LABEL}    ~{len(hits)} hits  "{query}"  (top={method} rrf={rrf})'
+            return f'{_ECHO} {_ECHO_LABEL}    ~0 hits  "{query}"'
+        if name == "memory_forget":
+            # handler returns {edges_invalidated, queued_purge}
+            target = args.get("target_id", "?")
+            kind = args.get("target_kind", "chunk")
+            purged = data.get("queued_purge", 1) if isinstance(data, dict) else 1
+            return f"{_ECHO} {_ECHO_LABEL}    -{kind}:{target}  ({purged} queued)"
+        if name == "memory_update":
+            # handler returns {new_chunk_id, status}
+            new_cid = data.get("new_chunk_id", "?") if isinstance(data, dict) else "?"
+            old = args.get("old_id", "?")
+            return f"{_ECHO} {_ECHO_LABEL}    ↻{new_cid}  (supersedes {old})"
+        if name == "memory_relate":
+            # handler returns {relation_id, status}
+            src = args.get("source_id", "?")
+            tgt = args.get("target_id", "?")
+            rel = args.get("relation", "?")
+            return f"{_ECHO} {_ECHO_LABEL}    ⟶{src}→{tgt}  ({rel})"
+        if name == "memory_graph_query":
+            # handler returns {nodes: [...], edges: [...], asof}
+            nodes = data.get("nodes", []) if isinstance(data, dict) else []
+            edges = data.get("edges", []) if isinstance(data, dict) else []
+            start = args.get("start_node", "?")
+            return f"{_ECHO} {_ECHO_LABEL}    ⌘{start}  ({len(nodes)} nodes, {len(edges)} edges)"
+        if name == "memory_stats":
+            # Compact: chunks=N entities=N vectors=N
+            chunks = data.get("chunks", {}).get("active", "?") if isinstance(data.get("chunks"), dict) else "?"
+            ents = data.get("entities", {}).get("active", "?") if isinstance(data.get("entities"), dict) else "?"
+            vecs = data.get("vectors", "?")
+            return f"{_ECHO} {_ECHO_LABEL}    stats: chunks={chunks} entities={ents} vectors={vecs}"
+        if name == "memory_entity_resolve":
+            # handler returns {candidates: [...], count: N}
+            cands = data.get("candidates", []) if isinstance(data, dict) else []
+            thresh = args.get("threshold", 0.85)
+            return f"{_ECHO} {_ECHO_LABEL}    ≡{len(cands)} dup candidates  (threshold={thresh})"
+        if name == "memory_list_entities":
+            # handler returns list of entities
+            ents = data if isinstance(data, list) else (data.get("entities", []) if isinstance(data, dict) else [])
+            kind = args.get("kind", "all")
+            return f"{_ECHO} {_ECHO_LABEL}    ⊃{len(ents)} entities  (kind={kind})"
+        if name == "memory_search_relations":
+            # handler returns {relations: [...], count: N}
+            rels = data.get("relations", []) if isinstance(data, dict) else []
+            rel_type = args.get("relation", "all")
+            return f"{_ECHO} {_ECHO_LABEL}    ⇢{len(rels)} relations  (type={rel_type})"
+
+        # Fallback for unknown shape
+        return f"{_ECHO} {_ECHO_LABEL}    {name}  (ok)"
+
     @server.call_tool()
     async def call_tool(name: str, arguments: Dict) -> List[TextContent]:
         result_json = _call_tool(name, arguments)
-        return [TextContent(type="text", text=result_json)]
+        echo = _build_echo(name, arguments or {}, result_json)
+        blocks: List[TextContent] = []
+        if echo:
+            blocks.append(TextContent(type="text", text=echo))
+        blocks.append(TextContent(type="text", text=result_json))
+        return blocks
 
 
 # === 启动入口 ===

@@ -1,5 +1,51 @@
 # Changelog
 
+## v0.5.12 — 2026-07-20
+
+feat: 🌳 echo on mcp__mnelo__* tools + deprecate scripts/mnelo_echo.py
+
+**Why**: 主人 asked 2 questions in sequence:
+1. "如果 B1 也加 emoji 反馈了，为什么要保留 B2?" → 没有理由
+2. "弃用 B2，给 B1 (mcp 调用方式) 加上 emoji 反馈" → 直接做
+
+**What changed**:
+- `mcp_server.py::call_tool()` now returns **2 TextContent blocks** instead of 1:
+  - Block 0: human-readable 🌳 echo line (`🌳 mnelo +chunk_xxx (importance=X)`)
+  - Block 1: machine-readable JSON result (unchanged contract)
+- 10 per-tool echo formats:
+  - `memory_remember`     → `🌳 mnelo    +chunk_xxx  (importance=X)`
+  - `memory_recall`       → `🌳 mnelo    ~N hits  "query"  (top=method rrf=X)`
+  - `memory_forget`       → `🌳 mnelo    -chunk:target  (N queued)`
+  - `memory_update`       → `🌳 mnelo    ↻new_chunk  (supersedes old_chunk)`
+  - `memory_relate`       → `🌳 mnelo    ⟶src→tgt  (relation)`
+  - `memory_graph_query`  → `🌳 mnelo    ⌘start  (N nodes, M edges)`
+  - `memory_stats`        → `🌳 mnelo    stats: chunks=N entities=N vectors=N`
+  - `memory_entity_resolve` → `🌳 mnelo    ≡N dup candidates  (threshold=X)`
+  - `memory_list_entities`  → `🌳 mnelo    ⊃N entities  (kind=X)`
+  - `memory_search_relations` → `🌳 mnelo    ⇢N relations  (type=X)`
+- Error responses also get 🌳: `🌳 mnelo    ✗error: tool_name`
+- `MNELO_ECHO=0` env var disables echo (for tests / automation)
+- **DELETED**: `scripts/mnelo_echo.py` (B2 wrapper) + `tests/test_mnelo_echo_round15.py`
+- **MEMORY.md simplified**: 3 入口 → 2 入口 (B1 mcp__mnelo__* + B3 raw Python API)
+
+**Tests** — `tests/test_mcp_echo_round17.py` (+10 tests, 551 total):
+- All 10 tools emit 🌳 prefix
+- memory_remember echo contains chunk_id + importance
+- memory_recall echo contains hit count + top method + rrf
+- memory_stats echo contains counts
+- MNELO_ECHO=0 env disables echo entirely (1 block, no 🌳)
+- JSON block (#2) preserved unchanged — no breaking change
+
+**Activation cost**: same as v0.5.11 — gateway's stdio MCP subprocess loads
+mcp_server.py at spawn time, so editing the file requires `/reload-mcp`
+(or full gateway cycle) to pick up the new code.
+
+Verification:
+- 551 tests pass (541 + 10 new).
+- ruff check: All checks passed.
+- Standalone MCP protocol E2E verified: all 10 tools emit 🌳 echo with correct format.
+- LIVE mcp_server.py synced (cp + post-commit hook).
+
 ## v0.5.11 — 2026-07-20
 
 feat: register mnelo MCP server in Hermes config.yaml
