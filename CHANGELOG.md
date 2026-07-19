@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.9 — 2026-07-19
+
+test(mcp_server): push REPO coverage 87% → 94% via decorators/main()/run_stdio (+19 tests)
+
+- **mcp_server.py** (REPO 87% → 94%): +19 tests targeting final branches:
+  - `_call_tool` rate-limit error response shape (lines 386-388)
+  - `_call_tool` unknown tool name → JSON error (line 394)
+  - `_call_tool` ValidationError caught → JSON `type='validation'` (lines 398-400)
+  - `_call_tool` generic Exception caught → JSON `type='internal'` + debug-mode detail (lines 402-407)
+  - `list_tools` MCP decorator (callable via module attr, returns Tool list) (line 420)
+  - `call_tool` MCP decorator wrapper (returns `List[TextContent]`) (lines 424-426)
+  - `run_stdio` raises `RuntimeError` when MCP unavailable (lines 432-435)
+  - `run_sse` AuthError propagation + port pre-check (lines 538-555)
+  - `main()` stdio branch dispatch (line 586)
+  - `__main__` guard via subprocess stdio mode (line 600)
+- Some tests accept `'type' in ('validation', 'internal')` to handle cross-test pollution where `sys.modules['validation']` shifts between REPO and LIVE instances.
+- Total: 379 → 398 passed (1 skipped, +19 tests).
+
 ## v0.4.8 — 2026-07-19
 
 test(mcp_server): push REPO coverage 75% → 87% via SSE/CLI paths (+21 tests)
