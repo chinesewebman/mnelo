@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.2 — 2026-07-19
+
+test: push auth 92→100%, config 80→92%, validation 95→99% (+30 tests)
+
+- **auth.py** (92% → 100%): +3 tests for `AUTH_TOKEN_FILE` with content / empty / nonexistent paths.
+- **config.py** (80% → 92%): +10 tests for `tomllib` fallback, `_load_config_file` bad TOML / missing file, `_resolve_tz` (`None`/local/utc/IANA/whitespace), `describe()` method, `config_path` property.
+- **validation.py** (95% → 99%): +17 tests for `validate_chunk_content` (non-str / empty-after-sanitize / with newlines), `validate_query` (non-str / empty-after-sanitize / newline stripping), `validate_holding_payload` (non-dict / NaN / +inf / -inf / string / zero / valid).
+- Total: 252 → 282 passed (1 skipped, 30 new tests).
+
 ## v0.4.1 — 2026-07-19
 
 test: push coverage 88% → 89% via 44 new tests across 4 modules
