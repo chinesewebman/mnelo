@@ -1,5 +1,55 @@
 # Changelog
 
+## v0.5.3 — 2026-07-19
+
+feat(observability): /metrics endpoint + in-process Prometheus registry
+
+**NEW**: `metrics.py` (15K, lightweight in-process registry)
+- `Counter` / `Gauge` / `Histogram` classes (threadsafe via `threading.Lock`).
+- Process-local only (no Prometheus client lib dependency).
+- Histogram buckets: `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, +Inf`.
+
+**NEW**: `/metrics` HTTP endpoint in `mcp_server.py`
+- Returns Prometheus text exposition format.
+- Bypasses Bearer auth (alongside `/health`) for scraping.
+- DB gauges cached with TTL=10s (don't hammer SQLite on every scrape).
+- Refreshes `metrics.refresh_db_stats()` on each request (within TTL).
+
+**NEW**: Hook metrics into `memory.py`
+- `remember`/`relate`/`update`/`forget` increment counters (source/kind labels).
+- `recall()` times per-lane latency (vector/graph), records top_k distribution, tracks empty/non_empty hits.
+- 4-lane counters: `mnelo_recall_total{method=...}`.
+
+**NEW**: `tests/test_metrics_round15.py` (12.5K, +25 tests)
+- Counter: inc, get, labels, render format.
+- Gauge: set, inc, get, labels, render format.
+- Histogram: bucket boundaries, `+Inf`, sum, count, cumulative semantics.
+- Registry: singleton, reset, full render.
+- Thread safety: 20 threads × 50 inc = exact count (no lost updates).
+- Integration: memory hooks increment expected counters.
+- `/metrics` endpoint: bypasses auth, `/sse` still requires auth (regression check).
+
+**Metric inventory (16 total)**:
+- `mnelo_recall_total{method}` — counter
+- `mnelo_recall_latency_seconds{method}` — histogram
+- `mnelo_recall_hits_total{result}` — counter
+- `mnelo_recall_top_k_total{k}` — counter
+- `mnelo_remember_total{source}` — counter
+- `mnelo_forget_total{kind}` — counter
+- `mnelo_relate_total` — counter
+- `mnelo_update_total` — counter
+- `mnelo_db_entities` / `chunks` / `relations` / `vectors` — gauge
+- `mnelo_db_size_bytes` — gauge
+- `mnelo_wal_pages_flushed_total` — gauge
+- `mnelo_uptime_seconds` — gauge
+- `mnelo_process_rss_bytes` — gauge
+
+Verification:
+- 475 tests pass (450 + 25 new).
+- LIVE `/metrics` returns 47 lines of valid Prometheus text.
+- DB stats populated: 4293 entities, 6251 chunks.
+- `/sse` still requires auth (regression-safe).
+
 ## v0.5.2 — 2026-07-19
 
 docs+refactor: project name hermes-memory → mnelo sweep (22 + 7 replacements)
