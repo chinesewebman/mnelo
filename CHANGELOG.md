@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.5.10 — 2026-07-20
+
+feat: scripts/mnelo_echo.py — 🌳-prefix wrapper for path-B operations
+
+**Why**: 主人 asked for an emoji to make mnelo operations visually distinct
+from Hermes `memory` tool (path A, 🧠 emoji). Without a marker, both look
+like "one sentence starting with 🧠" in the agent feedback.
+
+**NEW**: `scripts/mnelo_echo.py` (5.3K, 4 subcommands)
+- `remember "content" [--source X] [--importance 0.5]` → `🌳 mnelo    +chunk_xxx`
+- `recall "query" [--top-k 5] [--json]` → `🌳 mnelo    ~N hits  (top=method rrf=X)`
+- `forget --id chunk_xxx [--kind chunk|entity|relation]` → `🌳 mnelo    -kind:id`
+- `stats` → `🌳 mnelo    stats: chunks=N entities=N vectors=N`
+
+**Echo format** (visible in terminal output):
+```
+🌳 mnelo    +chunk_20260720_045050_735694  (importance=0.7, source=test_echo)
+🌳 mnelo    ~3 hits  "mnelo_echo test chunk unique"  (top=meta rrf=0.0328)
+🌳 mnelo    -chunk:chunk_20260720_045050_735694  (soft_deleted)
+🌳 mnelo    stats: entities=4364 relations=53196 chunks=4112 vectors=4076 recall_log=9755
+```
+
+**Echo configurable**: swap `ECHO = "🌳"` constant at module top to retag
+(e.g. 🔮 💎 🏛️ 🧭). Test asserts it's a module-level constant so future
+contributors know it's intentional.
+
+**Tests** — `tests/test_mnelo_echo_round15.py` (+8 tests)
+- remember: emits 🌳 +chunk_id with importance + source
+- remember: default importance=0.5
+- recall: emits 🌳 + hit count + top method + rrf
+- recall: --top-k 0 returns 0 hits
+- recall: --json prints JSON after echo line
+- forget: emits 🌳 + target_kind:id + soft_deleted
+- stats: emits 🌳 + table=count summary
+- echo constant: defined at module top (swappable)
+
+Verification:
+- 541 tests pass (533 + 8 new).
+- ruff check: All checks passed.
+- ruff format: 19 files already formatted.
+
 ## v0.5.9 — 2026-07-20
 
 fix: find_duplicate_candidates(ids=...) + improved truncation diagnostics
