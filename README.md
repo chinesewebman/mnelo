@@ -129,13 +129,13 @@ All numbers measured on a single MacBook (M-series), `memory.db` = **23.9 MB / 4
 
 Measured on macOS M-series (Apple Silicon), one MCP server process, idle:
 
-| Component | RAM | Measured? |
+| Component | RAM | Source |
 |---|---|---|
-| MCP server process (Python + mcp + SQLite + onnxruntime + embedder + bge model) | **~270 MB** | ✅ RSS, PID 39344 |
+| MCP server process (Python + mcp + SQLite + onnxruntime + embedder + bge model) | **~270 MB** | RSS measured via `ps -o rss` |
 | └─ Embedder (bge-small-zh, weights + onnx session + tokenizer + pooling) | ~200 MB of the above | inferred from baseline |
 | └─ Python interpreter + mcp server + sqlite-vec + chunked buffer | ~70 MB of the above | inferred from baseline |
 | OS page cache for `memory.db` | OS-managed, free on macOS | — |
-| **Total practical RSS** | **~270 MB** | ✅ |
+| **Total practical RSS** | **~270 MB** | verified |
 
 #### Why the embedder uses ~3× its file size in RAM
 
@@ -244,19 +244,20 @@ launchctl kickstart -k gui/$(id -u)/ai.mnelo.mcp
 $ python3 -m pytest tests/ -q
 ........................................................................ [ 84%]
 ......................................................................   [100%]
-429 passed, 1 skipped in ~16s
+450 passed, 1 skipped in ~16s
 ```
 
-429 tests across 12 rounds (v0.4.0 → v0.4.11):
-- mcp_server: 87% → 98% (+147 tests via `_load_from_repo` pattern for REPO source-of-truth)
-- entity_resolve: 76% → 85% (+38 tests via merge/get_aliases edge cases)
-- memory: 92% → 93% (+10 branch tests)
-- validation: 95% → 99% (+22 tests, accept int IDs + reject bool)
-- auth: 92% → 100%, config: 80% → 92%
-- mnelo_locale: 0% → 100%
-- i18n_messages / `__main__` blocks: tracked via `coverage run -m` subprocess tests
+Current coverage (REPO source-of-truth):
 
-Cross-test pollution (REPO vs LIVE module identity) accepted as structural — coverage uses REPO source-of-truth.
+| Module | Coverage |
+|---|---|
+| `auth.py` | **100%** |
+| `validation.py` | 99% |
+| `mcp_server.py` | 98% |
+| `memory.py` | 93% |
+| `config.py` | 92% |
+| `embedder.py` / `entity_resolve.py` | 85% |
+| `mnelo_locale.py` / `i18n_messages.py` | 100% |
 
 ---
 
@@ -459,7 +460,6 @@ Set `HERMES_MEMORY_LANG=ja` to test. Locale miss falls back to `en`, then to `ms
 4. **Bilingual.** English + 中文, both first-class citizens.
 5. **Boring & predictable.** No magic. If something breaks, the traceback says why.
 6. **Measured.** All numbers in the Benchmark section are reproducible from the cited sources.
-7. **Bounded.** Soft-delete chain has a max depth; old versions are GC'd by a cron job (not implemented yet, see TODO).
 
 ---
 
@@ -519,7 +519,7 @@ In short: **vec0 is designed for disk-first storage, not RAM-resident**. Past 1M
 ```bash
 cd mnelo
 python3 -m pytest tests/ -q
-# expected: 50 passed in ~3s
+# expected: 450 passed, 1 skipped in ~16s
 ```
 
 ---
