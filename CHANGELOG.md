@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.4.6 — 2026-07-19
+
+test(mcp_server): push REPO coverage 56% → 63% (+17 tests via _load_from_repo)
+
+- **mcp_server.py** (REPO 56% → 63%): +17 tests using `_load_from_repo` to force REPO module into `sys.modules` (vs LIVE which is what other tests exercise).
+  - `_handle_simple` with `id_field` wrap (memory_remember/relate/update)
+  - `_handle_simple` without `id_field` (memory_recall/stats, graph_query)
+  - `graph_query` with `start_node` / `edge_types` / `asof`
+  - `_rate_limit_check` + `_RATE_BUCKETS` dict + constants
+  - `_resolve_server_defaults` returns `(host, port)` tuple
+  - `_build_sse_app` returns Starlette app + routes registered
+  - `main()` with `--help` + invalid `--transport`
+- Total: 323 → 340 passed (1 skipped, +17 tests).
+
 ## v0.4.5 — 2026-07-19
 
 test: push validation.py 97% → 99%, entity_resolve.py 76% → 81% (+22 tests)
