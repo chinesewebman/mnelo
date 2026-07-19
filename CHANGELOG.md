@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.5.2 — 2026-07-19
+
+docs+refactor: project name hermes-memory → mnelo sweep (22 + 7 replacements)
+
+v0.5.2 — round out the rename to a generic `mnelo` component. No new env vars renamed; this is docstring/comment/log cleanup.
+
+**Sweep scope**:
+- Project name references in docstrings: `hermes-memory` → `mnelo`
+- Filename refs: `migrate_to_hermes_memory.py` → `migrate_to_mnelo.py` (file was renamed earlier; docs were stale)
+- Schema header: `hermes-memory schema v1.0` → `mnelo schema v0.5.x`
+- Log message: `hermes-memory MCP ready` → `mnelo MCP ready`
+- Tool descriptions in `mcp_server.py`: `hermes-memory` → `mnelo`
+- Test method name: `test_hermes_memory_lang_overrides_all` → `test_mnelo_memory_lang_overrides_all`
+
+**Kept (intentional)**:
+- `CHANGELOG.md`: historical record.
+- `migrate_to_mnelo.py` docstring: `7/17 拍板: 自建 mnelo (当时叫 hermes-memory)` — historical context.
+- `mcp_server.py`: `前身 hermes-memory` comment — historical context.
+- `api/mnelo_client.py`: `HermesMemoryClient = MneloClient` alias — back-compat for old clients.
+
+**User-facing breaking change (v0.5.0 family)**:
+- MCP Server name `hermes-memory` → `mnelo` (visible in clients like Claude Desktop). Clients that pinned the old name need to update config.
+
+Verification:
+- 450 tests pass.
+- LIVE restarted (PID 49131), `health_check` OK, WAL 597/597.
+
 ## v0.5.1 — 2026-07-19
 
 fix(plist): rename LIVE plist to ai.mnelo.mcp.plist + docs cleanup
