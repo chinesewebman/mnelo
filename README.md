@@ -242,14 +242,21 @@ launchctl kickstart -k gui/$(id -u)/ai.mnelo.mcp
 
 ```
 $ python3 -m pytest tests/ -q
-..................................................   [100%]
-50 passed in ~3s
+........................................................................ [ 84%]
+......................................................................   [100%]
+429 passed, 1 skipped in ~16s
 ```
 
-50 tests across:
-- 30 CRUD + recall (with various top_k / filters / strategy)
-- 12 edge cases (placeholder filter, special chars, FTS performance)
-- 8 bounds checks (`importance ∈ [0, 1]`, `latency ≥ 0`, `valid_until` chain)
+429 tests across 12 rounds (v0.4.0 → v0.4.11):
+- mcp_server: 87% → 98% (+147 tests via `_load_from_repo` pattern for REPO source-of-truth)
+- entity_resolve: 76% → 85% (+38 tests via merge/get_aliases edge cases)
+- memory: 92% → 93% (+10 branch tests)
+- validation: 95% → 99% (+22 tests, accept int IDs + reject bool)
+- auth: 92% → 100%, config: 80% → 92%
+- mnelo_locale: 0% → 100%
+- i18n_messages / `__main__` blocks: tracked via `coverage run -m` subprocess tests
+
+Cross-test pollution (REPO vs LIVE module identity) accepted as structural — coverage uses REPO source-of-truth.
 
 ---
 
@@ -381,7 +388,10 @@ mnelo/
 git clone https://github.com/chinesewebman/mnelo.git
 cd mnelo
 
-# 2. Install (Python 3.9+, virtualenv recommended)
+# 2a. One-shot install (recommended) — handles venv, pip, init_db, plist, auth token
+bash scripts/install.sh
+
+# 2b. Or manual step-by-step:
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -402,6 +412,8 @@ for h in c.recall('sh600089 建仓', top_k=5):
     print(h['method'], h['chunk_id'], h['content'][:60])
 "
 ```
+
+`scripts/install.sh` is **idempotent** — safe to re-run after upgrades. It also accepts `LIVE_ROOT=~/.mnelo bash scripts/install.sh` to install to a non-default path.
 
 For Chinese locale:
 

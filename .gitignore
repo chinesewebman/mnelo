@@ -43,5 +43,7 @@ venv/
 # Test artifacts
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 .tox/
+*.cover

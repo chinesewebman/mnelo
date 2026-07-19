@@ -166,13 +166,15 @@ class TestRunSSEAuthError:
     def test_run_sse_auth_error_propagates(self, monkeypatch):
         """AuthError in load_auth_token → propagated (not caught)."""
         monkeypatch.setattr(_mcp_repo, '_MCP_AVAILABLE', True)  # Skip MCP check
+        auth_mod = _load_from_repo('auth')
+        AuthErr = auth_mod.AuthError
         # Stub auth to raise AuthError
         def fake_load_auth():
-            raise _load_from_repo('auth').AuthError('test auth fail')
+            raise AuthErr('test auth fail')
 
         monkeypatch.setattr(_mcp_repo, 'load_auth_token', fake_load_auth)
         # run_sse with auth_token=None will call load_auth_token → AuthError
-        with pytest.raises(_load_from_repo('auth').AuthError):
+        with pytest.raises(AuthErr):
             _mcp_repo.run_sse(host='127.0.0.1', port=12345, auth_token=None)
 
     def test_run_sse_with_explicit_auth_token_skips_load(self, monkeypatch):
