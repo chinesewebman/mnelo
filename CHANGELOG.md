@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.4.10 — 2026-07-19
+
+test(entity_resolve): push REPO coverage 82% → 85% via merge/get_aliases edge cases (+16 tests)
+
+- **entity_resolve.py** (REPO 82% → 85%): +16 tests using `_load_from_repo` to force REPO module into `sys.modules`.
+  - `get_aliases` entity-not-found / soft-deleted → `return []` (line 73)
+  - `find_duplicate_candidates` same-id skip (line 144, defensive dead code)
+  - `merge_entities` `primary_id == secondary_id` → `False` (line 184)
+  - `merge_entities` primary OR secondary missing → `False` (line 194)
+  - `merge_entities` already-deleted primary → `False`
+  - `find_duplicates_report` empty candidates → "无重复 entity" message (line 243)
+  - `get_aliases` aliases_json=dict (json.loads gracefully)
+  - `merge_entities` success paths (empty aliases, name-in-secondary-aliases)
+- Total: 398 → 414 passed (1 skipped, +16 tests).
+
 ## v0.4.9 — 2026-07-19
 
 test(mcp_server): push REPO coverage 87% → 94% via decorators/main()/run_stdio (+19 tests)
