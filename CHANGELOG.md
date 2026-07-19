@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.5.1 — 2026-07-19
+
+fix(plist): rename LIVE plist to ai.mnelo.mcp.plist + docs cleanup
+
+LIVE deployment cleanup — round out v0.5.0 rename:
+
+- **LIVE plist path**: `ai.hermes-memory.mcp.plist` → `ai.mnelo.mcp.plist`
+  (Label was already `ai.mnelo.mcp`; file path now matches).
+- Plist env vars updated: `HERMES_HOME` → `MNELO_HOME`, `HERMES_MEMORY_SERVER_PORT` → `MNELO_MEMORY_SERVER_PORT`.
+- Log paths: `hermes-memory.mcp.log` → `mnelo.mcp.log`.
+- Plist template `scripts/launchd/ai.mnelo.mcp.plist` synced to match LIVE.
+- `docs/RUNBOOK.md`: 2 occurrences of `ai.hermes-memory.mcp` → `ai.mnelo.mcp`.
+- `.githooks/post-commit`: log message updated.
+
+Verification:
+- `launchctl unload` old + `launchctl load` new → PID 47087 on port 8086.
+- `health_check.py`: ✅ MCP server alive.
+- All 450 tests passing.
+
+Final LIVE state:
+- Plist path: `~/Library/LaunchAgents/ai.mnelo.mcp.plist`.
+- Label: `ai.mnelo.mcp`.
+- Env vars: `MNELO_HOME`, `MNELO_MEMORY_SERVER_PORT`.
+- Logs: `/Users/apple/.hermes/logs/mnelo.mcp.{log,error.log}`.
+
+## v0.5.0 — 2026-07-19
+
+refactor(config)!: rename HERMES_HOME / HERMES_MEMORY_* → MNELO_HOME / MNELO_MEMORY_*
+
+v0.5.0 — BREAKING change. See commit message for migration instructions.
+
 ## v0.4.15 — 2026-07-19
 
 docs(readme): fix 5 polish issues + clean GitHub repo About
