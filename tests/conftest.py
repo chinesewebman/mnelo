@@ -12,6 +12,19 @@ import sys
 from pathlib import Path
 import warnings
 
+# [8/9 P1 follow-up] CI hostedtoolcache Python (macos-latest arm64) 编译不带
+# enable_load_extension (sandbox 限制), Memory() 调 sqlite_vec.load 必 fail.
+# 装 pysqlite3-binary PyPI wheel 后, 通过 sys.modules swap 让 stdlib 'sqlite3'
+# 指向 bundled version — 不动 memory.py 应用服务代码, 仅 CI test 适配.
+# 主人 8/9 定: "按最新版应用服务程序代码来调整测试代码" — memory.py 是最新版权威,
+# conftest 做 monkey-patch 适配.
+try:
+    import pysqlite3 as _pysqlite3  # bundled sqlite3 with enable_load_extension
+    sys.modules['sqlite3'] = _pysqlite3
+    sys.modules['sqlite3.dbapi2'] = _pysqlite3.dbapi2
+except ImportError:
+    pass  # 本地 venv 已带 enable_load_extension, 跳过.
+
 # [G7] mcp SDK v1.26 still uses deprecated `content_item.content` access on
 # TextResourceContents (field is `text`); str-returning read_resource is the
 # only non-crashing path until upstream is fixed. Register at conftest
