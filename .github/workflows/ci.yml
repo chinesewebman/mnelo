@@ -45,7 +45,12 @@ jobs:
   # ─── Stage 2: Test matrix ───────────────────────────────────────────
   test:
     name: Tests (Python ${{ matrix.python-version }})
-    runs-on: macos-latest
+    # [8/9 P1 follow-up] 改 macos-13 (x86_64) — macos-latest (arm64) hostedtoolcache Python
+    # 编译不带 enable_load_extension (sandbox 限制), Memory() 调 sqlite_vec load 必 fail.
+    # macos-13 (x86_64) 用上游 python.org macOS installer build, 默认带 enable_load_extension.
+    # Memory() 是 mnelo 应用服务程序代码 (memory.py:298), 主人 8/9 定: "调整测试代码"
+    # 不动 memory.py — CI infra 适配应用服务代码现状.
+    runs-on: macos-13
     strategy:
       # Don't cancel the whole matrix if one version fails — let all run so
       # the summary shows the full picture.
