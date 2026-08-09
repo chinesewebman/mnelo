@@ -64,12 +64,12 @@ def test_m35_1_forget_task_reason_int_raises_tasklooperror():
     try:
         try:
             task_states.forget_task(c, tid, reason=12345)
-            assert False, "应抛 TaskLoopError"
+            raise AssertionError("应抛 TaskLoopError")
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidReasonTypeError", f"got {e.code}"
             assert "int" in str(e), f"应含类型名 int, got: {e}"
         except AttributeError as e:
-            assert False, f"应 TaskLoopError, got AttributeError: {e}"
+            raise AssertionError(f"应 TaskLoopError, got AttributeError: {e}")
     finally:
         c.close()
 
@@ -82,7 +82,7 @@ def test_m35_1b_forget_task_reason_none_raises_tasklooperror():
     try:
         try:
             task_states.forget_task(c, tid, reason=None)
-            assert False
+            raise AssertionError()
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidReasonTypeError"
     finally:
@@ -97,7 +97,7 @@ def test_m35_1c_forget_task_reason_list_raises_tasklooperror():
     try:
         try:
             task_states.forget_task(c, tid, reason=["x"])
-            assert False
+            raise AssertionError()
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidReasonTypeError"
             assert "list" in str(e)
@@ -113,7 +113,7 @@ def test_m35_1d_forget_loop_reason_int_raises_tasklooperror():
     try:
         try:
             task_states.forget_loop(c, lid, reason=42)
-            assert False
+            raise AssertionError()
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidReasonTypeError"
             assert "int" in str(e)

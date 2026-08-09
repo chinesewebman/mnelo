@@ -99,7 +99,7 @@ def test_m30_1_apply_double_resolved_check_atomic():
             task_states.apply_stale_proposal(
                 c, pid, applied_action="second_apply_attempt",
             )
-            assert False, "second apply should raise"
+            raise AssertionError("second apply should raise")
         except task_states.TaskLoopError as e:
             assert e.code == "ProposalAlreadyResolved", f"expected ProposalAlreadyResolved, got {e.code}"
 
@@ -154,7 +154,7 @@ def test_m30_1b_apply_second_proposal_blocked_by_resolved():
         # proposal_id 都不能再 apply (即便 proposal_id 本身没被 resolved).
         try:
             task_states.apply_stale_proposal(c, pid2, applied_action="second_apply")
-            assert False, "second proposal apply 应抛 ProposalAlreadyResolved"
+            raise AssertionError("second proposal apply 应抛 ProposalAlreadyResolved")
         except task_states.TaskLoopError as e:
             assert e.code == "ProposalAlreadyResolved"
     finally:
@@ -171,28 +171,28 @@ def test_m30_2_propose_rejects_invalid_threshold():
         # 负数
         try:
             task_states.propose_stale_tasks(c, stale_days_threshold=-1)
-            assert False, "negative threshold should raise"
+            raise AssertionError("negative threshold should raise")
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidThreshold"
 
         # 0
         try:
             task_states.propose_stale_tasks(c, stale_days_threshold=0)
-            assert False, "zero threshold should raise"
+            raise AssertionError("zero threshold should raise")
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidThreshold"
 
         # 字符串
         try:
             task_states.propose_stale_tasks(c, stale_days_threshold="7")  # type: ignore[arg-type]
-            assert False, "string threshold should raise"
+            raise AssertionError("string threshold should raise")
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidThreshold"
 
         # float 仍走 int 校验
         try:
             task_states.propose_stale_tasks(c, stale_days_threshold=7.5)  # type: ignore[arg-type]
-            assert False, "float threshold should raise"
+            raise AssertionError("float threshold should raise")
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidThreshold"
 

@@ -71,7 +71,7 @@ def test_m33_2_forget_task_reason_required_rejects_empty():
     try:
         try:
             task_states.forget_task(c, tid, reason="")
-            assert False, "应抛 TaskLoopError"
+            raise AssertionError("应抛 TaskLoopError")
         except task_states.TaskLoopError as e:
             assert e.code == "ReasonRequiredError", f"got {e.code}"
     finally:
@@ -86,7 +86,7 @@ def test_m33_2_forget_task_reason_rejects_whitespace_only():
     try:
         try:
             task_states.forget_task(c, tid, reason="   ")
-            assert False, "纯空白 reason 应抛错"
+            raise AssertionError("纯空白 reason 应抛错")
         except task_states.TaskLoopError as e:
             assert e.code == "ReasonRequiredError", f"got {e.code}"
     finally:
@@ -101,7 +101,7 @@ def test_m33_3_forget_task_reason_too_short():
     try:
         try:
             task_states.forget_task(c, tid, reason="abc")
-            assert False, "长度 3 应抛错"
+            raise AssertionError("长度 3 应抛错")
         except task_states.TaskLoopError as e:
             assert e.code == "ReasonTooShortError", f"got {e.code}"
     finally:
@@ -116,7 +116,7 @@ def test_m33_3b_forget_loop_reason_too_short():
     try:
         try:
             task_states.forget_loop(c, lid, reason="x")
-            assert False
+            raise AssertionError()
         except task_states.TaskLoopError as e:
             assert e.code == "ReasonTooShortError"
     finally:

@@ -67,7 +67,7 @@ def test_m28_1_forget_task_repeat_rejected():
         # 第二次应抛错 (不是静默返回 rows_invalidated=0)
         try:
             task_states.forget_task(m._conn, tid, reason="second")
-            assert False, "second forget 应抛错"
+            raise AssertionError("second forget 应抛错")
         except task_states.TaskLoopError as e:
             assert e.code == "TaskAlreadyForgotten"
         # 校验 audit_log 只写了 1 条 forced_forget (不是 2 条)
@@ -89,7 +89,7 @@ def test_m28_1b_forget_loop_repeat_rejected():
         task_states.forget_loop(m._conn, lid, reason="first")
         try:
             task_states.forget_loop(m._conn, lid, reason="second")
-            assert False
+            raise AssertionError()
         except task_states.TaskLoopError as e:
             assert e.code == "LoopAlreadyForgotten"
     finally:

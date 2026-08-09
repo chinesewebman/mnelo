@@ -45,7 +45,7 @@ def test_m34_status_invalid_rejected():
     try:
         try:
             task_states.list_stale_proposals(c, status="garbage")
-            assert False, "应抛 TaskLoopError"
+            raise AssertionError("应抛 TaskLoopError")
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidStatusError", f"got {e.code}"
     finally:
@@ -102,7 +102,7 @@ def test_m34_limit_invalid_rejected():
         for bad in (0, -1, 10000, "x"):
             try:
                 task_states.list_stale_proposals(c, limit=bad)
-                assert False, f"limit={bad} 应抛错"
+                raise AssertionError(f"limit={bad} 应抛错")
             except task_states.TaskLoopError as e:
                 assert e.code == "InvalidLimitError", f"got {e.code} for limit={bad}"
     finally:

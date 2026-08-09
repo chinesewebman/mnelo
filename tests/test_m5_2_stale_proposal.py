@@ -217,7 +217,7 @@ def test_m5_2_4_apply_marks_applied():
         # 重复 apply 抛错
         try:
             task_states.apply_stale_proposal(m._conn, pid, applied_action="dup")
-            assert False, "repeat apply should raise"
+            raise AssertionError("repeat apply should raise")
         except task_states.TaskLoopError as e:
             assert e.code == "ProposalAlreadyResolved"
     finally:
@@ -233,7 +233,7 @@ def test_m5_2_5_apply_invalid_proposal_id():
     try:
         try:
             task_states.apply_stale_proposal(m._conn, 999999, applied_action="x")
-            assert False, "expected raise"
+            raise AssertionError("expected raise")
         except task_states.TaskLoopError as e:
             assert e.code == "ProposalNotFound"
     finally:
@@ -260,7 +260,7 @@ def test_m5_2_5b_apply_wrong_pass_name():
         ).fetchone()[0]
         try:
             task_states.apply_stale_proposal(m._conn, fake_id, applied_action="x")
-            assert False, "expected raise"
+            raise AssertionError("expected raise")
         except task_states.TaskLoopError as e:
             assert e.code == "ProposalMismatch"
     finally:

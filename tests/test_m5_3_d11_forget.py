@@ -70,7 +70,7 @@ def test_m5_3_1_d11_forget_task_blocked():
     try:
         try:
             m.forget(tid, target_kind="task", reason="auto_decay")
-            assert False, "expected ValueError"
+            raise AssertionError("expected ValueError")
         except ValueError as e:
             assert "D11 TTL 豁免" in str(e)
             assert "task_states.forget_task" in str(e)
@@ -91,7 +91,7 @@ def test_m5_3_2_d11_forget_loop_blocked():
     try:
         try:
             m.forget(lid, target_kind="loop", reason="auto_decay")
-            assert False, "expected ValueError"
+            raise AssertionError("expected ValueError")
         except ValueError as e:
             assert "D11 TTL 豁免" in str(e)
         v = m._conn.execute("SELECT valid_until FROM entities WHERE id=?", (lid,)).fetchone()[0]
@@ -156,14 +156,14 @@ def test_m5_3_4_forget_task_requires_reason():
         # 1. 空 reason -> ReasonRequiredError
         try:
             task_states.forget_task(m._conn, tid, reason="")
-            assert False, "expected raise"
+            raise AssertionError("expected raise")
         except task_states.TaskLoopError as e:
             assert e.code == "ReasonRequiredError"
 
         # 2. 缺 reason kwarg -> TypeError (Python 签名强制)
         try:
             task_states.forget_task(m._conn, tid)  # no reason
-            assert False, "expected raise"
+            raise AssertionError("expected raise")
         except TypeError:
             pass
     finally:
@@ -179,7 +179,7 @@ def test_m5_3_5_forget_task_not_found():
     try:
         try:
             task_states.forget_task(m._conn, "task:nonexistent-9999", reason="not_real_task_path")
-            assert False, "expected raise"
+            raise AssertionError("expected raise")
         except task_states.TaskLoopError as e:
             assert e.code == "TaskNotFoundError"
     finally:
@@ -229,7 +229,7 @@ def test_m5_3_7_forget_loop_requires_reason():
     try:
         try:
             task_states.forget_loop(m._conn, lid, reason="")
-            assert False
+            raise AssertionError()
         except task_states.TaskLoopError as e:
             assert e.code == "ReasonRequiredError"
     finally:

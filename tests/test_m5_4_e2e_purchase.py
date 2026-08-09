@@ -182,7 +182,7 @@ def test_e2e_d11_forget_task_after_done():
         # D11 拦截 — memory.forget(task) 抛 ValueError
         try:
             m.forget(tid, target_kind="task", reason="cleanup")
-            assert False, "D11 应拦截"
+            raise AssertionError("D11 应拦截")
         except ValueError as e:
             assert "D11 TTL 豁免" in str(e)
 

@@ -112,7 +112,7 @@ def test_m36_1_transition_empty_reason_without_force_rejected():
             task_states.transition(
                 c, task_id=tid, to_state="in_progress", reason="", force=False
             )
-            assert False, "应抛 ReasonRequiredError (reason='' + force=False)"
+            raise AssertionError("应抛 ReasonRequiredError (reason='' + force=False)")
         except task_states.ReasonRequiredError:
             pass  # 期望
     finally:
@@ -129,7 +129,7 @@ def test_m36_1b_transition_whitespace_only_reason_rejected():
             task_states.transition(
                 c, task_id=tid, to_state="in_progress", reason="   ", force=False
             )
-            assert False
+            raise AssertionError()
         except task_states.ReasonRequiredError:
             pass
     finally:
@@ -148,7 +148,7 @@ def test_m36_2_transition_reason_int_rejected():
             task_states.transition(
                 c, task_id=tid, to_state="in_progress", reason=12345, force=False
             )
-            assert False
+            raise AssertionError()
         except task_states.ReasonRequiredError as e:
             assert "int" in str(e), f"应含 'int', got: {e}"
     finally:
@@ -165,7 +165,7 @@ def test_m36_2b_transition_reason_none_rejected():
             task_states.transition(
                 c, task_id=tid, to_state="in_progress", reason=None, force=False
             )
-            assert False
+            raise AssertionError()
         except task_states.ReasonRequiredError:
             pass
     finally:
@@ -182,7 +182,7 @@ def test_m36_2c_transition_reason_list_rejected():
             task_states.transition(
                 c, task_id=tid, to_state="in_progress", reason=["x"], force=False
             )
-            assert False
+            raise AssertionError()
         except task_states.ReasonRequiredError as e:
             assert "list" in str(e)
     finally:
@@ -200,7 +200,7 @@ def test_m36_3a_transition_task_id_int_rejected():
             task_states.transition(
                 c, task_id=12345, to_state="in_progress", reason="test_reason"
             )
-            assert False
+            raise AssertionError()
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidInputError", f"got {e.code}"
             assert "task_id" in str(e), f"应指 task_id 字段: {e}"
@@ -218,7 +218,7 @@ def test_m36_3b_transition_to_state_int_rejected():
             task_states.transition(
                 c, task_id=tid, to_state=99, reason="test_reason"
             )
-            assert False
+            raise AssertionError()
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidInputError", f"got {e.code}"
             assert "to_state" in str(e)
@@ -239,7 +239,7 @@ def test_m36_4_transition_evidence_int_rejected():
                 c, task_id=tid, to_state="in_progress",
                 reason="test_reason", evidence_chunk_id=99999,
             )
-            assert False
+            raise AssertionError()
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidInputError", f"got {e.code}"
             assert "evidence_chunk_id" in str(e)
