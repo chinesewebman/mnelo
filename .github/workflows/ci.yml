@@ -63,13 +63,11 @@ jobs:
 
       - name: Install runtime + test deps
         # [8/9 P1 follow-up] hostedtoolcache Python (macos-latest arm64) 编译不带
-        # enable_load_extension (sandbox 限制), Memory() 调 sqlite_vec.load 必 fail.
-        # 装 pysqlite3-binary PyPI wheel (始终带 enable_load_extension + sqlite 3.4x)
-        # 通过 PYTHONPATH 提到 stdlib 之前 — 不动 memory.py 应用服务代码,
-        # 仅 CI test 装这包.
+        # enable_load_extension. memory.py 现走 ctypes fallback (直接 CDLL vec0.dylib
+        # 然后 sqlite_vec.load), 不依赖 stdlib enable_load_extension, 也不再需要
+        # pysqlite3-binary (这 wheel 还没 macOS arm64 build).
         run: |
           python -m pip install --upgrade pip
-          pip install pysqlite3-binary
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
           pip install pytest pytest-cov ruff==0.15.10
