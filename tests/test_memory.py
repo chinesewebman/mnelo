@@ -5,7 +5,7 @@ test_memory.py — mnelo v0.5.x 测试
 
 [测试目标 - 主人口中 7/18 拍板]
 1. CRUD 6 API (remember/recall/relate/forget/update/graph_query)
-2. 3 路召回 + RRF 融合 ( recall 准确率)
+2. 4 路召回 + RRF 融合 ( recall 准确率)
 3. 软删除 (valid_until) + 触发器自动级联
 4. 4D 时间维度 (valid_from/valid_until 语义)
 5. 实体消歧 (entity_resolve.py merge)
@@ -113,7 +113,7 @@ class TestMemoryCRUD(unittest.TestCase):
         print(f"  ✅ meta_only recall → {len(results)} hits (may be 0 after cleanup)")
 
     def test_05_recall_rrf(self):
-        """3 路 + RRF 融合."""
+        """4 路 + RRF 融合."""
         results = self.mem.recall(
             f"{self.test_id_prefix} ",
             top_k=3,

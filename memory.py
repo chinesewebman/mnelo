@@ -850,7 +850,7 @@ class Memory:
         _metrics_registry().forget_total.inc(kind=target_kind or "unknown")
         return {"edges_invalidated": edges_invalidated, "queued_purge": 1}
 
-    # === R = Recall (3 路 + RRF) ===================
+    # === R = Recall (4 路 + RRF) ===================
 
     def recall(
         self,
@@ -1484,7 +1484,7 @@ class Memory:
 
     @staticmethod
     def _hit_dict(row, method: str, **extra) -> Dict:
-        """3 路召回统一返回格式 (RRF 融合需要)。
+        """4 路召回统一返回格式 (RRF 融合需要)。
 
         Args:
             row: sqlite3.Row from chunks (含 id/content/source/timestamp/importance)

@@ -126,7 +126,7 @@ TOOLS = [
     },
     {
         "name": "memory_recall",
-        "description": "3 路召回 (向量 + 图遍历 + 元数据) + RRF 融合.",
+        "description": "4 路召回 (向量 + 图遍历 + 元数据 + 实体) + RRF 融合.",
         "inputSchema": {
             "type": "object",
             "properties": {

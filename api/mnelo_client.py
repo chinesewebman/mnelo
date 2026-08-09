@@ -186,7 +186,7 @@ class MneloClient:
 
     def recall(self, query: str, top_k: int = 5, graph_hops: int = 2,
                filters: Dict = None, strategy: str = 'rrf', asof: str = None) -> List[Dict]:
-        """3 路 + RRF 召回. 返回 list of hits.
+        """4 路 + RRF 召回. 返回 list of hits.
 
         Each hit dict includes:
           - chunk_id, content, source, timestamp, importance
