@@ -3261,7 +3261,7 @@ class Memory:
             cur_n += 1
             all_refs[str(cur_n)] = [cid]
         # block4 refs 拼接
-        for k, v in block4_refs.items():
+        for _k, v in block4_refs.items():
             cur_n += 1
             all_refs[str(cur_n)] = v
 

@@ -871,7 +871,7 @@ def loop_update(
     """[8/6 M3 Step 12] 改 loop properties (DESIGN §5.1).
 
     只改明确提供的字段 (None = 不改). 不会动 active_task_id 或 last_cycle_done_at
-    (那些由 transition() 终端簿记或 loop_tick 写). 
+    (那些由 transition() 终端簿记或 loop_tick 写).
 
     enabled=False 写 dormant 状态窗; enabled=True 关 dormant 窗 (若有).
     其他字段仅改 properties_json.
@@ -927,7 +927,8 @@ def loop_update(
         new_state = "dormant" if not enabled else "running"
 
         # [RF14 8/6] 单 SQL CAS 关旧窗 (UPDATE WHERE active), 0 行说明并发赢家已关
-        affected = conn.execute(
+        # noqa: F841 — 保留 rowcount 便于未来加 metric/log; 现行 IntegrityError 兜底已足够
+        affected = conn.execute(  # noqa: F841
             "UPDATE task_states SET valid_until = ? "
             "WHERE task_id = ? AND valid_until IS NULL",
             (ts, loop_id),

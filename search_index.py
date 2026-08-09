@@ -484,7 +484,7 @@ class UsearchIndex(SearchIndex):
         # 原 try/except "Duplicate keys" → remove+add 路径在 usearch 2.x 有 f16 兼容性 bug
         # (remove 后立即 add 同一 rowid 偶发 _add_to_compiled SIGSEGV).
         # 用 set(keys) 而非 in keys: usearch IndexedKeys.__contains__ 偶发 SIGSEGV.
-        existing = set(int(k) for k in self._index.keys)
+        existing = {int(k) for k in self._index.keys}
         if int(row["rowid"]) in existing:
             logger.debug(f"[usearch.add] rowid {row['rowid']} 已在索引, 跳过")
             return
