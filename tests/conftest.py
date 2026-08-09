@@ -161,9 +161,27 @@ def _clean_test_data_session():
 
     只清 source 含 'test' 但不在 class-prefix 保护范围的数据 (兜底 tearDownClass 漏掉的).
     各 class 自己 tearDownClass 仍然管自己的 prefix cleanup.
+
+    [8/9 issue-#3] zvec LOCK 抢不到时 (mnelo 服务在跑) 静默 skip — 该 fixture
+    主要是清理 test 残留, LIVE 服务自带维护, 不抢 LOCK 也不影响后续 test (依赖 zvec
+    的 test 自己会被 mnelo 服务挡). 纯文本 / schema test 不受任何影响.
     """
     from memory import Memory
-    mem = Memory()
+    try:
+        mem = Memory()
+    except Exception as e:
+        # [8/9] zvec lock 冲突 / sqlite busy / mnelo 服务占用 → 静默 skip
+        # 留 warning 给开发者, 不让整个 test session 死.
+        import warnings as _w
+        _w.warn(
+            f"[conftest] _clean_test_data_session skip: Memory() init 失败 "
+            f"({type(e).__name__}: {e}). 跑纯文本/schema test 不影响; "
+            f"依赖 zvec 的 test 会被后续 Memory() 错误自然 fail.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        yield
+        return
     try:
         # 清 vectors (按 rowid, 避免漏 vec0 rowid)
         rows = mem._conn.execute(
