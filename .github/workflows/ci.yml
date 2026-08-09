@@ -76,13 +76,12 @@ jobs:
           key: ${{ runner.os }}-hf-bge-small-zh
 
       - name: Init test DB
+        # [8/9 P1 follow-up] Memory() class 自己初始化 DB (memory.py:298 + run schema.sql),
+        # init_db.py 是冗余的; CI 强制 init_db.py 会因 hostedtoolcache Python build 不带
+        # enable_load_extension (macOS arm64 sandbox) 而 fail. 让 test 阶段 Memory() 自建库.
         run: |
           mkdir -p ~/.hermes/memory
-          cd "$GITHUB_WORKSPACE"
-          # [7/21 fix] 从仓库根运行; DB 路径通过 MNELO_MEMORY_DIR 指向 live 目录。
-          # 之前 `cd ~/.hermes/memory && python scripts/init_db.py` 找不到 scripts/,
-          # 且 init_db.py 硬编码路径 — CI 实际从未成功建库。
-          MNELO_MEMORY_DIR="$HOME/.hermes/memory" python scripts/init_db.py
+          echo "⏭️  init_db.py 跳过 — Memory() class 自建库 (memory.py:298)"
 
       - name: Run tests with coverage
         run: |
