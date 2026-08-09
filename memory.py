@@ -3267,7 +3267,7 @@ class Memory:
 
         return full_text, all_refs, truncated
 
-    def stats(self) -> Dict:
+    def stats(self) -> Dict:  # noqa: F811 — 2 个 stats() 是 design decision (8/4 396c432 修过时保留, 第 2 个是 hygiene 版)
         """统计 + [H-1 §6.5 v0.2 TASKS] hygiene 子键.
 
         [§6.5 工具收敛] 不新加 memory_hygiene_stats; 这里是 stats 的 hygiene 子键
