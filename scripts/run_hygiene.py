@@ -14,6 +14,7 @@
 - 启动时长 ~1-3s (memory.Memory() init 走 fastembed warmup)
 - 失败 retry: launchd StartCalendarInterval 不自带, 失败靠主人下次手动跑
 """
+
 import sys
 import json
 import os
@@ -33,6 +34,7 @@ from memory import Memory  # noqa: E402
 # [8/7 SOP-fix] 把所有 logger (含 mnelo namespace) 全部 redirect 到 stderr, 让 stdout 只剩 JSON result
 # (cron 场景 StandardOutPath 写 log, 但 SOP 脚本要 stdout 是纯 JSON 才能 json.load 解析)
 import logging
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s %(levelname)s: %(message)s",
@@ -59,8 +61,8 @@ def main() -> int:
 
     result = mem.run_maintenance(
         passes=["hygiene"],
-        dry_run=True,                 # [P1 默认 safe] 主人 review audit 后再 destructive
-        confirm_destructive=False,     # 永不在 cron 自动 destructive
+        dry_run=True,  # [P1 默认 safe] 主人 review audit 后再 destructive
+        confirm_destructive=False,  # 永不在 cron 自动 destructive
     )
 
     # [8/7 SOP-fix] stdout 必须只含 JSON — wrapper 内部 embedder.print 也会污染 stdout

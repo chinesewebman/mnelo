@@ -20,6 +20,7 @@ classify.py — P1a 记忆类型规则分类器 (DESIGN §5.2).
     - 标记集单一事实源 (繁→简后统一简体匹配), 不维护双份表
     - 字符集膨胀 (几百字) 时再评估 opencc
 """
+
 from __future__ import annotations
 
 from typing import Dict, List, Optional
@@ -32,34 +33,103 @@ __all__ = ["classify_memory_type", "_normalize", "_T2S", "_MARKERS"]
 # ========================================
 _T2S: Dict[str, str] = {
     # 常見高頻繁體字 (按 §2.2 標記集實際出現的字補全)
-    "覺": "觉", "歡": "欢", "買": "买", "賣": "卖", "時": "时",
-    "點": "点", "倉": "仓", "減": "减", "暫": "暂", "訂": "订",
-    "佔": "占", "後": "后", "於": "于", "較": "较", "擇": "择",
-    "標": "标", "計": "计", "劃": "划", "務": "务", "應": "应",
-    "會": "会", "個": "个", "這": "这", "麼": "么", "說": "说",
-    "讓": "让", "種": "种", "樣": "样", "對": "对", "現": "现",
-    "們": "们", "為": "为", "與": "与", "從": "从", "來": "来",
-    "價": "价", "報": "报", "記": "记", "錄": "录",
-    "細": "细", "潔": "洁", "簡": "简", "單": "单", "處": "处",
-    "預": "预", "響": "响", "達": "达", "測": "测",
-    "準": "准", "確": "确", "實": "实", "際": "际", "盤": "盘",
-    "滿": "满", "觀": "观", "眾": "众", "腦": "脑", "體": "体",
-    "貨": "货", "幣": "币", "變": "变", "動": "动", "態": "态",
-    "麵": "面", "條": "条", "齊": "齐", "備": "备", "無": "无",
-    "設": "设", "識": "识", "監": "监", "聽": "听", "聲": "声",
-    "東": "东", "兒": "儿", "員": "员",
+    "覺": "觉",
+    "歡": "欢",
+    "買": "买",
+    "賣": "卖",
+    "時": "时",
+    "點": "点",
+    "倉": "仓",
+    "減": "减",
+    "暫": "暂",
+    "訂": "订",
+    "佔": "占",
+    "後": "后",
+    "於": "于",
+    "較": "较",
+    "擇": "择",
+    "標": "标",
+    "計": "计",
+    "劃": "划",
+    "務": "务",
+    "應": "应",
+    "會": "会",
+    "個": "个",
+    "這": "这",
+    "麼": "么",
+    "說": "说",
+    "讓": "让",
+    "種": "种",
+    "樣": "样",
+    "對": "对",
+    "現": "现",
+    "們": "们",
+    "為": "为",
+    "與": "与",
+    "從": "从",
+    "來": "来",
+    "價": "价",
+    "報": "报",
+    "記": "记",
+    "錄": "录",
+    "細": "细",
+    "潔": "洁",
+    "簡": "简",
+    "單": "单",
+    "處": "处",
+    "預": "预",
+    "響": "响",
+    "達": "达",
+    "測": "测",
+    "準": "准",
+    "確": "确",
+    "實": "实",
+    "際": "际",
+    "盤": "盘",
+    "滿": "满",
+    "觀": "观",
+    "眾": "众",
+    "腦": "脑",
+    "體": "体",
+    "貨": "货",
+    "幣": "币",
+    "變": "变",
+    "動": "动",
+    "態": "态",
+    "麵": "面",
+    "條": "条",
+    "齊": "齐",
+    "備": "备",
+    "無": "无",
+    "設": "设",
+    "識": "识",
+    "監": "监",
+    "聽": "听",
+    "聲": "声",
+    "東": "东",
+    "兒": "儿",
+    "員": "员",
     # === [8/4 fix] 测试矩阵失败补全 ===
-    "錯": "错", "案": "案", "不": "不",  # 案 不 不 都不需要 (本来就是简体)
-    "決": "决", "定": "定", "明天": "明天",  # 明天 原简体
-    "減倉": "减仓", "建倉": "建仓", "加倉": "加仓",
-    "賣出": "卖出", "買入": "买入", "清倉": "清仓",
+    "錯": "错",
+    "案": "案",
+    "不": "不",  # 案 不 不 都不需要 (本来就是简体)
+    "決": "决",
+    "定": "定",
+    "明天": "明天",  # 明天 原简体
+    "減倉": "减仓",
+    "建倉": "建仓",
+    "加倉": "加仓",
+    "賣出": "卖出",
+    "買入": "买入",
+    "清倉": "清仓",
     # 测试 §5.2 场景需要全部繁→简
     "簡潔": "简洁",
     "日報": "日报",
     "記錄": "记录",
     "週報": "周报",
     "步驟": "步骤",
-    "方法": "方法", "怎": "怎",  # 怎么 简
+    "方法": "方法",
+    "怎": "怎",  # 怎么 简
     "如何": "如何",
     "通常": "通常",
     "這樣": "这样",
@@ -123,16 +193,30 @@ _MARKERS: Dict[str, Dict[str, List[str]]] = {
     # preference (偏好): 必须"我"+第一人称, 防第三人称误伤
     "preference": {
         "cn": [
-            "我偏好", "我喜欢", "更喜欢", "我更喜欢", "我更喜欢",
-            "我更喜欢", "我比较喜欢", "我希望", "我想要", "我希望",
+            "我偏好",
+            "我喜欢",
+            "更喜欢",
+            "我更喜欢",
+            "我更喜欢",
+            "我更喜欢",
+            "我比较喜欢",
+            "我希望",
+            "我想要",
+            "我希望",
             # [8/4 v0.2 fix] "倾向于" 必须是 "我倾向于" 才标
             "我倾向于",
         ],
         "en": [
-            "i prefer", "i prefer to", "i like", "i'd like",
-            "my favorite", "i would rather", "i like to",
+            "i prefer",
+            "i prefer to",
+            "i like",
+            "i'd like",
+            "my favorite",
+            "i would rather",
+            "i like to",
             # [8/4 v0.2 fix] "i'd rather" / "i'd prefer" 等第一人称变体
-            "i'd rather", "i'd prefer",
+            "i'd rather",
+            "i'd prefer",
         ],
         # 弱标记 (不触发, 仅文档化)
         "_weak_cn": ["倾向于", "喜欢", "爱好", "偏爱"],
@@ -141,13 +225,24 @@ _MARKERS: Dict[str, Dict[str, List[str]]] = {
     # decision (决定/计划): 必须 "I decided to" / "I plan to", 去掉 "decided" 裸
     "decision": {
         "cn": [
-            "我决定", "我打算", "我计划", "我的目标是", "我的判断是",
-            "我选择", "我决定不", "我决定做",
+            "我决定",
+            "我打算",
+            "我计划",
+            "我的目标是",
+            "我的判断是",
+            "我选择",
+            "我决定不",
+            "我决定做",
         ],
         "en": [
             # [8/4 v0.2 fix] 强制第一人称 + "to" 后缀, 防 "The assistant decided to use" 误伤
-            "i decided", "i decided to", "i decide", "i plan to",
-            "i plan", "my decision is", "my call is",
+            "i decided",
+            "i decided to",
+            "i decide",
+            "i plan to",
+            "i plan",
+            "my decision is",
+            "my call is",
             "i am going to",  # "I am going to" 是强决策意图
         ],
     },
@@ -155,22 +250,46 @@ _MARKERS: Dict[str, Dict[str, List[str]]] = {
     "episode": {
         # [8/4 v0.2 fix] 时间锚必须含 "我" 主语前缀
         "cn_time": [
-            "我今天", "我昨天", "我前天", "我本周", "我上周",
-            "我今早", "我昨晚", "我今晨", "我今午",
+            "我今天",
+            "我昨天",
+            "我前天",
+            "我本周",
+            "我上周",
+            "我今早",
+            "我昨晚",
+            "我今晨",
+            "我今午",
         ],
         "cn_action": [
-            "建仓", "买入", "卖出", "清仓", "加仓", "减仓",
-            "开了", "平了",
+            "建仓",
+            "买入",
+            "卖出",
+            "清仓",
+            "加仓",
+            "减仓",
+            "开了",
+            "平了",
         ],
         # [8/4 v0.2 fix] EN: 拆 "I" + 时间 + 动作 各部分, substring 组合匹配
         # (实际 "I bought 100 shares of sh600089 today" 中间有 token 间隔)
         "en_subject": ["i "],  # "i " 开头 (i 后空格)
         "en_time": [
-            "today", "yesterday", "this morning", "last week", "this week",
+            "today",
+            "yesterday",
+            "this morning",
+            "last week",
+            "this week",
         ],
         "en_action": [
-            "bought", "sold", "added", "reduced", "closed",
-            "buy", "sell", "add", "reduce",
+            "bought",
+            "sold",
+            "added",
+            "reduced",
+            "closed",
+            "buy",
+            "sell",
+            "add",
+            "reduce",
         ],
     },
     # procedure (步骤/流程): 弱化动词型, 加 "步骤 1./2./3." 强过滤
@@ -178,13 +297,23 @@ _MARKERS: Dict[str, Dict[str, List[str]]] = {
         "cn": [
             # [8/4 v0.2 fix] 去掉 "记录一下"/"记一下" (动词型, 误伤 system note)
             # 保留祈使/步骤型
-            "步骤", "流程", "通常这样", "每次都是", "模板", "规范",
+            "步骤",
+            "流程",
+            "通常这样",
+            "每次都是",
+            "模板",
+            "规范",
             # [8/4 v0.2 fix] 新加强标记: "步骤 1. 2. 3." 形式 (regex 模式)
             # 也在 cn 列表保留前缀, 但主要靠 _STRICT_PROCEDURE_PATTERNS 匹配
         ],
         "en": [
-            "steps", "how to", "process", "workflow",
-            "procedure", "template", "convention",
+            "steps",
+            "how to",
+            "process",
+            "workflow",
+            "procedure",
+            "template",
+            "convention",
         ],
         # [8/4 v0.2 fix] 强标记模式 (regex): 必须有步骤连接词/序号
         "_strict_patterns_cn": [
@@ -229,7 +358,8 @@ def classify_memory_type(text: str) -> Optional[str]:
     # [8/4 v0.2 audit fix] markdown 引用块不参与匹配 (防 system note / 对话上下文误伤)
     # 模式: [USER] / [ASSISTANT] / [System note] / [conversation] 等
     import re as _re
-    if _re.match(r'^\s*\[(USER|ASSISTANT|System note|conversation|Replying to)\b', norm):
+
+    if _re.match(r"^\s*\[(USER|ASSISTANT|System note|conversation|Replying to)\b", norm):
         # 这是引用/对话内容, 不分类 (return None = fact)
         return None
 
@@ -244,8 +374,7 @@ def classify_memory_type(text: str) -> Optional[str]:
         return "episode"
 
     # [8/4 v0.2 fix] EN: "I " 主语 + 时间 + 动作 substring 组合
-    en_subject_hit = any(lower.startswith(s) or f". {s}" in lower or f"\n{s}" in lower
-                         for s in _MARKERS["episode"]["en_subject"])
+    en_subject_hit = any(lower.startswith(s) or f". {s}" in lower or f"\n{s}" in lower for s in _MARKERS["episode"]["en_subject"])
     en_time_hit = any(t in lower for t in _MARKERS["episode"]["en_time"])
     en_action_hit = any(a in lower for a in _MARKERS["episode"]["en_action"])
     if en_subject_hit and en_time_hit and en_action_hit:
@@ -279,6 +408,7 @@ def _check_marker(norm: str, lower: str, memory_type: str) -> bool:
     # [8/4 v0.2 fix] procedure strict pattern 也算强标记
     if memory_type == "procedure":
         import re as _re
+
         if any(_re.search(p, norm) for p in markers.get("_strict_patterns_cn", [])):
             return True
         if any(_re.search(p, lower) for p in markers.get("_strict_patterns_en", [])):

@@ -89,10 +89,7 @@ MESSAGES = {
     },
     "check.recall_24h": {
         "zh": "📈 Recall 24h — {count} 次, 空 hits {empty} ({pct:.0f}%), latency p50={p50}ms p95={p95}ms avg={avg}ms",
-        "en": (
-            "📈 Recall 24h — {count} calls, empty hits {empty} ({pct:.0f}%), "
-            "latency p50={p50}ms p95={p95}ms avg={avg}ms"
-        ),
+        "en": ("📈 Recall 24h — {count} calls, empty hits {empty} ({pct:.0f}%), latency p50={p50}ms p95={p95}ms avg={avg}ms"),
     },
     "check.kind_top": {
         "zh": "🏷️  Kind TOP-3 — {kinds}",

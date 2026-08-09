@@ -17,6 +17,7 @@ snapshots/YYYY-MM-DD-HHMMSS.db → gzip → .sha256.
   python scripts/backup_db.py --force         # 覆盖日内已有的同名快照
   python scripts/backup_db.py --snapshot-dir /tmp/foo  # 覆盖 config
 """
+
 import argparse
 import gzip
 import hashlib
@@ -46,9 +47,7 @@ def _default_snapshot_dir():
 
 def _read_backup_config():
     """Read [backup] section from config (with defaults)."""
-    snap_dir = _expand(
-        getattr(_config, "backup_snapshot_dir", None) or _default_snapshot_dir()
-    )
+    snap_dir = _expand(getattr(_config, "backup_snapshot_dir", None) or _default_snapshot_dir())
     retention = int(getattr(_config, "backup_retention", 30) or 30)
     return {
         "snapshot_dir": snap_dir,
@@ -111,8 +110,7 @@ def _prune_old(snapshot_dir: Path, retention: int) -> int:
     return pruned
 
 
-def backup(snapshot_dir: Path, retention: int, dry_run: bool = False, force: bool = False,
-         db_path: Path | None = None) -> dict:
+def backup(snapshot_dir: Path, retention: int, dry_run: bool = False, force: bool = False, db_path: Path | None = None) -> dict:
     """Run one backup. Returns stats dict.
 
     db_path: 源 SQLite 路径 (默认 config.db_path). 测试可传 tmp db.
@@ -201,19 +199,15 @@ def main():
     ap = argparse.ArgumentParser(description="mnelo DB 快照备份")
     ap.add_argument("--dry-run", action="store_true", help="只统计, 不真正备份")
     ap.add_argument("--force", action="store_true", help="无视日内去重, 强写新快照")
-    ap.add_argument("--snapshot-dir", type=Path, default=None,
-                    help="覆盖 config [backup] snapshot_dir")
-    ap.add_argument("--retention", type=int, default=None,
-                    help="覆盖 config [backup] retention (保 N 份)")
-    ap.add_argument("--scheduled", action="store_true",
-                    help="调度调用 (cron/plist) — 尊重 [backup] enabled, disabled 时跳过")
+    ap.add_argument("--snapshot-dir", type=Path, default=None, help="覆盖 config [backup] snapshot_dir")
+    ap.add_argument("--retention", type=int, default=None, help="覆盖 config [backup] retention (保 N 份)")
+    ap.add_argument("--scheduled", action="store_true", help="调度调用 (cron/plist) — 尊重 [backup] enabled, disabled 时跳过")
     args = ap.parse_args()
 
     # [8/5 fix] scheduled 调用尊重 enabled: [backup] enabled=false 或 env=false → 跳过.
     # 手动调用 (不带 --scheduled) 不受限 — 随时可做一次性备份.
     if args.scheduled and not _config.backup_enabled:
-        print("backup disabled — [backup] enabled 未开启 (scheduled run 跳过). "
-              "设 MNELO_MEMORY_BACKUP_ENABLED=true, 或去掉 --scheduled 手动备份.")
+        print("backup disabled — [backup] enabled 未开启 (scheduled run 跳过). 设 MNELO_MEMORY_BACKUP_ENABLED=true, 或去掉 --scheduled 手动备份.")
         return 0
 
     cfg = _read_backup_config()

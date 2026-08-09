@@ -30,6 +30,7 @@ now() 默认 ISO 8601 无空格.
 - 软删后 30 天内 memory_audit_undo 可恢复 (audit_log 留痕 + purged_queue 排队).
 - 跑前用 --dry-run 看名单, --yes 真跑.
 """
+
 import argparse
 import sys
 from pathlib import Path
@@ -42,16 +43,13 @@ DEMO_PREFIX = "main_block_demo_"
 def get_demo_entities(m) -> list:
     """返回所有 active demo entities (id 匹配 main_block_demo_*)."""
     return m._conn.execute(
-        "SELECT id, kind, source, importance, user_confirmed FROM entities "
-        "WHERE valid_until IS NULL AND id LIKE ? ORDER BY id",
+        "SELECT id, kind, source, importance, user_confirmed FROM entities WHERE valid_until IS NULL AND id LIKE ? ORDER BY id",
         (DEMO_PREFIX + "%",),
     ).fetchall()
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="[8/9 燕如 P5 反馈] 清 demo entities (main_block_demo_*)"
-    )
+    parser = argparse.ArgumentParser(description="[8/9 燕如 P5 反馈] 清 demo entities (main_block_demo_*)")
     parser.add_argument("--db", default=str(DB_PATH), help="mnelo db path")
     parser.add_argument("--dry-run", action="store_true", help="只列名单, 不改 db")
     parser.add_argument("--yes", action="store_true", help="真删 (默认 dry-run)")
@@ -65,6 +63,7 @@ def main() -> int:
     # [8/9 review B7 fix] 用 Memory.forget 接口, 不 raw SQL. 接口自动写
     # audit_log + purged_queue, undo 机制可兑现.
     from memory import Memory
+
     m = Memory(db_path=db_path)
     try:
         demo_entities = get_demo_entities(m)

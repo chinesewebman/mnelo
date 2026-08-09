@@ -84,9 +84,7 @@ def init():
     print(f"  表 (含虚拟): {tables}")
 
     print(f"=== 5. 验证触发器 ===")
-    triggers = [
-        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name").fetchall()
-    ]
+    triggers = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name").fetchall()]
     print(f"  触发器: {triggers}")
 
     print(f"=== 6. 验证 meta ===")

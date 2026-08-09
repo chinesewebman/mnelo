@@ -68,7 +68,9 @@ def check_mcp_alive():
         try:
             result = subprocess.run(
                 [lsof_path, "-tiTCP:%d" % MCP_PORT, "-sTCP:LISTEN"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if result.returncode == 0 and result.stdout.strip():
                 pid_str = result.stdout.strip().split("\n")[0]
@@ -80,7 +82,9 @@ def check_mcp_alive():
         try:
             ps = subprocess.run(
                 ["ps", "-eo", "pid,command"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             # 候选: mcp_server.py 行
             for line in ps.stdout.split("\n"):
@@ -93,7 +97,9 @@ def check_mcp_alive():
                         try:
                             lsof_pid = subprocess.run(
                                 [lsof_path, "-tiTCP:%d" % MCP_PORT, "-a", "-p", str(pid_candidate)],
-                                capture_output=True, text=True, timeout=5,
+                                capture_output=True,
+                                text=True,
+                                timeout=5,
                             )
                             if lsof_pid.returncode == 0 and lsof_pid.stdout.strip():
                                 pid_str = lsof_pid.stdout.strip().split("\n")[0]
@@ -118,7 +124,9 @@ def check_mcp_alive():
     try:
         ps = subprocess.run(
             ["ps", "-p", str(pid), "-o", "etime="],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         etime = ps.stdout.strip()
         uptime_sec = parse_etime(etime)
@@ -271,10 +279,7 @@ def db_stats(db_path):
             # 单一化预警: 主导 kind > 70% = P1 注意
             total = sum(r["cnt"] for r in kind_rows)
             if total and kind_rows[0]["cnt"] / total > 0.70 and len(kind_rows) > 1:
-                out["kind_diversity_warning"] = (
-                    f"{kind_rows[0]['kind']} 占 {kind_rows[0]['cnt'] * 100.0 / total:.1f}% — "
-                    f" kind 单一化, 考虑提升其他 kind 占比"
-                )
+                out["kind_diversity_warning"] = f"{kind_rows[0]['kind']} 占 {kind_rows[0]['cnt'] * 100.0 / total:.1f}% —  kind 单一化, 考虑提升其他 kind 占比"
                 # [7/18 patch F] i18n — expose concept_pct for msg format
                 out["concept_pct"] = round(kind_rows[0]["cnt"] * 100.0 / total, 1)
         except Exception as e:
@@ -425,10 +430,7 @@ def main():
     wc = report["checks"]["wal_checkpoint"]
     if "error" not in wc:
         # [7/18 patch F] i18n — check.wal_checkpoint msg_id
-        lines.append(
-            _t("check.wal_checkpoint", done=wc["checkpointed_pages"], total=wc["log_pages_before"])
-            + (" (busy — checkpoint deferred)" if wc["busy"] else "")
-        )
+        lines.append(_t("check.wal_checkpoint", done=wc["checkpointed_pages"], total=wc["log_pages_before"]) + (" (busy — checkpoint deferred)" if wc["busy"] else ""))
     else:
         lines.append(f"❌ WAL checkpoint error — {wc['error']}")
 

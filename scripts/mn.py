@@ -16,6 +16,7 @@ memory_type 取值 (README §操作指令): fact / preference / episode / decisi
 
 对 Claude Code: 需要时显式传 memory_type 和实体 kind (约定见 CLAUDE.md), 一致性是契约.
 """
+
 import argparse
 import json
 import sys
@@ -34,8 +35,7 @@ def _client() -> MneloClient:
 def cmd_digest(args) -> int:
     client = _client()
     digest = client.get_digest(ref=args.ref)
-    print(json.dumps(digest, ensure_ascii=False, indent=2) if isinstance(digest, dict)
-          else digest)
+    print(json.dumps(digest, ensure_ascii=False, indent=2) if isinstance(digest, dict) else digest)
     return 0
 
 
@@ -51,8 +51,7 @@ def cmd_remember(args) -> int:
     if args.tags:
         call_args["tags"] = [t.strip() for t in args.tags.split(",") if t.strip()]
     result = client._call("memory_remember", call_args)  # noqa: SLF001 — 薄封装, 同仓库
-    print(json.dumps(result, ensure_ascii=False, indent=2) if isinstance(result, dict)
-          else result)
+    print(json.dumps(result, ensure_ascii=False, indent=2) if isinstance(result, dict) else result)
     return 0
 
 
@@ -74,8 +73,7 @@ def cmd_relate(args) -> int:
     if args.evidence:
         call_args["evidence_chunk_id"] = args.evidence
     result = client._call("memory_relate", call_args)  # noqa: SLF001 — 薄封装, 同仓库
-    print(json.dumps(result, ensure_ascii=False, indent=2) if isinstance(result, dict)
-          else result)
+    print(json.dumps(result, ensure_ascii=False, indent=2) if isinstance(result, dict) else result)
     return 0
 
 
@@ -98,9 +96,7 @@ def main() -> int:
     p.add_argument("content")
     p.add_argument("--source", default="claude-code", help="来源标签, 便于检索/清理")
     p.add_argument("--importance", type=float, default=0.5)
-    p.add_argument("--memory-type", choices=["fact", "preference", "episode",
-                                             "decision", "procedure", "ephemeral"],
-                   default=None, help="不传则自动分类")
+    p.add_argument("--memory-type", choices=["fact", "preference", "episode", "decision", "procedure", "ephemeral"], default=None, help="不传则自动分类")
     p.add_argument("--tags", default=None, help="逗号分隔 tags")
     p.set_defaults(fn=cmd_remember)
 

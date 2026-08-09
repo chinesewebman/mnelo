@@ -8,6 +8,7 @@
 - RF6: transition() 文档明示调用方需包事务
 - RF7: typing.List 显式导入
 """
+
 import hashlib
 import json
 import logging
@@ -20,8 +21,7 @@ logger = logging.getLogger("mnelo.task_states")
 
 # === 异常族 ===
 class TaskLoopError(Exception):
-    def __init__(self, message: str, field: Optional[str] = None,
-                 code: Optional[str] = None) -> None:
+    def __init__(self, message: str, field: Optional[str] = None, code: Optional[str] = None) -> None:
         super().__init__(message)
         self.message = message
         self.field = field
@@ -59,9 +59,16 @@ class TerminalLoopError(TaskLoopError):
 
 
 # === 状态词汇 ===
-TASK_STATES = frozenset({
-    "open", "in_progress", "waiting", "blocked", "done", "cancelled",
-})
+TASK_STATES = frozenset(
+    {
+        "open",
+        "in_progress",
+        "waiting",
+        "blocked",
+        "done",
+        "cancelled",
+    }
+)
 LOOP_STATES = frozenset({"running", "dormant", "paused"})
 ALL_STATES = TASK_STATES | LOOP_STATES
 
@@ -97,7 +104,6 @@ def _slugify(name: str) -> str:
         return ascii_slug
     # 2. 含中文 / 全非 ASCII → hash
     return hashlib.md5(name.encode("utf-8")).hexdigest()[:8]
-
 
 
 def transition(
@@ -143,19 +149,20 @@ def transition(
     if not isinstance(task_id, str):
         raise TaskLoopError(
             f"task_id 必须 str, got {type(task_id).__name__}",
-            field="task_id", code="InvalidInputError",
+            field="task_id",
+            code="InvalidInputError",
         )
     if not isinstance(to_state, str):
         raise TaskLoopError(
             f"to_state 必须 str, got {type(to_state).__name__}",
-            field="to_state", code="InvalidInputError",
+            field="to_state",
+            code="InvalidInputError",
         )
 
     # 0. 状态词汇校验
     if to_state not in ALL_STATES:
         raise InvalidTransitionError(
-            f"to_state '{to_state}' 不在状态词汇集 "
-            f"(task: {sorted(TASK_STATES)}, loop: {sorted(LOOP_STATES)})",
+            f"to_state '{to_state}' 不在状态词汇集 (task: {sorted(TASK_STATES)}, loop: {sorted(LOOP_STATES)})",
             field="to_state",
         )
 
@@ -177,7 +184,8 @@ def transition(
     if evidence_chunk_id is not None and not isinstance(evidence_chunk_id, str):
         raise TaskLoopError(
             f"evidence_chunk_id 必须 str 或 None, got {type(evidence_chunk_id).__name__}",
-            field="evidence_chunk_id", code="InvalidInputError",
+            field="evidence_chunk_id",
+            code="InvalidInputError",
         )
 
     # 0.2 evidence_chunk_id 存在性校验
@@ -194,8 +202,7 @@ def transition(
 
     # 1. 定位当前活动窗
     cur = conn.execute(
-        "SELECT id, state, valid_from FROM task_states "
-        "WHERE task_id = ? AND valid_until IS NULL",
+        "SELECT id, state, valid_from FROM task_states WHERE task_id = ? AND valid_until IS NULL",
         (task_id,),
     ).fetchone()
     if cur is None:
@@ -235,15 +242,12 @@ def transition(
                 loop_scope = None
 
         allowed = conn.execute(
-            "SELECT 1 FROM state_transitions "
-            "WHERE (scope = ? OR scope = 'default') "
-            "  AND from_state = ? AND to_state = ?",
+            "SELECT 1 FROM state_transitions WHERE (scope = ? OR scope = 'default')   AND from_state = ? AND to_state = ?",
             (loop_scope or "default", from_state, to_state),
         ).fetchone()
         if not allowed:
             raise InvalidTransitionError(
-                f"转移 {from_state}→{to_state} 不在允许图里 "
-                f"(scope={loop_scope or 'default'})",
+                f"转移 {from_state}→{to_state} 不在允许图里 (scope={loop_scope or 'default'})",
                 field="to_state",
             )
 
@@ -255,9 +259,7 @@ def transition(
     #   - 修 RF17: caller 回拨 now 早于当前活动窗 valid_from → 负长
     #     (取 max(closed, active_from) 让 ts 至少 >= active 起点)
     _ts_row = conn.execute(
-        "SELECT valid_until, valid_from FROM task_states "
-        "WHERE task_id=? "
-        "ORDER BY id DESC LIMIT 1",
+        "SELECT valid_until, valid_from FROM task_states WHERE task_id=? ORDER BY id DESC LIMIT 1",
         (task_id,),
     ).fetchone()
     _max_floor_ts = None
@@ -270,6 +272,7 @@ def transition(
     if _max_floor_ts and _max_floor_ts >= ts:
         from datetime import datetime as _dt
         from datetime import timedelta as _td
+
         try:
             _t = _dt.fromisoformat(_max_floor_ts)
             _t = _t + _td(milliseconds=1)
@@ -277,21 +280,16 @@ def transition(
         except (ValueError, TypeError):
             pass  # ts 无法 parse, 留原值 (caller 责任)
     affected = conn.execute(
-        "UPDATE task_states SET valid_until = ? "
-        "WHERE id = ? AND task_id = ? AND valid_until IS NULL",
+        "UPDATE task_states SET valid_until = ? WHERE id = ? AND task_id = ? AND valid_until IS NULL",
         (ts, current_id, task_id),
     ).rowcount
     if affected == 0:
         raise NotCurrentStateError(
-            f"CAS 关旧窗 0 行 (task_id={task_id}, id={current_id}); "
-            f"并发冲突 / 重复提交",
+            f"CAS 关旧窗 0 行 (task_id={task_id}, id={current_id}); 并发冲突 / 重复提交",
             field="task_id",
         )
     cur2 = conn.execute(
-        "INSERT INTO task_states "
-        "(task_id, state, valid_from, valid_until, reason, "
-        " evidence_chunk_id, created_at) "
-        "VALUES (?, ?, ?, NULL, ?, ?, ?)",
+        "INSERT INTO task_states (task_id, state, valid_from, valid_until, reason,  evidence_chunk_id, created_at) VALUES (?, ?, ?, NULL, ?, ?, ?)",
         (task_id, to_state, ts, reason, evidence_chunk_id, ts),
     )
     new_window_id = cur2.lastrowid
@@ -299,10 +297,7 @@ def transition(
     # 4. 终端簿记 (done/cancelled 且是 loop active_task_id)
     bookkeeping: Optional[Dict[str, Any]] = None
     if to_state in ("done", "cancelled"):
-        loops = conn.execute(
-            "SELECT id, properties_json FROM entities "
-            "WHERE kind = 'loop' AND valid_until IS NULL"
-        ).fetchall()
+        loops = conn.execute("SELECT id, properties_json FROM entities WHERE kind = 'loop' AND valid_until IS NULL").fetchall()
         for loop_id, props_json in loops:
             if not props_json:
                 continue
@@ -322,10 +317,7 @@ def transition(
                     "last_cycle_done_at": ts,
                     "action": "clear_active_task",
                 }
-                logger.info(
-                    f"[task_states] 终端簿记: loop {loop_id} "
-                    f"active_task_id={task_id} → NULL, last_cycle={ts}"
-                )
+                logger.info(f"[task_states] 终端簿记: loop {loop_id} active_task_id={task_id} → NULL, last_cycle={ts}")
                 break
 
     result: Dict[str, Any] = {
@@ -339,8 +331,6 @@ def transition(
     if bookkeeping:
         result["terminal_bookkeeping"] = bookkeeping
     return result
-
-
 
 
 class LoopNotFoundError(TaskLoopError):
@@ -376,8 +366,7 @@ def loop_tick(
     """
     # 1. 定位 loop entity
     cur = conn.execute(
-        "SELECT id, properties_json FROM entities "
-        "WHERE id = ? AND kind = 'loop' AND valid_until IS NULL",
+        "SELECT id, properties_json FROM entities WHERE id = ? AND kind = 'loop' AND valid_until IS NULL",
         (loop_id,),
     ).fetchone()
     if cur is None:
@@ -421,8 +410,7 @@ def loop_tick(
     active_state: Optional[str] = None
     if active_task_id:
         active_row = conn.execute(
-            "SELECT state FROM task_states "
-            "WHERE task_id = ? AND valid_until IS NULL",
+            "SELECT state FROM task_states WHERE task_id = ? AND valid_until IS NULL",
             (active_task_id,),
         ).fetchone()
         if active_row is not None:
@@ -442,6 +430,7 @@ def loop_tick(
     # 5. step 4-5 — elapsed vs interval
     try:
         from datetime import datetime as _dt
+
         last_dt = _dt.fromisoformat(last_cycle_done_at)
         now_dt = _dt.fromisoformat(now) if now else _dt.now()
         elapsed_hours = (now_dt - last_dt).total_seconds() / 3600.0
@@ -457,7 +446,6 @@ def loop_tick(
     else:
         out["verdict"] = "due"
     return out
-
 
 
 def list_tasks(
@@ -582,8 +570,7 @@ def replay_task(
         params.extend([asof, asof])
 
     rows = conn.execute(
-        "SELECT state, valid_from, valid_until, reason, evidence_chunk_id "
-        "FROM task_states WHERE " + where + " ORDER BY valid_from ASC",
+        "SELECT state, valid_from, valid_until, reason, evidence_chunk_id FROM task_states WHERE " + where + " ORDER BY valid_from ASC",
         params,
     ).fetchall()
 
@@ -609,7 +596,6 @@ def replay_task(
         "window_count": len(windows),
         "windows": windows,
     }
-
 
 
 def task_create(
@@ -669,8 +655,7 @@ def task_create(
     # 1. loop 校验 (loop_id 提供了)
     if loop_id is not None:
         loop_row = conn.execute(
-            "SELECT id, properties_json FROM entities "
-            "WHERE id = ? AND kind = 'loop' AND valid_until IS NULL",
+            "SELECT id, properties_json FROM entities WHERE id = ? AND kind = 'loop' AND valid_until IS NULL",
             (loop_id,),
         ).fetchone()
         if loop_row is None:
@@ -699,8 +684,7 @@ def task_create(
             )
         if cfg.get("active_task_id"):
             raise TaskLoopError(
-                f"loop '{loop_id}' 已有 active_task_id={cfg['active_task_id']} "
-                f"(防双 spawn, §边界 #8)",
+                f"loop '{loop_id}' 已有 active_task_id={cfg['active_task_id']} (防双 spawn, §边界 #8)",
                 field="loop_id",
                 code="LoopHasActiveTaskError",
             )
@@ -736,16 +720,13 @@ def task_create(
     if summary:
         props["summary"] = summary
     conn.execute(
-        "INSERT INTO entities (id, kind, name, summary, properties_json, memory_type) "
-        "VALUES (?, ?, ?, ?, ?, 'ephemeral')",
+        "INSERT INTO entities (id, kind, name, summary, properties_json, memory_type) VALUES (?, ?, ?, ?, ?, 'ephemeral')",
         (task_id, "task", name, summary, json.dumps(props)),
     )
 
     # 4. INSERT task_states: open 窗
     cur = conn.execute(
-        "INSERT INTO task_states "
-        "(task_id, state, valid_from, valid_until, reason, evidence_chunk_id, created_at) "
-        "VALUES (?, ?, ?, NULL, ?, ?, ?)",
+        "INSERT INTO task_states (task_id, state, valid_from, valid_until, reason, evidence_chunk_id, created_at) VALUES (?, ?, ?, NULL, ?, ?, ?)",
         (task_id, "open", ts, "task_create", evidence_chunk_id, ts),
     )
     open_window_id = cur.lastrowid
@@ -755,10 +736,7 @@ def task_create(
     # (防 check-then-write 双 spawn 竞态). 若 rowcount = 0, 别的 task_create 已抢先.
     if loop_id is not None:
         affected = conn.execute(
-            "UPDATE entities SET properties_json = json_set("
-            "  COALESCE(properties_json, '{}'), '$.active_task_id', ?"
-            ") WHERE id = ? "
-            "AND json_extract(properties_json, '$.active_task_id') IS NULL",
+            "UPDATE entities SET properties_json = json_set(  COALESCE(properties_json, '{}'), '$.active_task_id', ?) WHERE id = ? AND json_extract(properties_json, '$.active_task_id') IS NULL",
             (task_id, loop_id),
         ).rowcount
         if affected == 0:
@@ -776,9 +754,7 @@ def task_create(
         ).fetchone()
         if cur_loop_win is None:
             conn.execute(
-                "INSERT INTO task_states "
-                "(task_id, state, valid_from, valid_until, reason, evidence_chunk_id, created_at) "
-                "VALUES (?, ?, ?, NULL, ?, NULL, ?)",
+                "INSERT INTO task_states (task_id, state, valid_from, valid_until, reason, evidence_chunk_id, created_at) VALUES (?, ?, ?, NULL, ?, NULL, ?)",
                 (loop_id, "running", ts, "loop: spawn task", ts),
             )
         # else: 已是 running 不重复落行
@@ -841,20 +817,16 @@ def loop_create(
         "owner_id": owner_id,
     }
     conn.execute(
-        "INSERT INTO entities (id, kind, name, properties_json, memory_type) "
-        "VALUES (?, ?, ?, ?, 'ephemeral')",
+        "INSERT INTO entities (id, kind, name, properties_json, memory_type) VALUES (?, ?, ?, ?, 'ephemeral')",
         (loop_id, "loop", name, json.dumps(props)),
     )
     # loop 初始状态: dormant (enabled=False) 或 不落窗 (默认 enabled=True; 等第一个 tick)
     if not enabled:
         conn.execute(
-            "INSERT INTO task_states "
-            "(task_id, state, valid_from, valid_until, reason, evidence_chunk_id, created_at) "
-            "VALUES (?, ?, ?, NULL, ?, NULL, ?)",
+            "INSERT INTO task_states (task_id, state, valid_from, valid_until, reason, evidence_chunk_id, created_at) VALUES (?, ?, ?, NULL, ?, NULL, ?)",
             (loop_id, "dormant", ts, "create disabled", ts),
         )
     return {"loop_id": loop_id, "enabled": enabled, "interval_hours": interval_hours}
-
 
 
 def loop_update(
@@ -883,8 +855,7 @@ def loop_update(
     """
     # [RF13] 排除软删 loop
     row = conn.execute(
-        "SELECT properties_json FROM entities WHERE id=? AND kind='loop' "
-        "AND valid_until IS NULL",
+        "SELECT properties_json FROM entities WHERE id=? AND kind='loop' AND valid_until IS NULL",
         (loop_id,),
     ).fetchone()
     if row is None:
@@ -929,17 +900,14 @@ def loop_update(
         # [RF14 8/6] 单 SQL CAS 关旧窗 (UPDATE WHERE active), 0 行说明并发赢家已关
         # noqa: F841 — 保留 rowcount 便于未来加 metric/log; 现行 IntegrityError 兜底已足够
         affected = conn.execute(  # noqa: F841
-            "UPDATE task_states SET valid_until = ? "
-            "WHERE task_id = ? AND valid_until IS NULL",
+            "UPDATE task_states SET valid_until = ? WHERE task_id = ? AND valid_until IS NULL",
             (ts, loop_id),
         ).rowcount
         # 即使 affected == 0 (无活动窗), 也允许 INSERT 新状态窗 (loop_create 路径
         # 同型); 不视为错误. 真并发两笔同方向 UPDATE 的赢家由 rowcount=1 区分,
         # 输家 (INSERT 已撞 ux_task_current_state) → IntegrityError 由 MCP RF8 兜底.
         conn.execute(
-            "INSERT INTO task_states "
-            "(task_id, state, valid_from, valid_until, reason, evidence_chunk_id, created_at) "
-            "VALUES (?, ?, ?, NULL, ?, NULL, ?)",
+            "INSERT INTO task_states (task_id, state, valid_from, valid_until, reason, evidence_chunk_id, created_at) VALUES (?, ?, ?, NULL, ?, NULL, ?)",
             (loop_id, new_state, ts, f"loop_update: enabled={enabled}", ts),
         )
 
@@ -980,9 +948,7 @@ def list_loops(
 
     # 1. 拉 loop entities (排除软删 — RF13 8/6)
     rows = conn.execute(
-        "SELECT id, name, properties_json FROM entities "
-        "WHERE kind='loop' AND valid_until IS NULL "
-        "ORDER BY updated_at DESC LIMIT ?",
+        "SELECT id, name, properties_json FROM entities WHERE kind='loop' AND valid_until IS NULL ORDER BY updated_at DESC LIMIT ?",
         (limit,),
     ).fetchall()
 
@@ -998,9 +964,7 @@ def list_loops(
 
         # 2. asof 当前状态 (active 窗 or 默认 'dormant' if entity disabled)
         win = conn.execute(
-            "SELECT state FROM task_states WHERE task_id=? "
-            "AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?) "
-            "ORDER BY valid_from DESC LIMIT 1",
+            "SELECT state FROM task_states WHERE task_id=? AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?) ORDER BY valid_from DESC LIMIT 1",
             (r[0], asof_ts, asof_ts),
         ).fetchone()
         current_state = win[0] if win else ("dormant" if not loop_enabled else None)
@@ -1008,16 +972,18 @@ def list_loops(
         if state is not None and current_state != state:
             continue
 
-        out.append({
-            "loop_id": r[0],
-            "name": r[1],
-            "enabled": loop_enabled,
-            "interval_hours": cfg.get("interval_hours"),
-            "current_state": current_state,
-            "active_task_id": cfg.get("active_task_id"),
-            "last_cycle_done_at": cfg.get("last_cycle_done_at"),
-            "trigger": cfg.get("trigger"),
-        })
+        out.append(
+            {
+                "loop_id": r[0],
+                "name": r[1],
+                "enabled": loop_enabled,
+                "interval_hours": cfg.get("interval_hours"),
+                "current_state": current_state,
+                "active_task_id": cfg.get("active_task_id"),
+                "last_cycle_done_at": cfg.get("last_cycle_done_at"),
+                "trigger": cfg.get("trigger"),
+            }
+        )
 
     truncated = len(rows) == limit
     return {"loops": out, "count": len(out), "truncated": truncated}
@@ -1071,6 +1037,7 @@ def list_active_tasks_and_loops(
     # [8/9 P1-yanru] stale_days_threshold fallback — None 时从 config 读
     if stale_days_threshold is None:
         from config import config as _cfg
+
         stale_days_threshold = _cfg.task_stale_days_threshold
 
     now_ts = now or _default_now()
@@ -1107,16 +1074,18 @@ def list_active_tasks_and_loops(
         is_stale = age_days >= stale_days_threshold
         if is_stale:
             stale_count += 1
-        active_tasks.append({
-            "task_id": r[0],
-            "name": r[5] if r[5] else None,
-            "state": r[1],
-            "state_valid_from": r[2],
-            "loop_id": props.get("loop_id"),
-            "age_days": round(age_days, 2),
-            "is_stale": is_stale,
-            "last_reason": r[3],
-        })
+        active_tasks.append(
+            {
+                "task_id": r[0],
+                "name": r[5] if r[5] else None,
+                "state": r[1],
+                "state_valid_from": r[2],
+                "loop_id": props.get("loop_id"),
+                "age_days": round(age_days, 2),
+                "is_stale": is_stale,
+                "last_reason": r[3],
+            }
+        )
 
     # 2. dormant loops (enabled=False, 当前状态=dormant, valid_until IS NULL)
     rows2 = conn.execute(
@@ -1143,15 +1112,17 @@ def list_active_tasks_and_loops(
             age_days = (ref_now - vf).total_seconds() / 86400.0
         except (ValueError, TypeError):
             age_days = 0.0
-        dormant_loops.append({
-            "loop_id": r[0],
-            "name": r[1],
-            "interval_hours": props.get("interval_hours"),
-            "current_state": r[3] or "dormant",
-            "age_days": round(age_days, 2),
-            "last_cycle_done_at": props.get("last_cycle_done_at"),
-            "trigger": props.get("trigger"),
-        })
+        dormant_loops.append(
+            {
+                "loop_id": r[0],
+                "name": r[1],
+                "interval_hours": props.get("interval_hours"),
+                "current_state": r[3] or "dormant",
+                "age_days": round(age_days, 2),
+                "last_cycle_done_at": props.get("last_cycle_done_at"),
+                "trigger": props.get("trigger"),
+            }
+        )
 
     truncated = len(rows) == limit or len(rows2) == limit
     return {
@@ -1164,6 +1135,7 @@ def list_active_tasks_and_loops(
         },
         "truncated": truncated,
     }
+
 
 def propose_stale_tasks(
     conn: Any,
@@ -1206,12 +1178,14 @@ def propose_stale_tasks(
     # [8/9 P1-yanru] stale_days_threshold fallback — None 时从 config 读 (必须在 M30 校验前)
     if stale_days_threshold is None:
         from config import config as _cfg
+
         stale_days_threshold = _cfg.task_stale_days_threshold
 
     if not isinstance(stale_days_threshold, int) or stale_days_threshold < 1:
         raise TaskLoopError(
             f"stale_days_threshold 必须正整数, got {stale_days_threshold!r}",
-            field="stale_days_threshold", code="InvalidThreshold",
+            field="stale_days_threshold",
+            code="InvalidThreshold",
         )
 
     import uuid as _uuid
@@ -1270,14 +1244,16 @@ def propose_stale_tasks(
         if existing:
             skipped += 1
             continue
-        proposals.append({
-            "task_id": r[0],
-            "state": state,
-            "age_days": round(age_days, 2),
-            "threshold_days": threshold,
-            "is_stale": True,
-            "last_reason": r[3],
-        })
+        proposals.append(
+            {
+                "task_id": r[0],
+                "state": state,
+                "age_days": round(age_days, 2),
+                "threshold_days": threshold,
+                "is_stale": True,
+                "last_reason": r[3],
+            }
+        )
 
     # 2. 写 audit_log Proposal
     rid = run_id or f"stuck_task-{now_ts}-{_uuid.uuid4().hex[:8]}"
@@ -1294,17 +1270,18 @@ def propose_stale_tasks(
                 "task",
                 p["task_id"],
                 None,
-                json.dumps({
-                    "state": p["state"],
-                    "age_days": p["age_days"],
-                    "threshold_days": p["threshold_days"],
-                    "proposed_at": now_ts,
-                    "prompt": (
-                        f"task {p['task_id']} 处于 {p['state']} 状态 "
-                        f"{p['age_days']:.1f} 天, 超过阈值 {p['threshold_days']} 天. "
-                        f"建议: transition 到 done / cancelled / 下一步, 或更新 reason."
-                    ),
-                }, ensure_ascii=False),
+                json.dumps(
+                    {
+                        "state": p["state"],
+                        "age_days": p["age_days"],
+                        "threshold_days": p["threshold_days"],
+                        "proposed_at": now_ts,
+                        "prompt": (
+                            f"task {p['task_id']} 处于 {p['state']} 状态 {p['age_days']:.1f} 天, 超过阈值 {p['threshold_days']} 天. 建议: transition 到 done / cancelled / 下一步, 或更新 reason."
+                        ),
+                    },
+                    ensure_ascii=False,
+                ),
                 0.7,
                 "proposed",
                 now_ts,
@@ -1360,13 +1337,15 @@ def apply_stale_proposal(
             conn.execute("ROLLBACK")
             raise TaskLoopError(
                 f"proposal_id={proposal_id} 不存在",
-                field="proposal_id", code="ProposalNotFound",
+                field="proposal_id",
+                code="ProposalNotFound",
             )
         if row[1] != "stuck_task":
             conn.execute("ROLLBACK")
             raise TaskLoopError(
                 f"proposal_id={proposal_id} 不是 stuck_task Proposal (pass_name={row[1]})",
-                field="proposal_id", code="ProposalMismatch",
+                field="proposal_id",
+                code="ProposalMismatch",
             )
         # [M5.2 fix] 校验是否已 applied — 同 ref_id 已有 stale_resolved 行
         resolved = conn.execute(
@@ -1379,7 +1358,8 @@ def apply_stale_proposal(
             conn.execute("ROLLBACK")
             raise TaskLoopError(
                 f"ref_id={row[3]} 已被 applied (resolved_id={resolved[0]}), 不能重复",
-                field="proposal_id", code="ProposalAlreadyResolved",
+                field="proposal_id",
+                code="ProposalAlreadyResolved",
             )
         # [M5.2 fix] UNIQUE(run_id, pass_name, action_type, ref_id, status) 约束
         # run_id 跟原 Proposal 不同 (含 proposal_id 区分), status='applied' 跟原
@@ -1449,12 +1429,14 @@ def list_stale_proposals(
     if status not in ("proposed", "applied", "reverted", "all"):
         raise TaskLoopError(
             f"status {status!r} 不在白名单 (proposed/applied/reverted/all)",
-            field="status", code="InvalidStatusError",
+            field="status",
+            code="InvalidStatusError",
         )
     if not isinstance(limit, int) or limit < 1 or limit > 1000:
         raise TaskLoopError(
             f"limit 必须 1-1000 整数, got {limit!r}",
-            field="limit", code="InvalidLimitError",
+            field="limit",
+            code="InvalidLimitError",
         )
     if status == "proposed":
         # 排除已 resolved (有 stale_resolved 行的 ref_id)
@@ -1494,17 +1476,18 @@ def list_stale_proposals(
             after = json.loads(r[4]) if r[4] else None
         except (ValueError, TypeError):
             after = None
-        proposals.append({
-            "id": r[0],
-            "run_id": r[1],
-            "action_type": r[2],
-            "ref_id": r[3],
-            "after_json": after,
-            "status": r[5],
-            "created_at": r[6],
-        })
+        proposals.append(
+            {
+                "id": r[0],
+                "run_id": r[1],
+                "action_type": r[2],
+                "ref_id": r[3],
+                "after_json": after,
+                "status": r[5],
+                "created_at": r[6],
+            }
+        )
     return {"proposals": proposals, "count": len(proposals)}
-
 
 
 # [M30.3 fix] digest block 4 输出上限 — DESIGN §4.4 + README 契约: digest
@@ -1610,13 +1593,15 @@ def forget_task(
         TaskLoopError: task_id 不存在 / 已经是 valid_until IS NOT NULL / reason 缺失.
     """
     import uuid as _uuid
+
     # [M35.1 fix] reason isinstance(str) 守卫 - 非 str 类型 (e.g. int 12345)
     # 旧实现 .strip() 抛 AttributeError, 未收敛到 TaskLoopError. M34 给 limit
     # 加了 isinstance 守卫, M33 reason 校验未加, 两批「API 边界」风格不一.
     if not isinstance(reason, str):
         raise TaskLoopError(
             f"reason 必须 str 类型, got {type(reason).__name__}",
-            field="reason", code="InvalidReasonTypeError",
+            field="reason",
+            code="InvalidReasonTypeError",
         )
     # [M33.2 fix] 强校验 reason: 必填 + 去前后空白 + min length 5 (审计可读).
     # 旧 `if not reason` 接受 ' ' (空格) 当真, audit trace 后人看不懂.
@@ -1624,12 +1609,14 @@ def forget_task(
     if not reason_clean:
         raise TaskLoopError(
             "forget_task 必须提供非空 reason (D8 显式纠正门)",
-            field="reason", code="ReasonRequiredError",
+            field="reason",
+            code="ReasonRequiredError",
         )
     if len(reason_clean) < 5:
         raise TaskLoopError(
             f"forget_task reason 长度需 >=5 字符 (审计可读), got {len(reason_clean)}",
-            field="reason", code="ReasonTooShortError",
+            field="reason",
+            code="ReasonTooShortError",
         )
     now_ts = now or _default_now()
 
@@ -1648,14 +1635,16 @@ def forget_task(
             conn.execute("ROLLBACK")
             raise TaskLoopError(
                 f"task_id={task_id} 不存在或已软删",
-                field="task_id", code="TaskNotFoundError",
+                field="task_id",
+                code="TaskNotFoundError",
             )
         # [8/6 M28 fix] row[0] 是 valid_until 列; 若已非 NULL, 重复 forget 应抛错.
         if row[0] is not None:
             conn.execute("ROLLBACK")
             raise TaskLoopError(
                 f"task_id={task_id} 已于 {row[0]} 软删, 重复 forget 拒绝",
-                field="task_id", code="TaskAlreadyForgotten",
+                field="task_id",
+                code="TaskAlreadyForgotten",
             )
 
         # 2. 关闭 task_states 当前行
@@ -1740,23 +1729,27 @@ def forget_loop(
         {"loop_id", "forgotten_at", "run_id", "rows_invalidated"}
     """
     import uuid as _uuid
+
     # [M35.1 fix] reason isinstance(str) 守卫 — 跟 forget_task 同, API 边界一致.
     if not isinstance(reason, str):
         raise TaskLoopError(
             f"reason 必须 str 类型, got {type(reason).__name__}",
-            field="reason", code="InvalidReasonTypeError",
+            field="reason",
+            code="InvalidReasonTypeError",
         )
     # [M33.2 fix] reason 强校验 — strip + 非空 + min length 5.
     reason_clean = reason.strip() if reason else ""
     if not reason_clean:
         raise TaskLoopError(
             "forget_loop 必须提供非空 reason (D8 显式纠正门)",
-            field="reason", code="ReasonRequiredError",
+            field="reason",
+            code="ReasonRequiredError",
         )
     if len(reason_clean) < 5:
         raise TaskLoopError(
             f"forget_loop reason 长度需 >=5 字符 (审计可读), got {len(reason_clean)}",
-            field="reason", code="ReasonTooShortError",
+            field="reason",
+            code="ReasonTooShortError",
         )
     now_ts = now or _default_now()
     # [M33.1 fix] BEGIN IMMEDIATE 事务 — check + UPDATE 原子化, 跟 forget_task 同.
@@ -1770,13 +1763,15 @@ def forget_loop(
             conn.execute("ROLLBACK")
             raise TaskLoopError(
                 f"loop_id={loop_id} 不存在或已软删",
-                field="loop_id", code="LoopNotFoundError",
+                field="loop_id",
+                code="LoopNotFoundError",
             )
         if row[0] is not None:
             conn.execute("ROLLBACK")
             raise TaskLoopError(
                 f"loop_id={loop_id} 已于 {row[0]} 软删, 重复 forget 拒绝",
-                field="loop_id", code="LoopAlreadyForgotten",
+                field="loop_id",
+                code="LoopAlreadyForgotten",
             )
 
         # 关闭 task_states 当前行 (loop 用 task_states 记录 enabled/dormant)

@@ -7,6 +7,7 @@
 
 [§4 A6 验收] sqlite_vec → usearch 切换后跑此脚本, recall 命中率恢复.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -29,9 +30,7 @@ from config import config as _config  # noqa: E402
 
 def _iter_chunks(conn):
     """遍历所有 valid chunks (valid_until IS NULL), yield (chunk_id, content)."""
-    rows = conn.execute(
-        "SELECT id, content FROM chunks WHERE valid_until IS NULL"
-    ).fetchall()
+    rows = conn.execute("SELECT id, content FROM chunks WHERE valid_until IS NULL").fetchall()
     for r in rows:
         yield r["id"], r["content"]
 
@@ -47,6 +46,7 @@ def _unlink_existing_index_files(db_path: Path) -> dict:
     [8/6 fix] zvec 0.6 collection 是目录不是文件, 用 shutil.rmtree 替代 unlink.
     """
     import shutil
+
     removed = []
     # usearch: 单文件 .index
     p_usearch = db_path.parent / "usearch.index"
@@ -118,12 +118,9 @@ def rebuild(backend: str, db_path: Path, dry_run: bool = False, fresh: bool = Fa
 
 def main():
     ap = argparse.ArgumentParser(description="Rebuild mnelo search index (后端感知 usearch/zvec)")
-    ap.add_argument("--backend", default="auto",
-                    choices=["auto", "usearch", "zvec"],
-                    help="目标后端 (默认 auto: zvec > usearch; 都不可用 RuntimeError)")
+    ap.add_argument("--backend", default="auto", choices=["auto", "usearch", "zvec"], help="目标后端 (默认 auto: zvec > usearch; 都不可用 RuntimeError)")
     ap.add_argument("--dry-run", action="store_true", help="只统计, 不真正重建")
-    ap.add_argument("--fresh", action="store_true",
-                    help="先 unlink 旧索引文件 (usearch.index / search_index.zv), 全新重建")
+    ap.add_argument("--fresh", action="store_true", help="先 unlink 旧索引文件 (usearch.index / search_index.zv), 全新重建")
     ap.add_argument("--db", default=None, help="db 路径 (默认从 config 解析)")
     args = ap.parse_args()
 

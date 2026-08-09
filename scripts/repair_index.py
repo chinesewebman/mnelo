@@ -15,6 +15,7 @@ repair 语义是"清孤儿", 不该顺带重建.
 
 usage: python scripts/repair_index.py [--backend usearch|zvec|auto] [--dry-run]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,8 +27,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from search_index import (  # noqa: E402
-    UsearchIndex, ZvecIndex,
-    build_search_index, usearch_available, zvec_available,
+    UsearchIndex,
+    ZvecIndex,
+    build_search_index,
+    usearch_available,
+    zvec_available,
 )
 from config import config as _config  # noqa: E402
 
@@ -69,6 +73,7 @@ def _probe_usearch_dim(db_path: Path) -> int:
         return 512
     try:
         from usearch.index import Index
+
         dims = Index.metadata(idx_path).get("dimensions")
         if dims is not None:
             return int(dims)
@@ -93,14 +98,11 @@ def repair(backend: str, db_path: Path, dry_run: bool = False) -> dict:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         # 取所有活跃 chunk_id
-        alive = set(
-            r[0] for r in conn.execute(
-                "SELECT id FROM chunks WHERE valid_until IS NULL"
-            )
-        )
+        alive = set(r[0] for r in conn.execute("SELECT id FROM chunks WHERE valid_until IS NULL"))
         if isinstance(idx, UsearchIndex):
             rowids = _iter_index_ids_usearch(idx)
             import numpy as _np
+
             for rid in rowids:
                 row = conn.execute(
                     "SELECT id FROM chunks WHERE rowid = ? AND valid_until IS NULL",
@@ -136,9 +138,7 @@ def repair(backend: str, db_path: Path, dry_run: bool = False) -> dict:
 
 def main():
     ap = argparse.ArgumentParser(description="Repair mnelo search index (orphan vector cleanup). [8/6] 后端感知 (usearch/zvec).")
-    ap.add_argument("--backend", default="auto",
-                    choices=["auto", "usearch", "zvec"],
-                    help="目标后端 (默认 auto: zvec > usearch; 都不可用 RuntimeError)")
+    ap.add_argument("--backend", default="auto", choices=["auto", "usearch", "zvec"], help="目标后端 (默认 auto: zvec > usearch; 都不可用 RuntimeError)")
     ap.add_argument("--dry-run", action="store_true", help="只报数, 不真删")
     ap.add_argument("--db", default=None, help="db 路径 (默认从 config 解析)")
     args = ap.parse_args()

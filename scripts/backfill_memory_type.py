@@ -17,6 +17,7 @@ DESIGN §5.2 P1a + TASKS_L2_EXTRACT §E5:
 - 强标记命中才改; 无命中保持 fact
 - 显式 fact 也是'fact', 不会被规则覆盖 (尊重原值)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -100,8 +101,8 @@ def run(dry_run: bool, limit: int | None, reclassify: bool = False) -> None:
         print(f"    {t}: {n}")
     will_change = len(changes)
     will_stay = len(candidates) - will_change
-    print(f"    will_change: {will_change} ({will_change*100/len(candidates):.1f}%)")
-    print(f"    will_stay:   {will_stay} ({will_stay*100/len(candidates):.1f}%)")
+    print(f"    will_change: {will_change} ({will_change * 100 / len(candidates):.1f}%)")
+    print(f"    will_stay:   {will_stay} ({will_stay * 100 / len(candidates):.1f}%)")
 
     if dry_run:
         print()
@@ -122,9 +123,7 @@ def run(dry_run: bool, limit: int | None, reclassify: bool = False) -> None:
     # 验证: 跑后分布
     print()
     print("[4] 跑后 memory_type 分布:")
-    for r in con.execute(
-        "SELECT memory_type, COUNT(*) FROM chunks WHERE valid_until IS NULL GROUP BY memory_type ORDER BY 2 DESC"
-    ).fetchall():
+    for r in con.execute("SELECT memory_type, COUNT(*) FROM chunks WHERE valid_until IS NULL GROUP BY memory_type ORDER BY 2 DESC").fetchall():
         print(f"    {r[0]}: {r[1]}")
 
     con.close()
@@ -137,15 +136,19 @@ def main():
         description="[P1a E5 v0.2] 回填存量 chunks 的 memory_type (确定性规则, 无 LLM)",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="只报数, 不 UPDATE (默认 False)",
     )
     parser.add_argument(
-        "--limit", type=int, default=None,
+        "--limit",
+        type=int,
+        default=None,
         help="限制回填数量 (默认无限制, 全表)",
     )
     parser.add_argument(
-        "--reclassify", action="store_true",
+        "--reclassify",
+        action="store_true",
         help="[v0.2] 回填所有非 fact chunk (还原 v0.1 误标)",
     )
     args = parser.parse_args()

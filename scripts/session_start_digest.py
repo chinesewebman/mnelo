@@ -59,10 +59,9 @@ def _bootstrap_venv() -> bool:
         os.execve(str(vp), [str(vp), str(Path(__file__).resolve())] + sys.argv[1:], env)
     return False  # 无 venv → 走主流程, 由调用方容错
 
+
 # 摘要开关: MNELO_MEMORY_DIGEST_ENABLED=false 时静默 (与 config [digest] 一致)
-_DIGEST_ENABLED = os.environ.get("MNELO_MEMORY_DIGEST_ENABLED", "true").lower() not in (
-    "false", "0", "no", "off"
-)
+_DIGEST_ENABLED = os.environ.get("MNELO_MEMORY_DIGEST_ENABLED", "true").lower() not in ("false", "0", "no", "off")
 
 
 def main() -> int:
@@ -72,11 +71,11 @@ def main() -> int:
         return 0  # 已 re-exec, 不会到这
     try:
         from mnelo_client import MneloClient, DEFAULT_MCP_URL
+
         # [8/8] 默认走 streamable-http /mcp (新 transport)。覆盖优先级:
         # MNELO_MEMORY_URL (新) > MNELO_MEMORY_SSE_URL (旧, 测试注入死端口用)。
         # URL 含 /sse 时 client 自动回落 sse transport (向后兼容)。
-        url = os.environ.get("MNELO_MEMORY_URL") \
-            or os.environ.get("MNELO_MEMORY_SSE_URL") or DEFAULT_MCP_URL
+        url = os.environ.get("MNELO_MEMORY_URL") or os.environ.get("MNELO_MEMORY_SSE_URL") or DEFAULT_MCP_URL
 
         # 容错路径要真正静默: mnelo_client 在 import 时 setLevel(INFO)+挂 handler,
         # 必须在 import 之后压制 — mnelo 未跑时它会打 ERROR 日志, 对 SessionStart

@@ -38,9 +38,11 @@ logger = logging.getLogger("mnelo.index")
 # 统一命中结构
 # ============================================================
 
+
 @dataclass
 class KNNHit:
     """向量召回命中 — chunk_id 是唯一标识 (与后端解耦)."""
+
     chunk_id: str
     distance: float
 
@@ -48,6 +50,7 @@ class KNNHit:
 # ============================================================
 # SearchIndex 抽象
 # ============================================================
+
 
 class SearchIndex(ABC):
     """向量索引抽象. 写入 (add/remove) + KNN + 后端感知孤儿清理 + size/contains."""
@@ -118,6 +121,7 @@ class SearchIndex(ABC):
 # zvec 后端
 # ============================================================
 
+
 class ZvecIndex(SearchIndex):
     """zvec 后端 — 进程内嵌向量库 (DESIGN §8.3 升级档).
 
@@ -157,15 +161,12 @@ class ZvecIndex(SearchIndex):
         schema = zv.CollectionSchema(
             name=self.collection_path.stem,
             fields=[
-                zv.FieldSchema(name="content", data_type=zv.DataType.STRING,
-                               index_param=zv.FtsIndexParam(tokenizer_name="jieba")),
+                zv.FieldSchema(name="content", data_type=zv.DataType.STRING, index_param=zv.FtsIndexParam(tokenizer_name="jieba")),
                 zv.FieldSchema(name="memory_type", data_type=zv.DataType.STRING),
                 zv.FieldSchema(name="source", data_type=zv.DataType.STRING),
             ],
             vectors=[
-                zv.VectorSchema(name="embedding", data_type=zv.DataType.VECTOR_FP32,
-                                dimension=self.dim,
-                                index_param=zv.HnswIndexParam()),
+                zv.VectorSchema(name="embedding", data_type=zv.DataType.VECTOR_FP32, dimension=self.dim, index_param=zv.HnswIndexParam()),
             ],
         )
         return schema
@@ -182,9 +183,7 @@ class ZvecIndex(SearchIndex):
         # query_bytes 是 float32 序列化; zvec 接受 python list[float]
         vec = _deserialize_f32(query_bytes)
         zv = self._zvec
-        docs = self._col.query(
-            zv.Query(field_name="embedding", vector=vec, param=zv.HnswQueryParam(ef=top_k * 2))
-        )
+        docs = self._col.query(zv.Query(field_name="embedding", vector=vec, param=zv.HnswQueryParam(ef=top_k * 2)))
         hits = []
         for d in docs[:top_k]:
             # [8/6 fix] zvec doc id = chunks.rowid (int, 生产路径). 翻译回 chunk_id via SQLite.
@@ -192,9 +191,7 @@ class ZvecIndex(SearchIndex):
             try:
                 zvec_doc_id = int(d.id)
                 if conn is not None:
-                    row = conn.execute(
-                        "SELECT id FROM chunks WHERE rowid = ?", (zvec_doc_id,)
-                    ).fetchone()
+                    row = conn.execute("SELECT id FROM chunks WHERE rowid = ?", (zvec_doc_id,)).fetchone()
                     if row is None:
                         continue
                     chunk_id = row[0]
@@ -207,8 +204,7 @@ class ZvecIndex(SearchIndex):
             hits.append(KNNHit(chunk_id=chunk_id, distance=float(d.score)))
         return hits
 
-    def add(self, chunk_id: str, vector_bytes: bytes, conn=None, content: Optional[str] = None,
-            memory_type: str = "", source: str = "") -> None:
+    def add(self, chunk_id: str, vector_bytes: bytes, conn=None, content: Optional[str] = None, memory_type: str = "", source: str = "") -> None:
         zv = self._zvec
         # [8/6 fix] zvec 0.6 schema 所有 STRING 字段 nullable=False (default), 必传.
         if (not content or not memory_type or not source) and conn is not None:
@@ -342,9 +338,7 @@ class ZvecIndex(SearchIndex):
                 result["truly_orphan_cleaned"] += 1
                 to_delete.append(zvec_id)
                 continue
-            row = conn.execute(
-                "SELECT valid_until FROM chunks WHERE rowid = ?", (rowid_int,)
-            ).fetchone()
+            row = conn.execute("SELECT valid_until FROM chunks WHERE rowid = ?", (rowid_int,)).fetchone()
             if row is None:
                 result["truly_orphan_cleaned"] += 1
                 to_delete.append(zvec_id)
@@ -380,6 +374,7 @@ def _deserialize_f32(data: bytes) -> List[float]:
 # usearch 后端 (硬件无关 HNSW — TASKS_SEARCH_INDEX §4 A1/A2)
 # ============================================================
 
+
 def usearch_available() -> bool:
     """[A1 §4] 进程内检测 usearch — 旧 CPU 不崩 (已实测), 只有 ImportError 可能.
 
@@ -387,6 +382,7 @@ def usearch_available() -> bool:
     """
     try:
         import usearch  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -422,6 +418,7 @@ class UsearchIndex(SearchIndex):
         self._conn.row_factory = sqlite3.Row
         # usearch 索引: 已存在则 load, 否则新建
         from usearch.index import Index
+
         self._index = Index(ndim=dim, metric="cos", dtype="f16")
         # [8/6 M38 harden] 运行时断言 - 必须 f16, 防未来 PR 不慎改 dtype.
         # usearch 2.x dtype 在 Index.dtype 属性上返 ScalarKind 枚举 (eg
@@ -435,10 +432,7 @@ class UsearchIndex(SearchIndex):
             else str(actual_dtype)
         )
         if actual_dtype_name.upper() != "F16":
-            raise RuntimeError(
-                f"UsearchIndex 必须 f16 (主人口中 8/6 锁定), got dtype={actual_dtype_name!r}. "
-                "改 dtype 之前请先走 design review + RUNBOOK §usearch-f16 章节."
-            )
+            raise RuntimeError(f"UsearchIndex 必须 f16 (主人口中 8/6 锁定), got dtype={actual_dtype_name!r}. 改 dtype 之前请先走 design review + RUNBOOK §usearch-f16 章节.")
         # [8/8 根因修复] 不再盲 load on-disk 索引 — 原生 load 前先读文件头预检
         # (损坏/错 dtype 抛干净 ValueError, 不触发原生图 load), 再用 sidecar 指纹
         # 比对 SQLite (唯一事实源) 判定 stale; 任一不过 → 自动重建. 由此启动永不因
@@ -455,6 +449,7 @@ class UsearchIndex(SearchIndex):
 
     def knn(self, query_bytes: bytes, top_k: int, conn=None) -> List[KNNHit]:
         import numpy as np
+
         vec = np.frombuffer(query_bytes, dtype=np.float32)
         if vec.ndim == 1:
             vec = vec.reshape(1, -1)
@@ -462,15 +457,14 @@ class UsearchIndex(SearchIndex):
         c = conn or self._conn
         hits: List[KNNHit] = []
         for uid, dist in zip(res.keys, res.distances):
-            row = c.execute(
-                "SELECT id FROM chunks WHERE rowid = ?", (int(uid),)
-            ).fetchone()
+            row = c.execute("SELECT id FROM chunks WHERE rowid = ?", (int(uid),)).fetchone()
             if row:
                 hits.append(KNNHit(chunk_id=row["id"], distance=float(dist)))
         return hits
 
     def add(self, chunk_id: str, vector_bytes: bytes, conn=None, content: Optional[str] = None) -> None:
         import numpy as np
+
         c = conn or self._conn
         row = c.execute("SELECT rowid FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
         if not row:
@@ -504,6 +498,7 @@ class UsearchIndex(SearchIndex):
 
     def remove(self, chunk_id: str, conn=None) -> None:
         import numpy as np
+
         c = conn or self._conn
         row = c.execute("SELECT rowid FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
         if row:
@@ -540,6 +535,7 @@ class UsearchIndex(SearchIndex):
         非 dry-run 时 remove. 不 save — 落盘交给 close().
         """
         import numpy as np
+
         result = {
             "soft_deleted_cleaned": 0,
             "truly_orphan_cleaned": 0,
@@ -550,9 +546,7 @@ class UsearchIndex(SearchIndex):
         rowids: List[int] = list(self._index.keys)
         to_remove: List[int] = []
         for rid in rowids:
-            row = c.execute(
-                "SELECT valid_until FROM chunks WHERE rowid = ?", (rid,)
-            ).fetchone()
+            row = c.execute("SELECT valid_until FROM chunks WHERE rowid = ?", (rid,)).fetchone()
             if row is None:
                 result["truly_orphan_cleaned"] += 1
                 to_remove.append(rid)
@@ -614,6 +608,7 @@ class UsearchIndex(SearchIndex):
         """Index.metadata 只解析 usearch 文件头: 损坏/截断/垃圾 → 干净 ValueError
         (不会原生 abort). 返回问题列表, 空 = 头部可信, 可安全 load."""
         from usearch.index import Index
+
         try:
             meta = Index.metadata(self._index_path)
         except ValueError as e:
@@ -635,6 +630,7 @@ class UsearchIndex(SearchIndex):
         if side is not None:
             return side != self._chunk_set_signature()
         from usearch.index import Index
+
         try:
             meta = Index.metadata(self._index_path)
             return meta.get("count_present") != len(self._active_chunks())
@@ -645,25 +641,23 @@ class UsearchIndex(SearchIndex):
         """active chunk id 列表 (SQLite 是唯一事实源). chunks 表不存在 → []."""
         if not self._chunks_table_exists():
             return []
-        return [r["id"] for r in self._conn.execute(
-            "SELECT id FROM chunks WHERE valid_until IS NULL ORDER BY id"
-        )]
+        return [r["id"] for r in self._conn.execute("SELECT id FROM chunks WHERE valid_until IS NULL ORDER BY id")]
 
     def _chunks_table_exists(self) -> bool:
-        row = self._conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks'"
-        ).fetchone()
+        row = self._conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chunks'").fetchone()
         return bool(row)
 
     def _chunk_set_signature(self) -> str:
         """active chunk 集合稳定签名 = md5(排序 id 拼接 + 总数)."""
         import hashlib
+
         ids = self._active_chunks()
         return hashlib.md5(("|".join(ids) + f"|{len(ids)}").encode("utf-8")).hexdigest()
 
     def _read_sidecar(self) -> Optional[str]:
         try:
             import json
+
             return str(json.loads(self._meta_path.read_text(encoding="utf-8")).get("signature"))
         except Exception:
             return None
@@ -671,6 +665,7 @@ class UsearchIndex(SearchIndex):
     def _write_sidecar(self) -> None:
         import json
         import time as _t
+
         data = {
             "signature": self._chunk_set_signature(),
             "dtype": "f16",
@@ -686,33 +681,29 @@ class UsearchIndex(SearchIndex):
         Index + 全量重嵌入 active chunks, 落盘 + 写 sidecar. 重建不可能
         (无 chunks 表 / embedder 挂 / 全 0 向量) → 抛 RuntimeError 手动兜底."""
         import time as _t
+
         logger.warning(f"[usearch] 索引 {self._index_path} 预检不过 → 自动重建. 原因: {'; '.join(reasons)}")
         if self._index_path.exists():
             # with_suffix 会把 ".index" 当后缀替换掉 → 必须用 with_name 追加保留原名
-            backup = self._index_path.with_name(
-                self._index_path.name + f".corrupt-{_t.strftime('%Y%m%d_%H%M%S')}"
-            )
+            backup = self._index_path.with_name(self._index_path.name + f".corrupt-{_t.strftime('%Y%m%d_%H%M%S')}")
             try:
                 self._index_path.rename(backup)
                 logger.warning(f"[usearch] 坏索引已备份 → {backup}")
             except OSError as e:
                 logger.warning(f"[usearch] 备份坏索引失败 {e} — 直接覆盖重建")
         from usearch.index import Index
+
         self._index = Index(ndim=self.dim, metric="cos", dtype="f16")
         try:
             from embedder import embed
         except ImportError as e:
-            raise RuntimeError(
-                f"[usearch] 自动重建需要 embedder 但 import 失败 ({e}). "
-                "请手动: scripts/rebuild_index.py --backend usearch --fresh"
-            ) from e
+            raise RuntimeError(f"[usearch] 自动重建需要 embedder 但 import 失败 ({e}). 请手动: scripts/rebuild_index.py --backend usearch --fresh") from e
         import struct
+
         added, failed = 0, 0
         active = self._active_chunks()
         for cid in active:
-            row = self._conn.execute(
-                "SELECT content FROM chunks WHERE id = ?", (cid,)
-            ).fetchone()
+            row = self._conn.execute("SELECT content FROM chunks WHERE id = ?", (cid,)).fetchone()
             if row is None:
                 continue
             try:
@@ -723,10 +714,7 @@ class UsearchIndex(SearchIndex):
                 logger.warning(f"[usearch] 重建嵌入失败 {cid}: {e}")
                 failed += 1
         if active and added == 0:
-            raise RuntimeError(
-                f"[usearch] 自动重建 0/{len(active)} 向量 — embedder 或 DB 异常. "
-                "请手动: scripts/rebuild_index.py --backend usearch --fresh"
-            )
+            raise RuntimeError(f"[usearch] 自动重建 0/{len(active)} 向量 — embedder 或 DB 异常. 请手动: scripts/rebuild_index.py --backend usearch --fresh")
         self._index.save(self._index_path)
         self._write_sidecar()
         if failed:
@@ -738,6 +726,7 @@ class UsearchIndex(SearchIndex):
 # ============================================================
 # 工厂 + 特性检测
 # ============================================================
+
 
 def _cpu_has_avx2() -> Optional[bool]:
     """探测当前 CPU 是否支持 AVX2 (zvec 0.6 原生扩展的硬性要求).
@@ -755,9 +744,12 @@ def _cpu_has_avx2() -> Optional[bool]:
             return None  # /proc/cpuinfo 无 flags 行 (异常环境)
         if sys.platform == "darwin":
             import subprocess
+
             out = subprocess.run(
                 ["sysctl", "-n", "machdep.cpu.leaf7_features"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if out.returncode == 0 and out.stdout.strip():
                 return "avx2" in out.stdout.lower()
@@ -785,6 +777,7 @@ def zvec_available() -> bool:
         return False
     try:
         import zvec  # noqa: F401
+
         return True
     except Exception as e:
         logger.warning(f"[zvec_available] main-process import failed: {type(e).__name__}: {e}")
@@ -800,23 +793,15 @@ def _pick_backend(requested: str, db_path: Path, dim: int) -> SearchIndex:
         if usearch_available():
             logger.info("[search_index] auto: zvec 未装, 用 usearch (f16)")
             return UsearchIndex(db_path, dim)
-        raise RuntimeError(
-            "向量库是必选依赖 — zvec 与 usearch 均不可用. "
-            "请 `pip install usearch>=2.26` 或 `pip install zvec`."
-        )
+        raise RuntimeError("向量库是必选依赖 — zvec 与 usearch 均不可用. 请 `pip install usearch>=2.26` 或 `pip install zvec`.")
     if requested == "zvec":
         if zvec_available():
             return ZvecIndex(db_path.parent / "search_index.zv", dim)
-        raise RuntimeError(
-            "zvec 不可用 (本机可能缺 AVX2+ 指令). "
-            "改 'auto' 让 mnelo 回落 usearch, 或换支持 zvec 的部署机."
-        )
+        raise RuntimeError("zvec 不可用 (本机可能缺 AVX2+ 指令). 改 'auto' 让 mnelo 回落 usearch, 或换支持 zvec 的部署机.")
     if requested == "usearch":
         if usearch_available():
             return UsearchIndex(db_path, dim)
-        raise RuntimeError(
-            "usearch 未安装. `pip install 'usearch>=2.26'` 或改 'auto' 试 zvec."
-        )
+        raise RuntimeError("usearch 未安装. `pip install 'usearch>=2.26'` 或改 'auto' 试 zvec.")
     logger.warning(f"[search_index] 未知 backend '{requested}', fallback 到 auto")
     return _pick_backend("auto", db_path, dim)
 

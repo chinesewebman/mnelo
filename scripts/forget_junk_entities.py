@@ -27,6 +27,7 @@ forget_junk_entities.py — 批量 soft-delete HonchoImporter 噪声 entity.
 只覆盖 UPDATE 风格, 这条路径没钉住. 整改建议: 在 tests/ 加 forget_junk
 undo 端到端 (隔离 DB + forget_one + audit_undo + 验证 valid_until=NULL).
 """
+
 import argparse
 import os
 import sqlite3
@@ -45,6 +46,7 @@ DB_PATH = Path(_config.db_path)
 def now_iso() -> str:
     """memory.py 里 now() 的简化版本, ISO8601 + tz."""
     from datetime import datetime, timezone
+
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -53,8 +55,7 @@ def list_junk(conn: sqlite3.Connection, pattern: str, limit: int | None) -> list
     实际 schema: id='anno:mentions:CLI', name='CLI'. name LIKE 'anno:%' = 0 匹配.
     """
     rows = conn.execute(
-        "SELECT id, name FROM entities "
-        "WHERE kind='concept' AND valid_until IS NULL AND id LIKE ?",
+        "SELECT id, name FROM entities WHERE kind='concept' AND valid_until IS NULL AND id LIKE ?",
         (pattern + "%",),
     ).fetchall()
     if limit:
@@ -71,49 +72,49 @@ def forget_one(conn: sqlite3.Connection, eid: str, reason: str) -> tuple[int, in
     # [8/9 review B8 fix] 在 UPDATE 前 SELECT 完整 entity 行, 存 before_json.
     # 原代码 before_json=None → memory_audit_undo 读 revert_sql 为空 → ValueError.
     before_row = conn.execute(
-        "SELECT id, kind, name, summary, properties_json, aliases_json, "
-        "source, importance, user_confirmed, created_at, valid_from "
-        "FROM entities WHERE id = ? AND valid_until IS NULL",
+        "SELECT id, kind, name, summary, properties_json, aliases_json, source, importance, user_confirmed, created_at, valid_from FROM entities WHERE id = ? AND valid_until IS NULL",
         (eid,),
     ).fetchone()
     if before_row is None:
         return (0, 0)
     import json as _json
-    before_json = _json.dumps({
-        "id": before_row[0],
-        "kind": before_row[1],
-        "name": before_row[2],
-        "summary": before_row[3],
-        "properties_json": before_row[4],
-        "aliases_json": before_row[5],
-        "source": before_row[6],
-        "importance": before_row[7],
-        "user_confirmed": before_row[8],
-        "created_at": before_row[9],
-        "valid_from": before_row[10],
-    }, ensure_ascii=False)
+
+    before_json = _json.dumps(
+        {
+            "id": before_row[0],
+            "kind": before_row[1],
+            "name": before_row[2],
+            "summary": before_row[3],
+            "properties_json": before_row[4],
+            "aliases_json": before_row[5],
+            "source": before_row[6],
+            "importance": before_row[7],
+            "user_confirmed": before_row[8],
+            "created_at": before_row[9],
+            "valid_from": before_row[10],
+        },
+        ensure_ascii=False,
+    )
     cur = conn.execute(
-        "UPDATE entities SET valid_until = ? "
-        "WHERE id = ? AND valid_until IS NULL",
+        "UPDATE entities SET valid_until = ? WHERE id = ? AND valid_until IS NULL",
         (ts, eid),
     )
     updated = cur.rowcount
     if updated == 0:
         return (0, 0)
     cur = conn.execute(
-        "UPDATE relations SET valid_until = ? "
-        "WHERE (source_id = ? OR target_id = ?) AND valid_until IS NULL",
+        "UPDATE relations SET valid_until = ? WHERE (source_id = ? OR target_id = ?) AND valid_until IS NULL",
         (ts, eid, eid),
     )
     edges = cur.rowcount
     conn.execute(
-        "INSERT INTO purged_queue (target_id, target_kind, purged_at, done) "
-        "VALUES (?, 'entity', datetime('now', '+30 days'), 0)",
+        "INSERT INTO purged_queue (target_id, target_kind, purged_at, done) VALUES (?, 'entity', datetime('now', '+30 days'), 0)",
         (eid,),
     )
     # 写 audit_log (跟 L2 hygiene pass 同结构, status='applied').
     # before_json 是 entity 完整快照, undo 走 memory_audit_undo 还原.
     import uuid
+
     run_id = f"junk_forget_{uuid.uuid4().hex[:8]}_{int(time.time())}"
     # [8/10 主人验证报告 fix] revert_sql 用 UPDATE 风格 (还原 valid_until=NULL),
     # 不是 INSERT OR IGNORE. 原因是 forget_one 是软删 (原行 valid_until 非空),
@@ -129,9 +130,7 @@ def forget_one(conn: sqlite3.Connection, eid: str, reason: str) -> tuple[int, in
         f"AND valid_until = {_json.dumps(ts)};"
     )
     conn.execute(
-        "INSERT INTO audit_log (run_id, pass_name, action_type, ref_type, ref_id, "
-        "before_json, after_json, llm_used, status, created_at, revert_sql) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'applied', ?, ?)",
+        "INSERT INTO audit_log (run_id, pass_name, action_type, ref_type, ref_id, before_json, after_json, llm_used, status, created_at, revert_sql) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'applied', ?, ?)",
         (
             run_id,
             "manual_junk_forget",
@@ -189,12 +188,10 @@ def main():
             print(f"[forget_junk] FAILED {eid}: {exc}")
         if i % BATCH == 0:
             conn.commit()
-            print(f"[forget_junk] progress: {i}/{len(targets)} "
-                  f"({total_updated} entities, {total_edges} edges, {failed} failed)")
+            print(f"[forget_junk] progress: {i}/{len(targets)} ({total_updated} entities, {total_edges} edges, {failed} failed)")
     conn.commit()
     elapsed = time.time() - t0
-    print(f"[forget_junk] DONE: {total_updated}/{len(targets)} forgotten, "
-          f"{total_edges} edges invalidated, {failed} failed, {elapsed:.1f}s")
+    print(f"[forget_junk] DONE: {total_updated}/{len(targets)} forgotten, {total_edges} edges invalidated, {failed} failed, {elapsed:.1f}s")
     conn.close()
 
 

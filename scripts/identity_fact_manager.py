@@ -233,16 +233,14 @@ class IdentityFactManager:
             )
             # Now reactivate old row with updated values + new valid_from
             self.m._conn.execute(
-                "UPDATE entities SET valid_until = NULL, valid_from = ?, "
-                "name = ?, summary = ?, importance = ? WHERE id = ?",
+                "UPDATE entities SET valid_until = NULL, valid_from = ?, name = ?, summary = ?, importance = ? WHERE id = ?",
                 (now_ts, value, value, importance, fid),
             )
             action = "superseded"
         elif existing_inactive:
             # Reactivate historical row
             self.m._conn.execute(
-                "UPDATE entities SET valid_until = NULL, valid_from = ?, "
-                "name = ?, summary = ?, importance = ? WHERE id = ?",
+                "UPDATE entities SET valid_until = NULL, valid_from = ?, name = ?, summary = ?, importance = ? WHERE id = ?",
                 (now_ts, value, value, importance, fid),
             )
             action = "reactivated"
@@ -394,14 +392,10 @@ class IdentityFactManager:
         - any entity starting with 'master_' with kind='person'
         Returns the first match, or None.
         """
-        row = self.m._conn.execute(
-            "SELECT id FROM entities WHERE kind = 'person' AND valid_until IS NULL AND id IN ('user') LIMIT 1"
-        ).fetchone()
+        row = self.m._conn.execute("SELECT id FROM entities WHERE kind = 'person' AND valid_until IS NULL AND id IN ('user') LIMIT 1").fetchone()
         if row:
             return row[0]
-        row = self.m._conn.execute(
-            "SELECT id FROM entities WHERE kind = 'person' AND valid_until IS NULL AND id LIKE 'master_%' LIMIT 1"
-        ).fetchone()
+        row = self.m._conn.execute("SELECT id FROM entities WHERE kind = 'person' AND valid_until IS NULL AND id LIKE 'master_%' LIMIT 1").fetchone()
         if row:
             return row[0]
         return None

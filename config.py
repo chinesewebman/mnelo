@@ -140,12 +140,7 @@ class Config:
 
         # Embedder dim: env > file > default (512)
         # 必须与 model 实际输出维度一致 — 错配会让 sqlite-vec insert 失败
-        dim_str = (
-            os.environ.get("MNELO_MEMORY_EMBEDDER_DIM")
-            or str(embedder_section.get("dim", ""))
-            or str(self._raw.get("embedder_dim", ""))
-            or "512"
-        )
+        dim_str = os.environ.get("MNELO_MEMORY_EMBEDDER_DIM") or str(embedder_section.get("dim", "")) or str(self._raw.get("embedder_dim", "")) or "512"
         try:
             self.embedder_dim = int(dim_str)
         except ValueError:
@@ -176,10 +171,7 @@ class Config:
         # [8/5 TASKS_BACKUP_RESTORE] backup config (env > config.toml [backup] > None).
         # Snapshot dir / retention. 缺省由 backup_db._default_snapshot_dir() 推导.
         backup_section = self._raw.get("backup", {}) if isinstance(self._raw.get("backup"), dict) else {}
-        self.backup_snapshot_dir = (
-            os.environ.get("MNELO_MEMORY_BACKUP_SNAPSHOT_DIR")
-            or backup_section.get("snapshot_dir")
-        )
+        self.backup_snapshot_dir = os.environ.get("MNELO_MEMORY_BACKUP_SNAPSHOT_DIR") or backup_section.get("snapshot_dir")
         _ret_env = os.environ.get("MNELO_MEMORY_BACKUP_RETENTION")
         if _ret_env is not None:
             try:
@@ -189,24 +181,15 @@ class Config:
         else:
             self.backup_retention = int(backup_section.get("retention", 30) or 30)
         # [8/5 fix] 布尔 env 显式解析, 否则 'false'/'0' 会变成 True
-        self.backup_enabled = _env_bool(
-            "MNELO_MEMORY_BACKUP_ENABLED", backup_section.get("enabled", False)
-        )
+        self.backup_enabled = _env_bool("MNELO_MEMORY_BACKUP_ENABLED", backup_section.get("enabled", False))
 
         # [8/6 plan §1] SearchIndex 后端 (DESIGN §3.6/§8.3): 向量库必选二选一.
         # env MNELO_MEMORY_SEARCH_BACKEND > config.toml [search].backend > 'auto'.
         # 合法值 {auto, usearch, zvec}; 旧值 sqlite_vec → warning + coerce auto (升级不炸).
         search_section = self._raw.get("search", {}) if isinstance(self._raw.get("search"), dict) else {}
-        backend_raw = (
-            os.environ.get("MNELO_MEMORY_SEARCH_BACKEND")
-            or search_section.get("backend")
-            or "auto"
-        )
+        backend_raw = os.environ.get("MNELO_MEMORY_SEARCH_BACKEND") or search_section.get("backend") or "auto"
         if backend_raw == "sqlite_vec":
-            logger.warning(
-                "[config] search.backend='sqlite_vec' 已淘汰 (8/6 plan) — coerce 为 'auto'. "
-                "如需禁用 sqlite-vec 包可选移除, 见 plan §schema.sql vec0 段."
-            )
+            logger.warning("[config] search.backend='sqlite_vec' 已淘汰 (8/6 plan) — coerce 为 'auto'. 如需禁用 sqlite-vec 包可选移除, 见 plan §schema.sql vec0 段.")
             backend_raw = "auto"
         elif backend_raw not in ("auto", "usearch", "zvec"):
             logger.warning(f"[config] search.backend='{backend_raw}' 未知 — coerce 为 'auto'")
@@ -217,10 +200,7 @@ class Config:
         # 默认 ['stock'] 兼容旧行为; 用户设自己领域的 kind (如 product/category) 或 [] 禁用。
         # env MNELO_MEMORY_RECALL_BOOST_KINDS='product,location' > config.toml [recall].boost_kinds > ['stock'].
         recall_section = self._raw.get("recall", {}) if isinstance(self._raw.get("recall"), dict) else {}
-        boost_kinds_raw = (
-            os.environ.get("MNELO_MEMORY_RECALL_BOOST_KINDS")
-            or recall_section.get("boost_kinds")
-        )
+        boost_kinds_raw = os.environ.get("MNELO_MEMORY_RECALL_BOOST_KINDS") or recall_section.get("boost_kinds")
         if boost_kinds_raw:
             if isinstance(boost_kinds_raw, list):
                 self.recall_boost_kinds = [str(k).strip() for k in boost_kinds_raw if str(k).strip()]
@@ -231,30 +211,15 @@ class Config:
 
         # [G1 8/4] TASKS_L2_DIGEST §1.4 — [digest] config block
         digest_section = self._raw.get("digest", {}) if isinstance(self._raw.get("digest"), dict) else {}
-        digest_enabled_str = (
-            os.environ.get("MNELO_MEMORY_DIGEST_ENABLED")
-            or str(digest_section.get("enabled", True))
-        )
+        digest_enabled_str = os.environ.get("MNELO_MEMORY_DIGEST_ENABLED") or str(digest_section.get("enabled", True))
         self.digest_enabled = digest_enabled_str.lower() not in ("false", "0", "no", "off")
-        digest_max_chars_str = (
-            os.environ.get("MNELO_MEMORY_DIGEST_MAX_CHARS")
-            or str(digest_section.get("max_chars", 2000))
-        )
+        digest_max_chars_str = os.environ.get("MNELO_MEMORY_DIGEST_MAX_CHARS") or str(digest_section.get("max_chars", 2000))
         self.digest_max_chars = int(digest_max_chars_str)
-        digest_recent_window_str = (
-            os.environ.get("MNELO_MEMORY_DIGEST_RECENT_WINDOW_DAYS")
-            or str(digest_section.get("recent_window_days", 30))
-        )
+        digest_recent_window_str = os.environ.get("MNELO_MEMORY_DIGEST_RECENT_WINDOW_DAYS") or str(digest_section.get("recent_window_days", 30))
         self.digest_recent_window_days = int(digest_recent_window_str)
-        digest_imp_threshold_str = (
-            os.environ.get("MNELO_MEMORY_DIGEST_IMPORTANCE_THRESHOLD")
-            or str(digest_section.get("importance_threshold", 0.8))
-        )
+        digest_imp_threshold_str = os.environ.get("MNELO_MEMORY_DIGEST_IMPORTANCE_THRESHOLD") or str(digest_section.get("importance_threshold", 0.8))
         self.digest_importance_threshold = float(digest_imp_threshold_str)
-        digest_inject_str = (
-            os.environ.get("MNELO_MEMORY_DIGEST_INJECT_ON_INITIALIZE")
-            or str(digest_section.get("inject_on_initialize", False))
-        )
+        digest_inject_str = os.environ.get("MNELO_MEMORY_DIGEST_INJECT_ON_INITIALIZE") or str(digest_section.get("inject_on_initialize", False))
         self.digest_inject_on_initialize = digest_inject_str.lower() not in ("false", "0", "no", "off")
 
         health_section = self._raw.get("health", {}) if isinstance(self._raw.get("health"), dict) else {}
@@ -273,21 +238,15 @@ class Config:
                 print(f'[config] WARN: health.{key} "{value}" invalid ({e}); 回落 100', file=sys.stderr)
                 return 100
 
-        self.health_purge_backlog_threshold = _health_threshold(
-            "MNELO_MEMORY_HEALTH_PURGE_BACKLOG_THRESHOLD", "purge_backlog_threshold"
-        )
-        self.health_floor_chunks_threshold = _health_threshold(
-            "MNELO_MEMORY_HEALTH_FLOOR_CHUNKS_THRESHOLD", "floor_chunks_threshold"
-        )
+        self.health_purge_backlog_threshold = _health_threshold("MNELO_MEMORY_HEALTH_PURGE_BACKLOG_THRESHOLD", "purge_backlog_threshold")
+        self.health_floor_chunks_threshold = _health_threshold("MNELO_MEMORY_HEALTH_FLOOR_CHUNKS_THRESHOLD", "floor_chunks_threshold")
 
         # [8/9 P1-yanru] Rate limit 提到 config.toml — 不再硬编码.
         # env MNELO_MEMORY_RATE_LIMIT_MAX_PER_WINDOW / MNELO_MEMORY_RATE_LIMIT_WINDOW_SEC
         # > config.toml [rate_limit].max_per_window / .window_sec
         # > 默认 60 / 60 (历史行为).
         # 注意: 改完需重启 mcp_server 进程 (config 是模块级单例).
-        rate_limit_section = (
-            self._raw.get("rate_limit", {}) if isinstance(self._raw.get("rate_limit"), dict) else {}
-        )
+        rate_limit_section = self._raw.get("rate_limit", {}) if isinstance(self._raw.get("rate_limit"), dict) else {}
 
         def _rl_int(env_name: str, key: str, default: int, lo: int = 1) -> int:
             raw = os.environ.get(env_name)
@@ -301,19 +260,13 @@ class Config:
                 print(f'[config] WARN: rate_limit.{key} "{value}" invalid ({e}); 回落 {default}', file=sys.stderr)
                 return default
 
-        self.rate_limit_max_per_window = _rl_int(
-            "MNELO_MEMORY_RATE_LIMIT_MAX_PER_WINDOW", "max_per_window", 60
-        )
-        self.rate_limit_window_sec = _rl_int(
-            "MNELO_MEMORY_RATE_LIMIT_WINDOW_SEC", "window_sec", 60, lo=1
-        )
+        self.rate_limit_max_per_window = _rl_int("MNELO_MEMORY_RATE_LIMIT_MAX_PER_WINDOW", "max_per_window", 60)
+        self.rate_limit_window_sec = _rl_int("MNELO_MEMORY_RATE_LIMIT_WINDOW_SEC", "window_sec", 60, lo=1)
 
         # [8/9 P1-yanru] validation.py 5 个 MAX_* 常量 — 提到 config.
         # env MNELO_MEMORY_VALIDATION_MAX_* > config.toml [validation].max_* > 默认.
         # 默认等于原硬编码值 (行为不变, 仅可调).
-        validation_section = (
-            self._raw.get("validation", {}) if isinstance(self._raw.get("validation"), dict) else {}
-        )
+        validation_section = self._raw.get("validation", {}) if isinstance(self._raw.get("validation"), dict) else {}
 
         def _val_int(env_name: str, key: str, default: int, lo: int = 1) -> int:
             raw = os.environ.get(env_name)
@@ -327,30 +280,16 @@ class Config:
                 print(f'[config] WARN: validation.{key} "{value}" invalid ({e}); 回落 {default}', file=sys.stderr)
                 return default
 
-        self.validation_max_chunk_content_bytes = _val_int(
-            "MNELO_MEMORY_VALIDATION_MAX_CHUNK_CONTENT_BYTES", "max_chunk_content_bytes", 8 * 1024
-        )
-        self.validation_max_query_bytes = _val_int(
-            "MNELO_MEMORY_VALIDATION_MAX_QUERY_BYTES", "max_query_bytes", 1024
-        )
-        self.validation_max_id_len = _val_int(
-            "MNELO_MEMORY_VALIDATION_MAX_ID_LEN", "max_id_len", 256
-        )
-        self.validation_max_entity_name_len = _val_int(
-            "MNELO_MEMORY_VALIDATION_MAX_ENTITY_NAME_LEN", "max_entity_name_len", 200
-        )
-        self.validation_max_entity_summary_len = _val_int(
-            "MNELO_MEMORY_VALIDATION_MAX_ENTITY_SUMMARY_LEN", "max_entity_summary_len", 1000
-        )
-        self.validation_max_holding_field_len = _val_int(
-            "MNELO_MEMORY_VALIDATION_MAX_HOLDING_FIELD_LEN", "max_holding_field_len", 200
-        )
+        self.validation_max_chunk_content_bytes = _val_int("MNELO_MEMORY_VALIDATION_MAX_CHUNK_CONTENT_BYTES", "max_chunk_content_bytes", 8 * 1024)
+        self.validation_max_query_bytes = _val_int("MNELO_MEMORY_VALIDATION_MAX_QUERY_BYTES", "max_query_bytes", 1024)
+        self.validation_max_id_len = _val_int("MNELO_MEMORY_VALIDATION_MAX_ID_LEN", "max_id_len", 256)
+        self.validation_max_entity_name_len = _val_int("MNELO_MEMORY_VALIDATION_MAX_ENTITY_NAME_LEN", "max_entity_name_len", 200)
+        self.validation_max_entity_summary_len = _val_int("MNELO_MEMORY_VALIDATION_MAX_ENTITY_SUMMARY_LEN", "max_entity_summary_len", 1000)
+        self.validation_max_holding_field_len = _val_int("MNELO_MEMORY_VALIDATION_MAX_HOLDING_FIELD_LEN", "max_holding_field_len", 200)
 
         # [8/9 P1-yanru] task_states.py stale_days_threshold — 提到 config.
         # env MNELO_MEMORY_TASK_STALE_DAYS_THRESHOLD > config.toml [task].stale_days_threshold > 7.
-        task_section = (
-            self._raw.get("task", {}) if isinstance(self._raw.get("task"), dict) else {}
-        )
+        task_section = self._raw.get("task", {}) if isinstance(self._raw.get("task"), dict) else {}
         _stale_env = os.environ.get("MNELO_MEMORY_TASK_STALE_DAYS_THRESHOLD")
         if _stale_env is not None and _stale_env != "":
             try:
@@ -371,14 +310,8 @@ class Config:
 
         # [8/9 P1-yanru] mnelo_remote_client.py DEFAULT_TAILSCALE_HOST — 提到 config.
         # env MNELO_MEMORY_CLIENT_TAILSCALE_HOST > config.toml [client].tailscale_host > 默认.
-        client_section = (
-            self._raw.get("client", {}) if isinstance(self._raw.get("client"), dict) else {}
-        )
-        self.client_tailscale_host = (
-            os.environ.get("MNELO_MEMORY_CLIENT_TAILSCALE_HOST")
-            or client_section.get("tailscale_host")
-            or "mnelo.tail6a710.ts.net"
-        )
+        client_section = self._raw.get("client", {}) if isinstance(self._raw.get("client"), dict) else {}
+        self.client_tailscale_host = os.environ.get("MNELO_MEMORY_CLIENT_TAILSCALE_HOST") or client_section.get("tailscale_host") or "mnelo.tail6a710.ts.net"
 
     @classmethod
     def load(cls) -> "Config":
@@ -394,16 +327,8 @@ class Config:
 
     def describe(self) -> str:
         """One-line summary for startup banner."""
-        digest_part = (
-            f" digest={'on' if self.digest_enabled else 'off'}/{self.digest_max_chars}c"
-            if self.digest_enabled
-            else ""
-        )
-        return (
-            f"tz={self.timezone} warm_up={self.warm_up_embedder} "
-            f"embedder={self.embedder_model}/{self.embedder_dim}d"
-            f"{digest_part}"
-        )
+        digest_part = f" digest={'on' if self.digest_enabled else 'off'}/{self.digest_max_chars}c" if self.digest_enabled else ""
+        return f"tz={self.timezone} warm_up={self.warm_up_embedder} embedder={self.embedder_model}/{self.embedder_dim}d{digest_part}"
 
 
 # Eager load on import

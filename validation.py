@@ -235,9 +235,7 @@ def validate_holding_payload(h: Dict) -> Dict:
 _CC_RE = re.compile(r"\b(?:\d[ -]?){13,19}\b")
 _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 _CN_MOBILE_RE = re.compile(r"\b1[3-9]\d{9}\b")
-_CN_ID_RE = re.compile(
-    r"\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b"
-)
+_CN_ID_RE = re.compile(r"\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b")
 _SECRET_PREFIX_RE = re.compile(
     r"\b(?:"
     r"sk-[A-Za-z0-9_-]{20,}|"

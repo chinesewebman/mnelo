@@ -23,6 +23,7 @@ spawn (memory_task_create). 不直接调 task_create.
   隔离靠 SQLite WAL (single writer) + busy_timeout=30s, 跟其他 cron (backup 等)
   互不阻塞. 跟 subprocess MCP 隔离 (多进程端口) 不是同一回事, cron 不需要.
 """
+
 import argparse
 import json
 import os
@@ -92,15 +93,18 @@ def _mcp_call(tool: str, args: dict) -> dict:
     memory.Memory + task_states.* 函数 — 同进程, 不需 MCP server 端口.
     """
     import memory
+
     mem = memory.Memory()
     try:
         if tool == "memory_loop_list":
             import task_states
+
             enabled_only = args.get("enabled_only", True)
             # list_loops 已返回 {loops: [...], count, truncated}, 直接透传
             return task_states.list_loops(mem._conn, enabled_only=enabled_only)
         elif tool == "memory_loop_tick":
             import task_states
+
             result = task_states.loop_tick(
                 mem._conn,
                 loop_id=args["loop_id"],
@@ -116,15 +120,19 @@ def _mcp_call(tool: str, args: dict) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="mnelo cron loop tick wrapper")
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="[8/6] 演练模式: 扫 due loops 但不写 audit_log / digest",
     )
     parser.add_argument(
-        "--threshold", type=int, default=0,
+        "--threshold",
+        type=int,
+        default=0,
         help="[8/6] 仅 tick interval_hours > threshold 的 loop (默认 0 = 全部)",
     )
     parser.add_argument(
-        "--output-dir", type=Path,
+        "--output-dir",
+        type=Path,
         default=Path.home() / ".hermes/cron/output/loop_tick",
         help="[8/6] digest 输出目录",
     )
@@ -190,10 +198,7 @@ def _run(args) -> int:
         except Exception as e:
             error_loops.append({"loop_id": loop_id, "error": str(e)[:120]})
 
-    _log(
-        f"verdicts: due={len(due_loops)} not_due={len(not_due_loops)} "
-        f"error={len(error_loops)}"
-    )
+    _log(f"verdicts: due={len(due_loops)} not_due={len(not_due_loops)} error={len(error_loops)}")
 
     # 4. 写 digest 候选 + audit_log
     summary = {
@@ -234,10 +239,7 @@ def _run(args) -> int:
     if due_loops:
         _log(f"!! {len(due_loops)} due loops need agent evaluation:")
         for entry in due_loops:
-            _log(
-                f"   - {entry['name']} ({entry['loop_id']}): "
-                f"trigger={entry['trigger']}"
-            )
+            _log(f"   - {entry['name']} ({entry['loop_id']}): trigger={entry['trigger']}")
     else:
         _log("no due loops")
 
@@ -252,6 +254,7 @@ def _write_audit_log(summary: dict) -> None:
     """
     import memory
     import uuid
+
     run_id = f"loop_tick_cron-{summary['ts']}-{uuid.uuid4().hex[:8]}"
     try:
         mem = memory.Memory()
@@ -270,13 +273,13 @@ def _write_audit_log(summary: dict) -> None:
                     (
                         run_id,
                         "loop_tick_cron",
-                        "tick_due",       # action_type: 跟现有 enum 兼容
+                        "tick_due",  # action_type: 跟现有 enum 兼容
                         "loop",
                         entry["loop_id"],
-                        None,             # before_json: 无前置
+                        None,  # before_json: 无前置
                         json.dumps(entry, ensure_ascii=False),  # after_json: due proposal
-                        1.0,              # confidence: cron 是机械判断
-                        "proposed",       # status: 待 agent 评估后 applied
+                        1.0,  # confidence: cron 是机械判断
+                        "proposed",  # status: 待 agent 评估后 applied
                         summary["ts"],
                     ),
                 )

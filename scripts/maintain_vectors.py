@@ -102,9 +102,7 @@ def main() -> int:
             print(f"  soft-deleted chunks cleaned: {result['soft_deleted_cleaned']}")
             print(f"  truly orphan vectors cleaned: {result['truly_orphan_cleaned']}")
             print(f"  vectors remaining:           {result['vectors_remaining']}")
-            print(
-                f"  reduction:                   {result['soft_deleted_cleaned'] + result['truly_orphan_cleaned']} vectors freed"
-            )
+            print(f"  reduction:                   {result['soft_deleted_cleaned'] + result['truly_orphan_cleaned']} vectors freed")
         return 0
     except Exception as e:
         print(f"✗ cleanup failed: {e}", file=sys.stderr)

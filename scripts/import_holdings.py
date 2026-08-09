@@ -73,11 +73,7 @@ def ensure_holding_entity(con, asof: str, h: dict):
         "asof": asof,
         "source_file": "holdings_correction_2026-07-17.json",
     }
-    summary = (
-        f"{h['name']} ({h['symbol_code']}) @ {h['quantity']}股 "
-        f"成本{h['cost_price']:.2f} 现价{h['current_price']:.2f} "
-        f"盈亏{h['pnl_pct']:+.2f}%"
-    )
+    summary = f"{h['name']} ({h['symbol_code']}) @ {h['quantity']}股 成本{h['cost_price']:.2f} 现价{h['current_price']:.2f} 盈亏{h['pnl_pct']:+.2f}%"
     con.execute(
         """
         INSERT INTO entities (id, kind, name, summary, properties_json, source,
@@ -171,11 +167,7 @@ def main(dry_run: bool = False):
                 stats["holdings_skipped"] = stats.get("holdings_skipped", 0) + 1
                 continue
 
-            print(
-                f"  {h.get('symbol_code', '?')} ({h.get('name', '?')}) "
-                f"{h.get('quantity', '?')}股 成本{h.get('cost_price', '?')} "
-                f"现价{h.get('current_price', '?')} 盈亏{h.get('pnl_pct', 0):+.2f}%"
-            )
+            print(f"  {h.get('symbol_code', '?')} ({h.get('name', '?')}) {h.get('quantity', '?')}股 成本{h.get('cost_price', '?')} 现价{h.get('current_price', '?')} 盈亏{h.get('pnl_pct', 0):+.2f}%")
 
             if dry_run:
                 continue
@@ -197,9 +189,7 @@ def main(dry_run: bool = False):
                 stats["holding_entities_existing"] += 1
 
             # 3. user --holds--> holding
-            new1 = ensure_relation(
-                con, USER_ID, holding_id, "holds_position", {"asof": asof, "source": "screenshot_ocr"}
-            )
+            new1 = ensure_relation(con, USER_ID, holding_id, "holds_position", {"asof": asof, "source": "screenshot_ocr"})
             if new1:
                 stats["relations_new"] += 1
             else:

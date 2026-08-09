@@ -21,6 +21,7 @@ migrate_stock_namespace_2026_08_09.py — [8/9 review B1 台] namespace guard �
 [2026-08-09 plan] 单纯 15 个 + 重复 3 对 = 18 个 entity 改. 82414 条 relations
                   source_id/target_id 同步.
 """
+
 import argparse
 import sqlite3
 import sys
@@ -35,16 +36,10 @@ def migrate(conn: sqlite3.Connection, dry_run: bool) -> dict:
     """执行迁移. 返回统计 dict."""
 
     # 单纯 15 个裸 id ticker (kind='stock', id LIKE 'sh%' OR 'sz%', 不带 stock: 前缀, 无重复)
-    bare_ids = [r[0] for r in conn.execute(
-        "SELECT id FROM entities WHERE kind='stock' AND "
-        "(id LIKE 'sh%' OR id LIKE 'sz%') AND id NOT LIKE 'stock:%' "
-        "ORDER BY id"
-    ).fetchall()]
+    bare_ids = [r[0] for r in conn.execute("SELECT id FROM entities WHERE kind='stock' AND (id LIKE 'sh%' OR id LIKE 'sz%') AND id NOT LIKE 'stock:%' ORDER BY id").fetchall()]
 
     # 已带 stock: 前缀 ticker
-    ns_ids = [r[0] for r in conn.execute(
-        "SELECT id FROM entities WHERE kind='stock' AND id LIKE 'stock:%' ORDER BY id"
-    ).fetchall()]
+    ns_ids = [r[0] for r in conn.execute("SELECT id FROM entities WHERE kind='stock' AND id LIKE 'stock:%' ORDER BY id").fetchall()]
 
     # 重复对 (裸 id 跟 stock: 前缀同时存在)
     dup_pairs = [(bid, f"stock:{bid}") for bid in bare_ids if f"stock:{bid}" in ns_ids]
@@ -98,14 +93,10 @@ def migrate(conn: sqlite3.Connection, dry_run: bool) -> dict:
         )
         e_upd = cur.rowcount
         # relations source_id 同步
-        cur = conn.execute(
-            "UPDATE relations SET source_id = ? WHERE source_id = ?", (nid, bid)
-        )
+        cur = conn.execute("UPDATE relations SET source_id = ? WHERE source_id = ?", (nid, bid))
         r_src = cur.rowcount
         # relations target_id 同步
-        cur = conn.execute(
-            "UPDATE relations SET target_id = ? WHERE target_id = ?", (nid, bid)
-        )
+        cur = conn.execute("UPDATE relations SET target_id = ? WHERE target_id = ?", (nid, bid))
         r_tgt = cur.rowcount
         # audit_log 留痕
         cur = conn.execute(
@@ -135,14 +126,10 @@ def migrate(conn: sqlite3.Connection, dry_run: bool) -> dict:
     print(f"=== 阶段 2: {len(dup_pairs)} 对重复合并 (删裸 id, relations 改目标) ===")
     for bid, nid in dup_pairs:
         # relations source_id 改指向 nid
-        cur = conn.execute(
-            "UPDATE relations SET source_id = ? WHERE source_id = ?", (nid, bid)
-        )
+        cur = conn.execute("UPDATE relations SET source_id = ? WHERE source_id = ?", (nid, bid))
         r_src = cur.rowcount
         # relations target_id 改指向 nid
-        cur = conn.execute(
-            "UPDATE relations SET target_id = ? WHERE target_id = ?", (nid, bid)
-        )
+        cur = conn.execute("UPDATE relations SET target_id = ? WHERE target_id = ?", (nid, bid))
         r_tgt = cur.rowcount
         # 删裸 id entity (硬删 — stock:<id> 已有正确行, 软删会留 valid_until 残留)
         # 但 schema 没说 DELETE, 让我看 — entities 是允许 DELETE 的 (purge 真清)
@@ -176,9 +163,7 @@ def migrate(conn: sqlite3.Connection, dry_run: bool) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="[8/9 review B1 台] stock namespace guard 数据迁移"
-    )
+    parser = argparse.ArgumentParser(description="[8/9 review B1 台] stock namespace guard 数据迁移")
     parser.add_argument("--db", default=str(DB_PATH), help="mnelo db path")
     parser.add_argument("--dry-run", action="store_true", help="只看名单, 不改 db")
     parser.add_argument("--yes", action="store_true", help="真跑 (默认 dry-run)")

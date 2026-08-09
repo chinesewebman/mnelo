@@ -12,6 +12,7 @@ restore_db.py — mnelo DB 快照恢复 (DESIGN §3.11 + TASKS_BACKUP_RESTORE A2
   python scripts/restore_db.py --latest              # 实际恢复
   python scripts/restore_db.py --from YYYY-MM-DD-HHMMSS --target /tmp/foo.db
 """
+
 import argparse
 import datetime as dt
 import gzip
@@ -36,9 +37,7 @@ def _default_snapshot_dir():
 
 
 def _read_backup_config():
-    snap_dir = _expand(
-        getattr(_config, "backup_snapshot_dir", None) or _default_snapshot_dir()
-    )
+    snap_dir = _expand(getattr(_config, "backup_snapshot_dir", None) or _default_snapshot_dir())
     return snap_dir
 
 
@@ -50,6 +49,7 @@ def _server_running(port: int | None = None) -> bool:
     """
     port = port if port is not None else int(getattr(_config, "server_port", 8086) or 8086)
     import socket
+
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=1):
             return True
@@ -106,14 +106,16 @@ def _list_snapshots(snapshot_dir: Path) -> list[dict]:
     out = []
     for gz in sorted(snapshot_dir.glob("*.db.gz"), reverse=True):
         sha_ok, sha = _verify_sha256(gz)
-        out.append({
-            "name": gz.name,
-            "path": str(gz),
-            "size_mb": round(gz.stat().st_size / 1024 / 1024, 3),
-            "mtime": gz.stat().st_mtime,
-            "sha256_ok": sha_ok,
-            "sha256": sha,
-        })
+        out.append(
+            {
+                "name": gz.name,
+                "path": str(gz),
+                "size_mb": round(gz.stat().st_size / 1024 / 1024, 3),
+                "mtime": gz.stat().st_mtime,
+                "sha256_ok": sha_ok,
+                "sha256": sha,
+            }
+        )
     return out
 
 
@@ -162,12 +164,14 @@ def _rebuild_index(target: Path) -> dict:
     _ri = None
     try:
         from scripts import rebuild_index as _ri_mod  # type: ignore
+
         _ri = _ri_mod
     except ImportError:
         pass
     if _ri is None:
         try:
             import rebuild_index as _ri_mod  # type: ignore
+
             _ri = _ri_mod
         except ImportError:
             pass
@@ -175,9 +179,8 @@ def _rebuild_index(target: Path) -> dict:
         # 绝对路径兜底
         try:
             import importlib.util as _ilu
-            _spec = _ilu.spec_from_file_location(
-                "rebuild_index", _REPO_ROOT / "scripts" / "rebuild_index.py"
-            )
+
+            _spec = _ilu.spec_from_file_location("rebuild_index", _REPO_ROOT / "scripts" / "rebuild_index.py")
             _ri = _ilu.module_from_spec(_spec)  # type: ignore
             _spec.loader.exec_module(_ri)  # type: ignore
         except Exception as e:
@@ -255,11 +258,7 @@ def restore(
         if target == _expand(_config.db_path) and _server_running():
             if not force:
                 port = int(getattr(_config, "server_port", 8086) or 8086)
-                report["error"] = (
-                    f"MCP server 仍在运行 (127.0.0.1:{port}) — 直接替换 live db "
-                    f"会丢失 server 的后续写入。请先停止 server 再恢复, "
-                    f"或 --force 明确覆盖 (恢复后必须重启 server)。"
-                )
+                report["error"] = f"MCP server 仍在运行 (127.0.0.1:{port}) — 直接替换 live db 会丢失 server 的后续写入。请先停止 server 再恢复, 或 --force 明确覆盖 (恢复后必须重启 server)。"
                 return report
             report["warning"] = "MCP server 仍在运行 — 恢复后必须重启 server 才能生效"
 
@@ -300,18 +299,13 @@ def restore(
 def main():
     ap = argparse.ArgumentParser(description="mnelo DB 快照恢复")
     ap.add_argument("--list", action="store_true", help="列出所有快照 + 校验状态")
-    ap.add_argument("--from", dest="ts", default=None,
-                    help="指定快照 timestamp (YYYY-MM-DD-HHMMSS)")
+    ap.add_argument("--from", dest="ts", default=None, help="指定快照 timestamp (YYYY-MM-DD-HHMMSS)")
     ap.add_argument("--latest", action="store_true", help="选最新快照")
     ap.add_argument("--dry-run", action="store_true", help="只校验不恢复")
-    ap.add_argument("--snapshot-dir", type=Path, default=None,
-                    help="覆盖 config [backup] snapshot_dir")
-    ap.add_argument("--target", type=Path, default=None,
-                    help="恢复目标路径 (默认 live db 路径)")
-    ap.add_argument("--force", action="store_true",
-                    help="MCP server 运行时也强制恢复 (恢复后必须重启 server)")
-    ap.add_argument("--skip-rebuild", action="store_true",
-                    help="恢复后跳过 search index 重建 (默认: 自动重建)")
+    ap.add_argument("--snapshot-dir", type=Path, default=None, help="覆盖 config [backup] snapshot_dir")
+    ap.add_argument("--target", type=Path, default=None, help="恢复目标路径 (默认 live db 路径)")
+    ap.add_argument("--force", action="store_true", help="MCP server 运行时也强制恢复 (恢复后必须重启 server)")
+    ap.add_argument("--skip-rebuild", action="store_true", help="恢复后跳过 search index 重建 (默认: 自动重建)")
     args = ap.parse_args()
 
     snap_dir = Path(args.snapshot_dir) if args.snapshot_dir else _read_backup_config()

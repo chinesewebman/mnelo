@@ -22,6 +22,7 @@ Bash 驱动). 底层走 task_states.py 模块函数 (不绕 MCP, 直连 SQLite).
 为简化 / Claude Code 友好, 所有子命令走相同 subparser 路径, --kind task|loop
 决定调哪个 task_states 函数.
 """
+
 import argparse
 import json
 import sys
@@ -140,9 +141,7 @@ def main():
     # move
     p_move = sub.add_parser("move", help="transition task/loop")
     p_move.add_argument("task_id")
-    p_move.add_argument("--to", required=True,
-                        choices=["open", "in_progress", "waiting", "blocked",
-                                 "done", "cancelled", "running", "dormant", "paused"])
+    p_move.add_argument("--to", required=True, choices=["open", "in_progress", "waiting", "blocked", "done", "cancelled", "running", "dormant", "paused"])
     p_move.add_argument("--reason")
     p_move.add_argument("--evidence")
     p_move.add_argument("--force", action="store_true")

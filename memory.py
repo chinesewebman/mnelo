@@ -70,7 +70,7 @@ def _kind_from_source(source: str) -> Optional[str]:
     """
     if not source or not source.startswith("entity:"):
         return None
-    kind = source[len("entity:"):].strip()
+    kind = source[len("entity:") :].strip()
     return kind or None
 
 
@@ -194,13 +194,15 @@ def _with_row_factory(conn, factory):
 # (TOKEN_C_*) + 整句当 entity name. 只允许显式 namespace 前缀 + 无冒号的
 # person / provider / event / task 类短 name. master_* prefix 是 SOUL §mnelo
 # ops #4 拍板使用的主语前缀.
-_ALLOWED_ENTITY_NAMESPACES = frozenset({
-    "identity:",   # identity_fact (主人身份, immutable)
-    "stock:",      # A 股 / 美股代码
-    "holding:",    # position_snapshot (持仓快照)
-    "loop:",       # cron loop entity (DESIGN §5.6)
-    "task:",       # task entity (DESIGN §5.5)
-})
+_ALLOWED_ENTITY_NAMESPACES = frozenset(
+    {
+        "identity:",  # identity_fact (主人身份, immutable)
+        "stock:",  # A 股 / 美股代码
+        "holding:",  # position_snapshot (持仓快照)
+        "loop:",  # cron loop entity (DESIGN §5.6)
+        "task:",  # task entity (DESIGN §5.5)
+    }
+)
 _ALLOWED_ENTITY_PREFIXES = ("master_",)  # SOUL §mnelo ops #4: master_<subject>
 # [8/8 P1] concept kind 允许的 name 长度上限 — 防"imported sleep runs at..." 这种
 # 整句灌进 entity. 其他 kind (stock/identity_fact 等) 已有结构化字段, 不限.
@@ -225,44 +227,46 @@ def _enforce_entity_namespace_guard(ent: Dict) -> None:
     if eid.startswith("anno:"):
         raise ValidationError(
             "entity.id",
-            "namespace 'anno:*' is reserved for legacy HonchoImporter imports; "
-            "use chunk metadata (properties_json.annotation_kind) instead",
+            "namespace 'anno:*' is reserved for legacy HonchoImporter imports; use chunk metadata (properties_json.annotation_kind) instead",
         )
     # 2) 黑名单: 随机 token id (TOKEN_C_*, TOKEN_*, ...)
     if eid.startswith("TOKEN_"):
         raise ValidationError(
             "entity.id",
-            "namespace 'TOKEN_*' (random session tokens) is not a valid entity id; "
-            "use a stable, human-readable id",
+            "namespace 'TOKEN_*' (random session tokens) is not a valid entity id; use a stable, human-readable id",
         )
 
     # 3) 白名单: 显式 namespace 前缀
-    has_allowed_ns = (
-        any(eid.startswith(ns) for ns in _ALLOWED_ENTITY_NAMESPACES)
-        or eid.startswith(_ALLOWED_ENTITY_PREFIXES)
-    )
+    has_allowed_ns = any(eid.startswith(ns) for ns in _ALLOWED_ENTITY_NAMESPACES) or eid.startswith(_ALLOWED_ENTITY_PREFIXES)
     if has_allowed_ns:
         return  # 显式 namespace 必走结构化 kind, 跳过 name length check
 
     # 4) 无 namespace id 必须配结构化 kind
-    _NAMELESS_KINDS = frozenset({
-        "person", "provider", "event", "task", "setup", "system", "host",
-        "position_snapshot", "concept", "canonical_fact",
-    })
+    _NAMELESS_KINDS = frozenset(
+        {
+            "person",
+            "provider",
+            "event",
+            "task",
+            "setup",
+            "system",
+            "host",
+            "position_snapshot",
+            "concept",
+            "canonical_fact",
+        }
+    )
     if ":" not in eid and kind not in _NAMELESS_KINDS:
         raise ValidationError(
             "entity.id",
-            f"non-namespaced id {eid!r} requires kind in {sorted(_NAMELESS_KINDS)}; "
-            f"got kind={kind!r}",
+            f"non-namespaced id {eid!r} requires kind in {sorted(_NAMELESS_KINDS)}; got kind={kind!r}",
         )
 
     # 5) concept kind 禁长句子 name
     if kind == "concept" and len(name) > _MAX_CONCEPT_NAME_LEN:
         raise ValidationError(
             "entity.name",
-            f"concept entity name must be <= {_MAX_CONCEPT_NAME_LEN} chars; "
-            f"got {len(name)} chars. Use chunk content for sentences, "
-            f"entity.name for short labels only.",
+            f"concept entity name must be <= {_MAX_CONCEPT_NAME_LEN} chars; got {len(name)} chars. Use chunk content for sentences, entity.name for short labels only.",
         )
 
 
@@ -334,17 +338,13 @@ class Memory:
         for table in ("entities", "chunks"):
             cols = {r[1] for r in self._conn.execute(f"PRAGMA table_info({table})").fetchall()}
             if "memory_type" not in cols:
-                self._conn.execute(
-                    f"ALTER TABLE {table} ADD COLUMN memory_type TEXT DEFAULT 'fact'"
-                )
+                self._conn.execute(f"ALTER TABLE {table} ADD COLUMN memory_type TEXT DEFAULT 'fact'")
                 logger.info(f"[P0-3.0] migrated {table}: added memory_type column")
 
         # [H-1 §1] entities.user_confirmed — NOT NULL DEFAULT 0 (Q1 verdict)
         cols = {r[1] for r in self._conn.execute("PRAGMA table_info(entities)").fetchall()}
         if "user_confirmed" not in cols:
-            self._conn.execute(
-                "ALTER TABLE entities ADD COLUMN user_confirmed INTEGER NOT NULL DEFAULT 0"
-            )
+            self._conn.execute("ALTER TABLE entities ADD COLUMN user_confirmed INTEGER NOT NULL DEFAULT 0")
             logger.info("[H-1 §1] migrated entities: added user_confirmed column")
 
         # [H-1 §2] chunks + entities processed_at — NULL=未跑过 L2 (Q2 verdict 双表)
@@ -380,8 +380,7 @@ class Memory:
 
         # [H-1 索引] 5 个新索引 — CREATE INDEX IF NOT EXISTS (sqlite 3.8+ 支持)
         for ddl in [
-            "CREATE INDEX IF NOT EXISTS idx_entities_user_confirmed "
-            "ON entities(user_confirmed) WHERE user_confirmed = 1",  # [C 修正] partial
+            "CREATE INDEX IF NOT EXISTS idx_entities_user_confirmed ON entities(user_confirmed) WHERE user_confirmed = 1",  # [C 修正] partial
             "CREATE INDEX IF NOT EXISTS idx_entities_processed_at ON entities(processed_at)",
             "CREATE INDEX IF NOT EXISTS idx_chunks_processed_at ON chunks(processed_at)",
             "CREATE INDEX IF NOT EXISTS idx_audit_log_run ON audit_log(run_id)",
@@ -394,17 +393,10 @@ class Memory:
 
         # [H-1 审计 §2 fix] 存量库也加 meta flag (H-1 跑过 = 1), 跟 schema.sql INSERT meta 块一致
         # H0 落地时 query `l2_audit_log_ready` 区分 "H-1 跑了" vs "H-1 没跑"
-        existing_flag = self._conn.execute(
-            "SELECT value FROM meta WHERE key='l2_audit_log_ready'"
-        ).fetchone()
+        existing_flag = self._conn.execute("SELECT value FROM meta WHERE key='l2_audit_log_ready'").fetchone()
         if not existing_flag:
-            self._conn.execute(
-                "INSERT OR REPLACE INTO meta (key, value) VALUES ('l2_audit_log_ready', '1')"
-            )
-            self._conn.execute(
-                "INSERT OR REPLACE INTO meta (key, value) VALUES ('l2_h1_migrated', ?)",
-                (now(),)
-            )
+            self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('l2_audit_log_ready', '1')")
+            self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('l2_h1_migrated', ?)", (now(),))
             logger.info("[H-1 审计] meta flags l2_audit_log_ready=1 + l2_h1_migrated ensured")
 
         # [8/6 v0.2 M1 schema] task_states + state_transitions + seed 默认转移矩阵
@@ -430,19 +422,9 @@ class Memory:
                 FOREIGN KEY (evidence_chunk_id) REFERENCES chunks(id)
             )
         """)
-        self._conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS ux_task_current_state "
-            "ON task_states(task_id) WHERE valid_until IS NULL"
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_task_states_open "
-            "ON task_states(state) WHERE valid_until IS NULL "
-            "AND state NOT IN ('done','cancelled','dormant','paused')"
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_task_states_task_valid "
-            "ON task_states(task_id, valid_from, valid_until)"
-        )
+        self._conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_task_current_state ON task_states(task_id) WHERE valid_until IS NULL")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_task_states_open ON task_states(state) WHERE valid_until IS NULL AND state NOT IN ('done','cancelled','dormant','paused')")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_task_states_task_valid ON task_states(task_id, valid_from, valid_until)")
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS state_transitions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -454,34 +436,30 @@ class Memory:
         """)
         # Seed 默认转移矩阵 (DESIGN §3.2). INSERT OR IGNORE — 幂等.
         default_transitions = [
-            ('default', 'open',        'in_progress'),
-            ('default', 'open',        'done'),
-            ('default', 'open',        'cancelled'),
-            ('default', 'in_progress', 'waiting'),
-            ('default', 'in_progress', 'blocked'),
-            ('default', 'in_progress', 'done'),
-            ('default', 'in_progress', 'cancelled'),
-            ('default', 'waiting',     'in_progress'),
-            ('default', 'waiting',     'done'),
-            ('default', 'waiting',     'cancelled'),
-            ('default', 'blocked',     'in_progress'),
-            ('default', 'blocked',     'waiting'),
-            ('default', 'blocked',     'done'),
-            ('default', 'blocked',     'cancelled'),
-            ('default', 'done',        'open'),  # reopen 逃生门 (D8)
+            ("default", "open", "in_progress"),
+            ("default", "open", "done"),
+            ("default", "open", "cancelled"),
+            ("default", "in_progress", "waiting"),
+            ("default", "in_progress", "blocked"),
+            ("default", "in_progress", "done"),
+            ("default", "in_progress", "cancelled"),
+            ("default", "waiting", "in_progress"),
+            ("default", "waiting", "done"),
+            ("default", "waiting", "cancelled"),
+            ("default", "blocked", "in_progress"),
+            ("default", "blocked", "waiting"),
+            ("default", "blocked", "done"),
+            ("default", "blocked", "cancelled"),
+            ("default", "done", "open"),  # reopen 逃生门 (D8)
         ]
         self._conn.executemany(
             "INSERT OR IGNORE INTO state_transitions (scope, from_state, to_state) VALUES (?, ?, ?)",
             default_transitions,
         )
         # schema_version bump (1.0 → 1.1) — 实际标记 M1 落地
-        existing_version = self._conn.execute(
-            "SELECT value FROM meta WHERE key='schema_version'"
-        ).fetchone()
+        existing_version = self._conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
         if not existing_version or existing_version[0] != "1.1":
-            self._conn.execute(
-                "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '1.1')"
-            )
+            self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '1.1')")
             self._conn.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('task_loop_m1_migrated', ?)",
                 (now(),),
@@ -538,6 +516,7 @@ class Memory:
         # → 假设: 默认不传 → 自动分类; 传 "fact" → 显式 fact; 传其他 → 显式
         if memory_type is None:
             from classify import classify_memory_type
+
             inferred = classify_memory_type(content)
             if inferred is not None:
                 memory_type = inferred
@@ -622,13 +601,12 @@ class Memory:
         # 又不让 IntegrityError 把整个 remember 拉下水.
         # (历史 issue: 8/9 VPS 迁移阶段观察到 23 个 IntegrityError 重复写入同一 content)
         from validation import scan_pii_warnings as _scan_pii
+
         for hit in _scan_pii(content):
             _audit_run_id = f"pii_advisory_{chunk_id}_{hit['category']}"
             try:
                 self._conn.execute(
-                    "INSERT OR IGNORE INTO audit_log (run_id, pass_name, action_type, ref_type, ref_id, "
-                    "after_json, llm_used, status, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, 0, 'applied', ?)",
+                    "INSERT OR IGNORE INTO audit_log (run_id, pass_name, action_type, ref_type, ref_id, after_json, llm_used, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, 'applied', ?)",
                     (
                         _audit_run_id,
                         "pii_audit",
@@ -648,13 +626,7 @@ class Memory:
 
         self._conn.commit()
         # Digest only depends on identity facts and high-importance decisions/episodes.
-        if (
-            any(ent.get("kind") == "identity_fact" for ent in (entities or []))
-            or (
-                memory_type in ("decision", "episode")
-                and importance >= config.config.digest_importance_threshold
-            )
-        ):
+        if any(ent.get("kind") == "identity_fact" for ent in (entities or [])) or (memory_type in ("decision", "episode") and importance >= config.config.digest_importance_threshold):
             self._mark_digest_dirty()
         # [7/19 v0.5.3] metrics
         _metrics_registry().remember_total.inc(source=source or "unknown")
@@ -807,20 +779,14 @@ class Memory:
                 f"reason={reason!r} 仅审计用, 不执行."
             )
         if target_kind == "chunk":
-            self._conn.execute(
-                "UPDATE chunks SET valid_until = ? WHERE id = ? AND valid_until IS NULL", (now(), target_id)
-            )
+            self._conn.execute("UPDATE chunks SET valid_until = ? WHERE id = ? AND valid_until IS NULL", (now(), target_id))
             # [7/21] 向量索引删除下沉到 SearchIndex 适配器 (原 v0.5.6 drift fix 逻辑)
             # 软删 chunk 的 embedding 是死数据 — 清掉防 vec0 rowid 漂移/碰撞.
             self._index.remove(target_id, conn=self._conn)
         elif target_kind == "entity":
-            self._conn.execute(
-                "UPDATE entities SET valid_until = ? WHERE id = ? AND valid_until IS NULL", (now(), target_id)
-            )
+            self._conn.execute("UPDATE entities SET valid_until = ? WHERE id = ? AND valid_until IS NULL", (now(), target_id))
         elif target_kind == "relation":
-            self._conn.execute(
-                "UPDATE relations SET valid_until = ? WHERE id = ? AND valid_until IS NULL", (now(), target_id)
-            )
+            self._conn.execute("UPDATE relations SET valid_until = ? WHERE id = ? AND valid_until IS NULL", (now(), target_id))
         else:
             raise ValueError(f"unknown kind: {target_kind}")
 
@@ -1027,8 +993,7 @@ class Memory:
         for hit in knn_hits:
             # [7/21 fix] asof: chunk 在 asof 时点有效 = valid_until IS NULL OR > asof
             chunk = conn.execute(
-                "SELECT id, content, memory_type, source, timestamp, importance FROM chunks "
-                "WHERE id = ? AND (valid_until IS NULL OR valid_until > ?)",
+                "SELECT id, content, memory_type, source, timestamp, importance FROM chunks WHERE id = ? AND (valid_until IS NULL OR valid_until > ?)",
                 (hit.chunk_id, asof),
             ).fetchone()
             if not chunk:
@@ -1260,7 +1225,8 @@ class Memory:
         is_identity_query = any(k in query for k in identity_query_keys)
         if is_identity_query:
             # [7/21 fix] asof: 只取 asof 时点仍有效的 entity/relation
-            rows = self._conn.execute("""
+            rows = self._conn.execute(
+                """
                 SELECT e.id, e.kind, e.name, e.summary, e.importance
                 FROM relations r
                 JOIN entities e ON e.id = r.target_id
@@ -1268,7 +1234,9 @@ class Memory:
                 WHERE r.source_id = 'user'
                   AND (r.valid_until IS NULL OR r.valid_until > ?)
                   AND e.kind IN ('identity_fact', 'canonical_fact')
-            """, (asof, asof)).fetchall()
+            """,
+                (asof, asof),
+            ).fetchall()
             for r in rows:
                 seen_ids.add(r["id"])
                 hits.append(
@@ -1526,16 +1494,12 @@ class Memory:
         # [8/8 P1] namespace 防御 — 阻止历史 importer 残留 (Honcho anno:*) + 随机 ID (TOKEN_C_*)
         # + 句子当 entity.name. 白名单只允许: 显式 namespace prefix / master_* / 无冒号的 person 类短 name.
         _enforce_entity_namespace_guard(ent)
-        existing = self._conn.execute(
-            "SELECT id, kind FROM entities WHERE id = ? AND valid_until IS NULL", (ent["id"],)
-        ).fetchone()
+        existing = self._conn.execute("SELECT id, kind FROM entities WHERE id = ? AND valid_until IS NULL", (ent["id"],)).fetchone()
         if existing:
             # [7/19 P1-2] identity_fact 类实体拒绝覆盖 name/aliases/properties (防伪造主人身份)
             # 只能新增 (valid_until 旧版 + 新版)
             if existing["kind"] == "identity_fact":
-                raise ValidationError(
-                    "entity.identity_fact", "identity_fact entities are immutable; create a new version instead"
-                )
+                raise ValidationError("entity.identity_fact", "identity_fact entities are immutable; create a new version instead")
             # 更新 fields
             self._conn.execute(
                 """
@@ -1757,18 +1721,13 @@ class Memory:
                 ORDER BY purged_at
                 LIMIT ?
             """
-            due_ids = [
-                r[0] for r in
-                self._conn.execute(due_sql, (kind, today_iso, batch_size)).fetchall()
-            ]
+            due_ids = [r[0] for r in self._conn.execute(due_sql, (kind, today_iso, batch_size)).fetchall()]
             if not due_ids:
                 continue
 
             # 物理删 (从主表) — 用 cursor 拿 rowcount
             ph = ",".join("?" * len(due_ids))
-            cur = self._conn.execute(
-                f"DELETE FROM {table} WHERE id IN ({ph})", due_ids
-            )
+            cur = self._conn.execute(f"DELETE FROM {table} WHERE id IN ({ph})", due_ids)
             deleted = cur.rowcount
             stats[f"{table}_physically_deleted"] = deleted
 
@@ -1778,18 +1737,12 @@ class Memory:
                 [kind, *due_ids],
             )
             updated = cur.rowcount
-            logger.info(
-                f"[purge_worker] {kind}: deleted {deleted} rows from {table}, "
-                f"marked {updated} purged_queue rows done=1"
-            )
+            logger.info(f"[purge_worker] {kind}: deleted {deleted} rows from {table}, marked {updated} purged_queue rows done=1")
 
         # === Phase 3: vec0 orphan vectors 清理 (跟 cleanup_orphan_vectors 同款) ===
         try:
             vec_stats = self.cleanup_orphan_vectors(dry_run=False)
-            stats["vectors_orphans_cleaned"] = (
-                vec_stats.get("soft_deleted_cleaned", 0)
-                + vec_stats.get("truly_orphan_cleaned", 0)
-            )
+            stats["vectors_orphans_cleaned"] = vec_stats.get("soft_deleted_cleaned", 0) + vec_stats.get("truly_orphan_cleaned", 0)
         except Exception as e:
             logger.warning(f"[purge_worker] cleanup_orphan_vectors failed: {e}")
 
@@ -1802,8 +1755,8 @@ class Memory:
 
     # L2 配置项默认值 (跟 DESIGN §5.7 config 模板一致; 实际读 meta 表)
     _L2_DEFAULTS: Dict[str, Any] = {
-        "enabled": False,         # 主人 §5.7: 全局默认 false, 显式开启
-        "dry_run": True,          # 主人 §5.7: 全局默认 dry-run
+        "enabled": False,  # 主人 §5.7: 全局默认 false, 显式开启
+        "dry_run": True,  # 主人 §5.7: 全局默认 dry-run
         "importance_floor": 0.1,  # hygiene pass 的 floor (§5.6)
         "caps": {"supersede": 20, "merge": 20, "purge": 50},
     }
@@ -1831,9 +1784,7 @@ class Memory:
         Args:
             key: 'l2.enabled' / 'l2.dry_run' / 'l2.last_run.hygiene' 等
         """
-        row = self._conn.execute(
-            "SELECT value FROM meta WHERE key=?", (key,)
-        ).fetchone()
+        row = self._conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
         if not row:
             return default
         v = row[0]
@@ -1867,6 +1818,7 @@ class Memory:
         """
         # 简单 strip: 移除整行 # / -- 注释 + 移除 /* ... */ 块注释
         import re
+
         cleaned = re.sub(r"#[^\n]*", "", sql)  # 整行 # 注释 (含 §)
         cleaned = re.sub(r"--[^\n]*", "", cleaned)  # 整行 -- 注释
         cleaned = re.sub(r"/\*.*?\*/", "", cleaned, flags=re.DOTALL)  # /* */ 块
@@ -1922,28 +1874,28 @@ class Memory:
             # 解析 json 字段
             before = json.loads(r["before_json"]) if r["before_json"] else None
             after = json.loads(r["after_json"]) if r["after_json"] else None
-            result.append({
-                "id": r["id"],
-                "run_id": r["run_id"],
-                "pass_name": r["pass_name"],
-                "action_type": r["action_type"],
-                "ref_type": r["ref_type"],
-                "ref_id": r["ref_id"],
-                "before": before,
-                "after": after,
-                "confidence": r["confidence"],
-                "llm_used": bool(r["llm_used"]),
-                "status": r["status"],
-                "created_at": r["created_at"],
-                "revert_sql": r["revert_sql"],
-            })
+            result.append(
+                {
+                    "id": r["id"],
+                    "run_id": r["run_id"],
+                    "pass_name": r["pass_name"],
+                    "action_type": r["action_type"],
+                    "ref_type": r["ref_type"],
+                    "ref_id": r["ref_id"],
+                    "before": before,
+                    "after": after,
+                    "confidence": r["confidence"],
+                    "llm_used": bool(r["llm_used"]),
+                    "status": r["status"],
+                    "created_at": r["created_at"],
+                    "revert_sql": r["revert_sql"],
+                }
+            )
         return result
 
     def audit_undo(self, audit_id: int) -> Dict[str, Any]:
         """Undo one applied audit record using its trusted, stored revert script."""
-        row = self._conn.execute(
-            "SELECT * FROM audit_log WHERE id = ?", (audit_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM audit_log WHERE id = ?", (audit_id,)).fetchone()
         if not row:
             raise ValueError(f"audit record {audit_id} not found")
         if row["status"] != "applied":
@@ -1960,8 +1912,7 @@ class Memory:
                 before_json, after_json, confidence, llm_used, status,
                 created_at, revert_sql)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'reverted', ?, NULL)""",
-            (row["run_id"], row["pass_name"], row["action_type"], row["ref_type"], row["ref_id"],
-             row["after_json"], row["before_json"], row["confidence"], row["llm_used"], ts),
+            (row["run_id"], row["pass_name"], row["action_type"], row["ref_type"], row["ref_id"], row["after_json"], row["before_json"], row["confidence"], row["llm_used"], ts),
         )
         self._conn.commit()
         return {"audit_id": audit_id, "status": "reverted", "ref_id": row["ref_id"]}
@@ -2025,6 +1976,7 @@ class Memory:
 
             # 5. run_id + timestamp
             import time as _time
+
             run_id = f"run_{int(_time.time() * 1000)}"
 
             # 6. 逐 pass 跑
@@ -2053,10 +2005,7 @@ class Memory:
                     results["proposals"]["hygiene"] = res["proposals"]
                     # [H4 §3.4] purge_candidates 聚合: 只挑 ttl_soft_delete 的 proposals
                     # (decay_importance 是降权不是真删, 不算 purge)
-                    results["purge_candidates"] = [
-                        p for p in res["proposals"]
-                        if p.get("action") == "ttl_soft_delete"
-                    ]
+                    results["purge_candidates"] = [p for p in res["proposals"] if p.get("action") == "ttl_soft_delete"]
                     results["applied"] += res["applied"]
                     results["skipped"] += res["skipped"]
                     results["failed"] += res.get("failed", 0)
@@ -2080,8 +2029,7 @@ class Memory:
                     if res.get("watermark_updated"):
                         results["watermark_updated"].append("promote")
                 else:
-                    results.setdefault("warnings", []).append(
-                        f"unknown pass '{pname}', skipped")
+                    results.setdefault("warnings", []).append(f"unknown pass '{pname}', skipped")
 
             return results
         finally:
@@ -2147,44 +2095,46 @@ class Memory:
 
             chunk_id = row["id"]
             before = {"importance": row["importance"], "memory_type": row["memory_type"]}
-            after = {"importance": max(0.0, row["importance"] - 0.05),
-                     "memory_type": row["memory_type"]}
+            after = {"importance": max(0.0, row["importance"] - 0.05), "memory_type": row["memory_type"]}
             # revert_sql (§5.9.3): 重放回 before 状态
-            revert_sql = (
-                f"UPDATE chunks SET importance = {before['importance']:.6f} "
-                f"WHERE id = '{chunk_id}' AND valid_until IS NULL"
-            )
+            revert_sql = f"UPDATE chunks SET importance = {before['importance']:.6f} WHERE id = '{chunk_id}' AND valid_until IS NULL"
 
             # === 写 audit_log proposed 状态 (§5.9.1) ===
             try:
-                self._conn.execute("""
+                self._conn.execute(
+                    """
                     INSERT INTO audit_log
                         (run_id, pass_name, action_type, ref_type, ref_id,
                          before_json, after_json, confidence, llm_used, status,
                          created_at, revert_sql)
                     VALUES (?, 'hygiene', 'decay_importance', 'chunk', ?,
                             ?, ?, 1.0, 0, 'proposed', ?, NULL)
-                """, (
-                    run_id, chunk_id,
-                    json.dumps(before, ensure_ascii=False),
-                    json.dumps(after, ensure_ascii=False),
-                    ts,
-                ))
+                """,
+                    (
+                        run_id,
+                        chunk_id,
+                        json.dumps(before, ensure_ascii=False),
+                        json.dumps(after, ensure_ascii=False),
+                        ts,
+                    ),
+                )
                 self._conn.commit()
             except sqlite3.IntegrityError:
                 # UNIQUE 撞 (同 run_id 同 ref_id 同 status) — idempotent skip
                 skipped += 1
                 continue
 
-            proposals.append({
-                "ref_type": "chunk",
-                "ref_id": chunk_id,
-                "before": before,
-                "after": after,
-                "action": "decay_importance",
-                "reason": f"importance {before['importance']:.2f} < {importance_floor*3:.2f} (floor={importance_floor})",
-                "revert_sql": revert_sql,
-            })
+            proposals.append(
+                {
+                    "ref_type": "chunk",
+                    "ref_id": chunk_id,
+                    "before": before,
+                    "after": after,
+                    "action": "decay_importance",
+                    "reason": f"importance {before['importance']:.2f} < {importance_floor * 3:.2f} (floor={importance_floor})",
+                    "revert_sql": revert_sql,
+                }
+            )
 
             # === Apply 路径 (dry_run=False) — 每 proposal 一事务 (§5.9) ===
             if not dry_run:
@@ -2205,9 +2155,7 @@ class Memory:
                     else:
                         failed += 1
                 except Exception as e:  # noqa: BLE001 — 提案级隔离
-                    logger.exception(
-                        f"[H5] decay_importance apply raised: {chunk_id}"
-                    )
+                    logger.exception(f"[H5] decay_importance apply raised: {chunk_id}")
                     self._mark_skipped(
                         run_id=run_id,
                         chunk_id=chunk_id,
@@ -2226,9 +2174,7 @@ class Memory:
             if ttl_days is None:
                 continue  # procedure 永久
 
-            cutoff_iso = (
-                datetime.now() - timedelta(days=ttl_days)
-            ).strftime("%Y-%m-%dT%H:%M:%S")
+            cutoff_iso = (datetime.now() - timedelta(days=ttl_days)).strftime("%Y-%m-%dT%H:%M:%S")
 
             # 取过期 chunks (报告 + 真 apply 候选)
             ttl_candidates = self._exec_clean(
@@ -2243,14 +2189,16 @@ class Memory:
 
             if not ttl_candidates:
                 # 仍报 0 候选 (主人 §6 报告)
-                proposals.append({
-                    "ref_type": "report",
-                    "ref_id": f"ttl_{mtype}",
-                    "before": {"memory_type": mtype, "ttl_days": ttl_days},
-                    "after": None,
-                    "action": "ttl_candidate_report",
-                    "reason": f"0 chunks older than {ttl_days} days (memory_type={mtype})",
-                })
+                proposals.append(
+                    {
+                        "ref_type": "report",
+                        "ref_id": f"ttl_{mtype}",
+                        "before": {"memory_type": mtype, "ttl_days": ttl_days},
+                        "after": None,
+                        "action": "ttl_candidate_report",
+                        "reason": f"0 chunks older than {ttl_days} days (memory_type={mtype})",
+                    }
+                )
                 continue
 
             # 每个 candidate 写 audit_log + (apply 路径) soft-delete
@@ -2263,40 +2211,42 @@ class Memory:
                 before = {"memory_type": mtype, "valid_until": None, "timestamp": chunk_row["timestamp"]}
                 after = {"memory_type": mtype, "valid_until": ts, "timestamp": chunk_row["timestamp"]}
                 # Undo must revive the chunk and cancel its delayed physical purge.
-                revert_sql = (
-                    f"UPDATE chunks SET valid_until = NULL WHERE id = '{chunk_id}'; "
-                    f"DELETE FROM purged_queue WHERE target_id = '{chunk_id}' "
-                    f"AND target_kind = 'chunk' AND done = 0"
-                )
+                revert_sql = f"UPDATE chunks SET valid_until = NULL WHERE id = '{chunk_id}'; DELETE FROM purged_queue WHERE target_id = '{chunk_id}' AND target_kind = 'chunk' AND done = 0"
 
                 try:
-                    self._conn.execute("""
+                    self._conn.execute(
+                        """
                         INSERT INTO audit_log
                             (run_id, pass_name, action_type, ref_type, ref_id,
                              before_json, after_json, confidence, llm_used, status,
                              created_at, revert_sql)
                         VALUES (?, 'hygiene', 'ttl_soft_delete', 'chunk', ?,
                                 ?, ?, 1.0, 0, 'proposed', ?, NULL)
-                    """, (
-                        run_id, chunk_id,
-                        json.dumps(before, ensure_ascii=False),
-                        json.dumps(after, ensure_ascii=False),
-                        ts,
-                    ))
+                    """,
+                        (
+                            run_id,
+                            chunk_id,
+                            json.dumps(before, ensure_ascii=False),
+                            json.dumps(after, ensure_ascii=False),
+                            ts,
+                        ),
+                    )
                     self._conn.commit()
                 except sqlite3.IntegrityError:
                     skipped += 1
                     continue
 
-                proposals.append({
-                    "ref_type": "chunk",
-                    "ref_id": chunk_id,
-                    "before": before,
-                    "after": after,
-                    "action": "ttl_soft_delete",
-                    "reason": f"memory_type={mtype} > {ttl_days} days",
-                    "revert_sql": revert_sql,
-                })
+                proposals.append(
+                    {
+                        "ref_type": "chunk",
+                        "ref_id": chunk_id,
+                        "before": before,
+                        "after": after,
+                        "action": "ttl_soft_delete",
+                        "reason": f"memory_type={mtype} > {ttl_days} days",
+                        "revert_sql": revert_sql,
+                    }
+                )
 
                 # === Apply 路径 (dry_run=False + confirm_destructive=True) ===
                 if not dry_run:
@@ -2332,9 +2282,7 @@ class Memory:
                             else:
                                 failed += 1
                         except Exception as e:  # noqa: BLE001 — 提案级隔离, 详记日志
-                            logger.exception(
-                                f"[H5] ttl_soft_delete apply raised: {chunk_id}"
-                            )
+                            logger.exception(f"[H5] ttl_soft_delete apply raised: {chunk_id}")
                             self._mark_skipped(
                                 run_id=run_id,
                                 chunk_id=chunk_id,
@@ -2399,28 +2347,30 @@ class Memory:
             )
             if cur.rowcount == 0:
                 # chunk 已被别人改/删 (race condition) 或 importance 已变
-                raise RuntimeError(
-                    f"chunk {chunk_id} not found, already soft-deleted, "
-                    f"or importance changed (rowcount=0, expected={before['importance']:.4f})"
-                )
+                raise RuntimeError(f"chunk {chunk_id} not found, already soft-deleted, or importance changed (rowcount=0, expected={before['importance']:.4f})")
 
             # 2. 写 audit_log applied 行 (append-only §5.9.1)
             # [fix 8/4] UNIQUE(run_id, pass_name, action_type, ref_id, status)
             # 同 run_id 同 ref 已 proposed, 现在写 applied = 同 ref 不同 status
             # 但 UNIQUE 5 字段含 status, status 不同 = OK
-            self._conn.execute("""
+            self._conn.execute(
+                """
                 INSERT INTO audit_log
                     (run_id, pass_name, action_type, ref_type, ref_id,
                      before_json, after_json, confidence, llm_used, status,
                      created_at, revert_sql)
                 VALUES (?, 'hygiene', 'decay_importance', 'chunk', ?,
                         ?, ?, 1.0, 0, 'applied', ?, ?)
-            """, (
-                run_id, chunk_id,
-                json.dumps(before, ensure_ascii=False),
-                json.dumps(after, ensure_ascii=False),
-                ts, revert_sql,
-            ))
+            """,
+                (
+                    run_id,
+                    chunk_id,
+                    json.dumps(before, ensure_ascii=False),
+                    json.dumps(after, ensure_ascii=False),
+                    ts,
+                    revert_sql,
+                ),
+            )
             self._conn.commit()
             return True
         except Exception as e:
@@ -2462,14 +2412,13 @@ class Memory:
                 (ts, chunk_id),
             )
             if cur.rowcount == 0:
-                raise RuntimeError(
-                    f"chunk {chunk_id} not found or already soft-deleted"
-                )
+                raise RuntimeError(f"chunk {chunk_id} not found or already soft-deleted")
 
             # 2. INSERT purged_queue (30 天延迟物理清, 跟 DESIGN §3.8 一致)
             # [fix 8/4 audit #4] 用 Python now() + timedelta 而不是 SQLite 'now', '+30 days',
             #    实际避免 T+ ISO vs 空格秒混用 (v0.3 报告 §0 nuance B)
             from datetime import timedelta as _td
+
             purged_at_iso = (datetime.now() + _td(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
             self._exec_clean(
                 """INSERT INTO purged_queue
@@ -2479,19 +2428,24 @@ class Memory:
             )
 
             # 3. 写 audit_log applied 行 (§5.9.1 append-only)
-            self._conn.execute("""
+            self._conn.execute(
+                """
                 INSERT INTO audit_log
                     (run_id, pass_name, action_type, ref_type, ref_id,
                      before_json, after_json, confidence, llm_used, status,
                      created_at, revert_sql)
                 VALUES (?, 'hygiene', 'ttl_soft_delete', 'chunk', ?,
                         ?, ?, 1.0, 0, 'applied', ?, ?)
-            """, (
-                run_id, chunk_id,
-                json.dumps(before, ensure_ascii=False),
-                json.dumps(after, ensure_ascii=False),
-                ts, revert_sql,
-            ))
+            """,
+                (
+                    run_id,
+                    chunk_id,
+                    json.dumps(before, ensure_ascii=False),
+                    json.dumps(after, ensure_ascii=False),
+                    ts,
+                    revert_sql,
+                ),
+            )
             self._conn.commit()
             return True
         except Exception as e:
@@ -2524,18 +2478,23 @@ class Memory:
                 实际: 默认 'failed' 兼容旧调用 (L0/L1 阶段)
         """
         try:
-            self._conn.execute("""
+            self._conn.execute(
+                """
                 INSERT INTO audit_log
                     (run_id, pass_name, action_type, ref_type, ref_id,
                      before_json, after_json, confidence, llm_used, status,
                      created_at, revert_sql)
                 VALUES (?, 'hygiene', ?, 'chunk', ?,
                         NULL, ?, 0, 0, 'skipped', ?, NULL)
-            """, (
-                run_id, action_type, chunk_id,
-                json.dumps({"reason": reason}, ensure_ascii=False),
-                ts,
-            ))
+            """,
+                (
+                    run_id,
+                    action_type,
+                    chunk_id,
+                    json.dumps({"reason": reason}, ensure_ascii=False),
+                    ts,
+                ),
+            )
             self._conn.commit()
         except sqlite3.IntegrityError:
             # UNIQUE 撞, 已写过一个 skipped 同 run_id + ref_id — OK
@@ -2579,6 +2538,7 @@ class Memory:
             }
         """
         from datetime import datetime as _dt
+
         ts = _dt.now().strftime("%Y-%m-%dT%H:%M:%S")
 
         # ===== P1: 扫描候选 =====
@@ -2611,29 +2571,26 @@ class Memory:
                 chunk_age_days = (_dt.now() - _dt.fromisoformat(row["timestamp"])).days
             except (ValueError, TypeError):
                 chunk_age_days = 0
-            if (
-                row["importance"] >= self._PROMOTE_LONG_IMP_THRESHOLD
-                and chunk_age_days >= self._PROMOTE_LONG_DAYS
-            ):
+            if row["importance"] >= self._PROMOTE_LONG_IMP_THRESHOLD and chunk_age_days >= self._PROMOTE_LONG_DAYS:
                 signals["long_high_imp"] = {
                     "importance": row["importance"],
                     "age_days": chunk_age_days,
                 }
                 score += 50  # 长期高重要给固定权重
             if signals:
-                candidates.append({
-                    "chunk_id": row["id"],
-                    "signals": signals,
-                    "score": score,
-                    "action": "promote",
-                })
+                candidates.append(
+                    {
+                        "chunk_id": row["id"],
+                        "signals": signals,
+                        "score": score,
+                        "action": "promote",
+                    }
+                )
         # 按 score 降序
         candidates.sort(key=lambda c: c["score"], reverse=True)
 
         # ===== P3 上限检查: canonical_fact 总数 =====
-        canonical_count_row = self._conn.execute(
-            "SELECT COUNT(*) FROM entities WHERE kind='canonical_fact' AND valid_until IS NULL"
-        ).fetchone()
+        canonical_count_row = self._conn.execute("SELECT COUNT(*) FROM entities WHERE kind='canonical_fact' AND valid_until IS NULL").fetchone()
         canonical_count = canonical_count_row[0]
         need_evict = max(0, canonical_count + len(candidates) - self._PROMOTE_MAX_CANONICAL)
 
@@ -2660,11 +2617,13 @@ class Memory:
                 except (ValueError, TypeError):
                     age_days = 0
             if age_days >= self._PROMOTE_DEMOTE_DAYS and ent["ref_degree"] < self._PROMOTE_DEMOTE_REF_THRESHOLD:
-                demote_candidates.append({
-                    "entity_id": ent["id"],
-                    "reason": f"90d未召回(ref_degree={ent['ref_degree']})",
-                    "importance": ent["importance"],
-                })
+                demote_candidates.append(
+                    {
+                        "entity_id": ent["id"],
+                        "reason": f"90d未召回(ref_degree={ent['ref_degree']})",
+                        "importance": ent["importance"],
+                    }
+                )
 
         # ===== 上限腾位: 按 importance asc 补 demote 候选 =====
         if need_evict > 0:
@@ -2682,31 +2641,37 @@ class Memory:
                 # 避免重复添加
                 if any(d["entity_id"] == ent["id"] for d in demote_candidates):
                     continue
-                demote_candidates.append({
-                    "entity_id": ent["id"],
-                    "reason": f"canonical_fact 上限{self._PROMOTE_MAX_CANONICAL}触发腾位",
-                    "importance": ent["importance"],
-                })
+                demote_candidates.append(
+                    {
+                        "entity_id": ent["id"],
+                        "reason": f"canonical_fact 上限{self._PROMOTE_MAX_CANONICAL}触发腾位",
+                        "importance": ent["importance"],
+                    }
+                )
 
         # ===== P4 audit 接入: proposals =====
         proposals: List[Dict[str, Any]] = []
         # promote proposals
         for cand in candidates:
-            proposals.append({
-                "action_type": "promote_to_canonical",
-                "ref_type": "chunk",
-                "ref_id": cand["chunk_id"],
-                "signals": cand["signals"],
-                "score": cand["score"],
-            })
+            proposals.append(
+                {
+                    "action_type": "promote_to_canonical",
+                    "ref_type": "chunk",
+                    "ref_id": cand["chunk_id"],
+                    "signals": cand["signals"],
+                    "score": cand["score"],
+                }
+            )
         # demote proposals
         for d in demote_candidates:
-            proposals.append({
-                "action_type": "demote_canonical",
-                "ref_type": "entity",
-                "ref_id": d["entity_id"],
-                "reason": d["reason"],
-            })
+            proposals.append(
+                {
+                    "action_type": "demote_canonical",
+                    "ref_type": "entity",
+                    "ref_id": d["entity_id"],
+                    "reason": d["reason"],
+                }
+            )
 
         result = {
             "candidates": candidates,
@@ -2804,6 +2769,7 @@ class Memory:
             # [Part 2 review MEDIUM fix] 追加 chunk_id 短 hash 后缀, 防不同 chunk 共享
             # 首 40 字导致 slug 撞 → silent overwrite canonical_fact summary.
             import re as _re
+
             slug = _re.sub(r"[^a-zA-Z0-9_]", "_", core_fact[:40]).strip("_")
             if not slug:
                 # fallback: 用 chunk_id[:16] (原行为)
@@ -2812,6 +2778,7 @@ class Memory:
             else:
                 # 6-char hash suffix (16M 空间足够) — 防 slug collision
                 import hashlib as _hl_slug
+
                 _hash_suffix = _hl_slug.md5(chunk_id.encode()).hexdigest()[:6]
                 entity_id = f"canonical:{slug}_{_hash_suffix}"
 
@@ -2832,12 +2799,9 @@ class Memory:
             # 注意: relations.id 是 INTEGER AUTOINCREMENT, 不能用 TEXT id — 用 chunk_id hash
             # [Part 2 review LOW fix] 防 silent drop: hash collision 时改用 max+1, 且事后 verify INSERT 生效
             import hashlib as _hl
-            rel_id_hash = int.from_bytes(
-                _hl.md5(f"{chunk_id}|{entity_id}".encode()).digest()[:4], "big", signed=False
-            )
-            max_row = self._conn.execute(
-                "SELECT COALESCE(MAX(id), 0) FROM relations"
-            ).fetchone()
+
+            rel_id_hash = int.from_bytes(_hl.md5(f"{chunk_id}|{entity_id}".encode()).digest()[:4], "big", signed=False)
+            max_row = self._conn.execute("SELECT COALESCE(MAX(id), 0) FROM relations").fetchone()
             base_id = rel_id_hash % (2**31) or (max_row[0] + 1)
             # 试探 INSERT; 如因 id collision 失败, 退到 MAX+1
             rel_id = base_id
@@ -2855,9 +2819,7 @@ class Memory:
                 except sqlite3.IntegrityError:
                     rel_id = max_row[0] + 1 + attempt + 1
             else:
-                raise RuntimeError(
-                    f"evidence relation insert failed after 3 attempts for {chunk_id}|{entity_id}"
-                )
+                raise RuntimeError(f"evidence relation insert failed after 3 attempts for {chunk_id}|{entity_id}")
 
             # 5. audit_log applied
             self._conn.execute(
@@ -2870,15 +2832,18 @@ class Memory:
                         NULL, ?, 1.0, 0, 'applied', ?, ?)
                 """,
                 (
-                    run_id, chunk_id,
-                    json.dumps({
-                        "entity_id": entity_id,
-                        "core_fact": core_fact,
-                        "signals": signals,
-                    }, ensure_ascii=False),
+                    run_id,
+                    chunk_id,
+                    json.dumps(
+                        {
+                            "entity_id": entity_id,
+                            "core_fact": core_fact,
+                            "signals": signals,
+                        },
+                        ensure_ascii=False,
+                    ),
                     ts,
-                    f"DELETE FROM relations WHERE id='{rel_id}'; "
-                    f"UPDATE entities SET valid_until='{ts}' WHERE id='{entity_id}' AND valid_until IS NULL;",
+                    f"DELETE FROM relations WHERE id='{rel_id}'; UPDATE entities SET valid_until='{ts}' WHERE id='{entity_id}' AND valid_until IS NULL;",
                 ),
             )
             self._conn.commit()
@@ -2925,7 +2890,8 @@ class Memory:
                         ?, ?, 1.0, 0, 'applied', ?, ?)
                 """,
                 (
-                    run_id, entity_id,
+                    run_id,
+                    entity_id,
                     json.dumps({"kind": old_kind}, ensure_ascii=False),
                     json.dumps({"kind": "concept", "reason": reason}, ensure_ascii=False),
                     ts,
@@ -2959,6 +2925,7 @@ class Memory:
         实际每 runs (8/4 实测 ~13445 行累积, 实际若 GC 开, 删 ~30% = 实际 减少 ~4000 行).
         """
         from datetime import timedelta as _td
+
         now = datetime.now()
         applied_cutoff = (now - _td(days=self._AUDIT_GC_APPLIED_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
         skipped_cutoff = (now - _td(days=self._AUDIT_GC_SKIPPED_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -3031,9 +2998,7 @@ class Memory:
 
     def _mark_digest_dirty(self) -> None:
         """[G3 8/4] TASKS_L2_DIGEST §3.3 — dirty 追踪, set meta.digest_dirty=1."""
-        self._conn.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('digest_dirty', '1')"
-        )
+        self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('digest_dirty', '1')")
         self._conn.commit()
 
     def _rebuild_digest(self) -> Optional[str]:
@@ -3046,16 +3011,17 @@ class Memory:
             return None
         ts = now()
         new_id = generate_id("chunk") + "_digest"
-        metadata = json.dumps({
-            "digest": True,
-            "line_refs": line_refs,
-            "truncated": truncated,
-            "built_at": ts,
-        }, ensure_ascii=False)
+        metadata = json.dumps(
+            {
+                "digest": True,
+                "line_refs": line_refs,
+                "truncated": truncated,
+                "built_at": ts,
+            },
+            ensure_ascii=False,
+        )
         try:
-            old_row = self._conn.execute(
-                "SELECT value FROM meta WHERE key='digest_chunk_id'"
-            ).fetchone()
+            old_row = self._conn.execute("SELECT value FROM meta WHERE key='digest_chunk_id'").fetchone()
             old_id = old_row["value"] if old_row else None
             self._exec_clean(
                 """INSERT INTO chunks
@@ -3065,9 +3031,7 @@ class Memory:
                 (new_id, text, ts, metadata),
             )
             if old_id:
-                cur_meta = self._exec_clean(
-                    "SELECT metadata_json FROM chunks WHERE id = ?", (old_id,)
-                ).fetchone()
+                cur_meta = self._exec_clean("SELECT metadata_json FROM chunks WHERE id = ?", (old_id,)).fetchone()
                 m: Dict[str, Any] = {}
                 if cur_meta and cur_meta["metadata_json"]:
                     try:
@@ -3084,9 +3048,7 @@ class Memory:
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('digest_chunk_id', ?)",
                 (new_id,),
             )
-            self._conn.execute(
-                "INSERT OR REPLACE INTO meta (key, value) VALUES ('digest_dirty', '0')"
-            )
+            self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('digest_dirty', '0')")
             self._conn.commit()
             return new_id
         except Exception as e:
@@ -3098,21 +3060,15 @@ class Memory:
         cfg = config.config
         if not cfg.digest_enabled:
             return {"enabled": False, "content": "", "line_refs": {}, "truncated": False, "built_at": None}
-        meta_dirty = self._conn.execute(
-            "SELECT value FROM meta WHERE key='digest_dirty'"
-        ).fetchone()
+        meta_dirty = self._conn.execute("SELECT value FROM meta WHERE key='digest_dirty'").fetchone()
         is_dirty = meta_dirty and meta_dirty["value"] == "1"
-        chunk_id_row = self._conn.execute(
-            "SELECT value FROM meta WHERE key='digest_chunk_id'"
-        ).fetchone()
+        chunk_id_row = self._conn.execute("SELECT value FROM meta WHERE key='digest_chunk_id'").fetchone()
         chunk_id = chunk_id_row["value"] if chunk_id_row else None
         if is_dirty or not chunk_id:
             chunk_id = self._rebuild_digest()
         if not chunk_id:
             return {"enabled": True, "content": "", "line_refs": {}, "truncated": False, "built_at": None}
-        row = self._exec_clean(
-            "SELECT content, metadata_json FROM chunks WHERE id = ?", (chunk_id,)
-        ).fetchone()
+        row = self._exec_clean("SELECT content, metadata_json FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
         if not row:
             return {"enabled": True, "content": "", "line_refs": {}, "truncated": False, "built_at": None}
         meta_obj: Dict[str, Any] = {}
@@ -3143,27 +3099,31 @@ class Memory:
                 (rid,),
             ).fetchone()
             if entity_row:
-                source_chunks.append({
-                    "type": "entity",
-                    "id": entity_row["id"],
-                    "name": entity_row["name"],
-                    "summary": entity_row["summary"],
-                    "importance": entity_row["importance"],
-                })
+                source_chunks.append(
+                    {
+                        "type": "entity",
+                        "id": entity_row["id"],
+                        "name": entity_row["name"],
+                        "summary": entity_row["summary"],
+                        "importance": entity_row["importance"],
+                    }
+                )
             else:
                 ck_row = self._exec_clean(
                     "SELECT id, content, memory_type, importance, timestamp FROM chunks WHERE id = ?",
                     (rid,),
                 ).fetchone()
                 if ck_row:
-                    source_chunks.append({
-                        "type": "chunk",
-                        "id": ck_row["id"],
-                        "content": ck_row["content"],
-                        "memory_type": ck_row["memory_type"],
-                        "importance": ck_row["importance"],
-                        "timestamp": ck_row["timestamp"],
-                    })
+                    source_chunks.append(
+                        {
+                            "type": "chunk",
+                            "id": ck_row["id"],
+                            "content": ck_row["content"],
+                            "memory_type": ck_row["memory_type"],
+                            "importance": ck_row["importance"],
+                            "timestamp": ck_row["timestamp"],
+                        }
+                    )
         return {
             "enabled": True,
             "ref": ref,
@@ -3236,10 +3196,9 @@ class Memory:
         # 用 task_states.list_active_tasks_and_loops + render_digest_block4.
         from task_states import list_active_tasks_and_loops as _ts_list_active
         from task_states import render_digest_block4 as _ts_render_b4
+
         try:
-            active_block = _ts_list_active(
-                self._conn, now=None, stale_days_threshold=7, limit=50
-            )
+            active_block = _ts_list_active(self._conn, now=None, stale_days_threshold=7, limit=50)
             block4_lines, block4_refs = _ts_render_b4(active_block)
         except Exception as e:
             logger.debug(f"[build_digest] block4 (active loops) 实际 错误: {e}")
@@ -3298,12 +3257,8 @@ class Memory:
             "SELECT COUNT(*) FROM chunks WHERE valid_until IS NULL AND importance <= ?",
             (floor,),
         ).fetchone()[0]  # type: ignore[arg-type]  # noqa
-        purge_backlog = self._exec_clean(
-            "SELECT COUNT(*) FROM purged_queue WHERE done=0"
-        ).fetchone()[0]  # type: ignore[arg-type]
-        audit_log_total = self._exec_clean(
-            "SELECT COUNT(*) FROM audit_log"
-        ).fetchone()[0]  # type: ignore[arg-type]
+        purge_backlog = self._exec_clean("SELECT COUNT(*) FROM purged_queue WHERE done=0").fetchone()[0]  # type: ignore[arg-type]
+        audit_log_total = self._exec_clean("SELECT COUNT(*) FROM audit_log").fetchone()[0]  # type: ignore[arg-type]
         freshness = self._exec_clean(
             """SELECT COALESCE(
                  CAST(SUM(CASE WHEN datetime(timestamp) >= datetime('now', '-30 days') THEN 1 ELSE 0 END) AS REAL)
@@ -3319,17 +3274,11 @@ class Memory:
         for _mtype, _ttl in self._MEMORY_TYPE_TTL_DAYS.items():
             if _ttl is None:
                 continue  # procedure 永久
-            per_type.append(
-                f"SELECT COUNT(*) AS n FROM chunks WHERE valid_until IS NULL "
-                f"AND memory_type = '{_mtype}' "
-                f"AND timestamp < datetime('now', ?)"
-            )
+            per_type.append(f"SELECT COUNT(*) AS n FROM chunks WHERE valid_until IS NULL AND memory_type = '{_mtype}' AND timestamp < datetime('now', ?)")
             params.append(f"-{_ttl} days")
         if per_type:
             union_sql = " UNION ALL ".join(per_type)
-            row = self._conn.execute(
-                f"SELECT COALESCE(SUM(n), 0) FROM ({union_sql})", params
-            ).fetchone()
+            row = self._conn.execute(f"SELECT COALESCE(SUM(n), 0) FROM ({union_sql})", params).fetchone()
             purge_candidates = row[0] if row else 0  # type: ignore[index]
         else:
             purge_candidates = 0

@@ -29,6 +29,7 @@ mcp_server's HTTP API. 走 streamable-http (MCP 2025-06-18 spec).
 - MNELO_REMOTE_TOKEN  默认 ~/.config/mnelo/auth_token (mounted by owner)
 - 显式更高优先级: --url / --token CLI args
 """
+
 import argparse
 import json
 import os
@@ -48,6 +49,7 @@ def _get_tailscale_host() -> str:
     > config.toml [client].tailscale_host > 默认 mnelo.tail6a710.ts.net."""
     try:
         from config import config as _cfg  # 延迟 import, scripts/ 路径下也安全
+
         return _cfg.client_tailscale_host
     except Exception:
         return DEFAULT_TAILSCALE_HOST
@@ -77,8 +79,7 @@ class MneloRemoteClient:
                     token = f.read().strip()
             else:
                 raise MneloRemoteError(
-                    f"No auth token. Provide via MNELO_REMOTE_TOKEN env, "
-                    f"--token CLI arg, or mount ~/.config/mnelo/auth_token",
+                    f"No auth token. Provide via MNELO_REMOTE_TOKEN env, --token CLI arg, or mount ~/.config/mnelo/auth_token",
                 )
         self.token = token
         self.timeout = timeout
@@ -127,11 +128,14 @@ class MneloRemoteClient:
 
     def initialize(self) -> Dict[str, Any]:
         """必须先 initialize 拿到 session, 后面的 tools/call 才能用."""
-        return self._call("initialize", {
-            "protocolVersion": "2025-06-18",
-            "capabilities": {},
-            "clientInfo": {"name": "mnelo_remote_client", "version": "1.0"},
-        })
+        return self._call(
+            "initialize",
+            {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "mnelo_remote_client", "version": "1.0"},
+            },
+        )
 
     def _tools_call(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """[8/8] 薄包装 tools/call, 解析 mnelo 2-block 响应 (🌳 echo + JSON)."""
@@ -206,6 +210,7 @@ class MneloRemoteClient:
 # CLI
 # ============================================================
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Tailscale mesh 跨 vps 调 mnelo MCP server (8/8 multi-agent)",
@@ -253,7 +258,7 @@ def main():
         hits = result if isinstance(result, list) else (result.get("hits", []) if isinstance(result, dict) else [])
         top_method = hits[0].get("method", "?") if hits else "?"
         top_rrf = hits[0].get("rrf_score", 0.0) if hits else 0.0
-        print(f"🌳 mnelo    ~{len(hits)} hits  \"{args.query}\"  (top={top_method} rrf={top_rrf:.3f})")
+        print(f'🌳 mnelo    ~{len(hits)} hits  "{args.query}"  (top={top_method} rrf={top_rrf:.3f})')
         for h in hits:
             content = h.get("content", "")[:80]
             rrf = h.get("rrf", 0)
@@ -299,7 +304,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
 
-
 # ============================================================
 # HermesMneloClient — [8/9] hermes 端默认 source filter
 # ============================================================
@@ -314,6 +318,7 @@ if __name__ == "__main__":
 # - path B (mnelo_remote_client.py cross-vps): 同 hermes owner 调用, 默认 source
 #   'hermes-gw' (Tailscale 入口). 燕如 / 别的 agent 写 'yanru-vps/*' 隔离.
 
+
 class HermesMneloClient(MneloRemoteClient):
     """[8/9] hermes 端 source 默认 'hermes-gw' filter, 防跨客户端污染."""
 
@@ -324,9 +329,7 @@ class HermesMneloClient(MneloRemoteClient):
         # 临时切身份, 但默认 union 'hermes-gw' filter).
         merged_filters = dict(filters or {})
         merged_filters.setdefault("source", self.DEFAULT_SOURCE)
-        return super().recall(
-            query, top_k=top_k, filters=merged_filters, strategy=strategy, asof=asof
-        )
+        return super().recall(query, top_k=top_k, filters=merged_filters, strategy=strategy, asof=asof)
 
     def remember(self, content, source=None, **kwargs):
         # 强制 source 前缀 (防裸 source / 空字符串漏掉 hermes-gw 命名)

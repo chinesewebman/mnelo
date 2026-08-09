@@ -299,11 +299,7 @@ def run_benchmark(args) -> dict:
         print(f"\n[1/3] seeding {args.chunks} chunks...")
         seed_time = seed_chunks(memory, args.chunks, source_prefix)
         stats = memory.stats()
-        print(
-            f"  ✓ seeded in {seed_time:.1f}s "
-            f"(entities={stats['entities']['total']} chunks={stats['chunks']['total']} "
-            f"vectors={stats['vectors']})"
-        )
+        print(f"  ✓ seeded in {seed_time:.1f}s (entities={stats['entities']['total']} chunks={stats['chunks']['total']} vectors={stats['vectors']})")
 
         # 2. Warmup
         print("\n[2/3] warming up (5 queries)...")
