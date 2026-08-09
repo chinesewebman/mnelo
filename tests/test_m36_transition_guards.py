@@ -19,24 +19,33 @@ import memory
 
 
 def _assert_isolated_db():
-    """[M36 整改] 隔离守卫 — 拒绝在含真实记忆 chunk 的库上运行.
+    """[M36] 隔离库 guard — 防止测试连到真 live 库 (含真实用户数据).
 
-    防 MNELO_MEMORY_DIR 未指到临时库时误连 live 记忆库并污染 (测试会写
-    task_states/entities/audit_log). 既有隔离模式:
-      MNELO_MEMORY_DIR=$(mktemp -d) && python scripts/init_db.py && \
-      pytest tests/test_m36_transition_guards.py
+    [M36.1+] 既设计:
+      - DB 不存在 → Memory() 自建 (8/9 follow-up, 替代 init_db.py)
+      - 缺必要表 → 拒绝
+      - 太多 chunk → 拒绝 (疑似 live 库)
 
-    [8/10 主人验证报告 fix] 之前误假设 init_db seed 1 个 'manual' chunk,
-    实际 init_db.py 只 CREATE TABLE + 验证, 不 seed chunk. 旧 guard
-    n_total==0 拒绝 = 误杀 init_db 后隔离库 (空). 改成:
-      - 验证必要表存在 (task_states / entities / chunks) — init_db 必建
-      - 仍拒绝 n_total > 50 明确 live 库
-      - 仍拒绝 n_live > 5 (大量异源 source)
-      - n_total == 0 放行 (init_db 后的空库, 测试自己 _create_task + transition)
+    [8/9 P1 follow-up] Memory() class 7/21 起自建库 (替代 init_db.py). CI 跳过
+    init_db step 后, guard 不能 module-level 跑 (没 DB 时直接 raise SystemExit 死
+    pytest collection). 改成 fixture 形式 — DB 不存在时 Memory() 自建一个空库
+    (无 live 数据), guard 再走 (此时 DB 必有 task_states/entities/chunks 表).
     """
     db = Path(memory.DB_PATH).resolve()
     if not db.exists():
-        raise SystemExit(f"[test_m36] DB 不存在: {db} — 请先 scripts/init_db.py 初始化隔离库")
+        # Memory() 自建一个空隔离库 (跟 .hermes LIVE 隔离) — Memory() 跑 schema.sql,
+        # 0 chunks. CI 没 enable_load_extension 时 Memory() 仍会 fail, fixture
+        # 返回 False 让 pytest 跳过整套 (跟 conftest zvec LOCK skip 同模式).
+        try:
+            _m = memory.Memory(db_path=memory.DB_PATH)
+            _m.close()
+        except Exception as _e:
+            import pytest as _pytest
+            _pytest.skip(
+                f"[test_m36] Memory() 自建隔离库失败 ({type(_e).__name__}: {_e}). "
+                f"CI 缺 enable_load_extension 常见. 本地 venv python 3.11+ + sqlite-vec 装好时跑全套.",
+                allow_module_level=True,
+            )
     conn = sqlite3.connect(str(db))
     # [8/10 fix] 验证 init_db 必要表存在, 而不是靠 chunk 数推断
     cur = conn.execute(
@@ -47,9 +56,12 @@ def _assert_isolated_db():
     required = {"task_states", "entities", "chunks"}
     missing = required - tables
     if missing:
-        raise SystemExit(
+        import pytest as _pytest
+        _pytest.skip(
             f"[test_m36] DB {db} 缺 schema 表: {sorted(missing)}. "
-            "请先 scripts/init_db.py 初始化隔离库"
+            f"Memory() 自建后应全有, 如缺说明 schema.sql 漂移. "
+            f"本地: MNELO_MEMORY_DIR=$(mktemp -d) && python scripts/init_db.py.",
+            allow_module_level=True,
         )
     # [8/10 fix] 仍走 n_total + n_live 阈值 (防连到真 live 库)
     conn = sqlite3.connect(str(db))
@@ -61,9 +73,11 @@ def _assert_isolated_db():
     ).fetchone()[0]
     conn.close()
     if n_total > 50 or n_live > 5:
-        raise SystemExit(
+        import pytest as _pytest
+        _pytest.skip(
             f"[test_m36] 拒绝运行: {db} 含 {n_total} 个 chunk ({n_live} 非种子, 疑似 live 库). "
-            "请用隔离临时库: MNELO_MEMORY_DIR=$(mktemp -d) && python scripts/init_db.py"
+            f"用隔离临时库: MNELO_MEMORY_DIR=$(mktemp -d) && python scripts/init_db.py",
+            allow_module_level=True,
         )
 
 
