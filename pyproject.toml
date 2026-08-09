@@ -1,7 +1,7 @@
 [tool.ruff]
 # Match minimum Python version we test (3.9 — oldest in matrix)
 target-version = "py39"
-line-length = 120
+line-length = 200  # [8/9] 中文 docstring 200 字内单行合理; 实测 mcp_server/memory/task_states 长行 121-201
 extend-exclude = [
     ".git",
     "__pycache__",
