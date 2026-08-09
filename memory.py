@@ -276,6 +276,10 @@ class Memory:
 
     def __init__(self, db_path: Path = DB_PATH):
         self.db_path = db_path
+        # [8/9 P1 follow-up] Memory() 自建库 — 7/19 init_db.py 父目录 mkdir
+        # 责任迁到 Memory(). 测试 fixture (test_memory 等 setUpClass) 调 Memory()
+        # 不再前置建目录,Memory() 一行兜底.
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         # check_same_thread=False —  P2+ #2 让 recall 并发跑 4 路用独立 conn 时,
         # graph_recall (主 method) 仍然在主 thread 调, 但需要 main conn 也能被 worker 间接用
         # SQLite 检查是 dbapi-level strict — 一切 conn 都允许跨 thread 是务实做法
