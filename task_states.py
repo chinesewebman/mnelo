@@ -1562,17 +1562,17 @@ def render_digest_block4(active_block: Dict[str, Any]) -> Tuple[str, Dict[str, L
         n += 1
         text_lines.append(f"dormant loop ({active_block['counts']['dormant_loops']}):")
         refs[str(n)] = []
-        for l in active_block["dormant_loops"]:
+        for loop in active_block["dormant_loops"]:
             if truncated:
                 break
             n += 1
             # [M35.2 fix] 截断长 loop name 到 60 chars (跟 task 段对称)
-            loop_name = l["name"]
+            loop_name = loop["name"]
             if len(loop_name) > 60:
                 loop_name = loop_name[:57] + "..."
-            line = f"  - {loop_name} (interval={l.get('interval_hours')}h)"
+            line = f"  - {loop_name} (interval={loop.get('interval_hours')}h)"
             text_lines.append(line)
-            refs[str(n)] = [l["loop_id"]]
+            refs[str(n)] = [loop["loop_id"]]
             # [M35.2 fix] 跟 task 段 (1514) 同公式 - 真 joined 长 = sum(len(s)) + n - 1,
             # 余量 80 chars 保守防超 2000 (loop 行最大 ~80 char after 60-char name cap).
             current = sum(len(s) for s in text_lines) + len(text_lines) - 1

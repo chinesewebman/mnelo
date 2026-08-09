@@ -107,7 +107,11 @@ TOOLS = [
                 "importance": {"type": "number", "description": "0.0-1.0, 默认 0.5", "default": 0.5},
                 "memory_type": {
                     "type": "string",
-                    "description": "[P0 §3.0] fact / preference / episode / decision / procedure / ephemeral. [P1a E4 8/4] 默认 None 触发 P1a 规则自动分类; 显式传值永远尊重 (None=未指定, 触发分类器).",
+                    "description": (
+                        "[P0 §3.0] fact / preference / episode / decision / procedure / ephemeral. "
+                        "[P1a E4 8/4] 默认 None 触发 P1a 规则自动分类; 显式传值永远尊重 "
+                        "(None=未指定, 触发分类器)."
+                    ),
                     "default": None,
                     "enum": ["fact", "preference", "episode", "decision", "procedure", "ephemeral", None],
                 },
@@ -298,7 +302,11 @@ TOOLS = [
     # 任一 MCP 客户端可用, 跟 G7 resources/list+read 是同一个通用层薄包装.
     {
         "name": "memory_get_digest",
-        "description": "[S1 8/5] 常驻记忆摘要 (DESIGN §4.5 + 可逆压缩 v0.13 + TASKS_L2_DIGEST §1.1). 缺省/省略 ref → 摘要压缩视图 (content + line_refs); 传 ref=<行号> → 展开该行源 chunk. 非法 ref → {error: ...}.",
+        "description": (
+            "[S1 8/5] 常驻记忆摘要 (DESIGN §4.5 + 可逆压缩 v0.13 + TASKS_L2_DIGEST §1.1). "
+            "缺省/省略 ref → 摘要压缩视图 (content + line_refs); 传 ref=<行号> → 展开该行源 chunk. "
+            "非法 ref → {error: ...}."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -330,7 +338,11 @@ TOOLS = [
     # === [8/6 M3 Step 8] memory_task_transition ===
     {
         "name": "memory_task_transition",
-        "description": "CAS 关旧窗 + 开新窗 (DESIGN §4.2). task_id 必填, to_state/reason 必填, evidence_chunk_id 可选但若提供须存在. force=True 绕过转移图 (D8 纠正门). 终端 (cancelled) 拒收. 并发 / 重复提交报 NotCurrentStateError.",
+        "description": (
+            "CAS 关旧窗 + 开新窗 (DESIGN §4.2). task_id 必填, to_state/reason 必填, "
+            "evidence_chunk_id 可选但若提供须存在. force=True 绕过转移图 (D8 纠正门). "
+            "终端 (cancelled) 拒收. 并发 / 重复提交报 NotCurrentStateError."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -347,7 +359,12 @@ TOOLS = [
     # === [8/6 M3 Step 9] memory_task_list ===
     {
         "name": "memory_task_list",
-        "description": "列出活跃任务 (DESIGN §5.1). 默认 state 过滤 active (state NOT IN done/cancelled/dormant/paused). state 参数当前状态精确过滤 (state=in_progress). loop_id 过滤父 loop. asof 时间切片. stale_days 算窗口年龄.",
+        "description": (
+            "列出活跃任务 (DESIGN §5.1). 默认 state 过滤 active "
+            "(state NOT IN done/cancelled/dormant/paused). "
+            "state 参数当前状态精确过滤 (state=in_progress). loop_id 过滤父 loop. "
+            "asof 时间切片. stale_days 算窗口年龄."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -407,7 +424,11 @@ TOOLS = [
     # === [8/6 M3 Step 12] memory_loop_update ===
     {
         "name": "memory_loop_update",
-        "description": "改 loop properties (DESIGN §5.1). enabled/trigger/interval_hours/priority/owner_id 任一可改; None 字段不动. enabled 切换落 dormant/running 状态窗. 不动 active_task_id (那是 task_create 的领域).",
+        "description": (
+            "改 loop properties (DESIGN §5.1). enabled/trigger/interval_hours/priority/owner_id "
+            "任一可改; None 字段不动. enabled 切换落 dormant/running 状态窗. "
+            "不动 active_task_id (那是 task_create 的领域)."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
