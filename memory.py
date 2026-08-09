@@ -11,6 +11,7 @@ memory.py — mnelo 核心 CRUD API
 import contextlib
 import json
 import logging
+import os
 import re
 import sqlite3
 from datetime import datetime, timedelta
@@ -295,9 +296,33 @@ class Memory:
         # cache_size 单位是 page (default 4 KB); -64000 = -64*1024 KB
         self._conn.execute("PRAGMA cache_size = -64000")
         self._conn.execute("PRAGMA foreign_keys = ON")
-        self._conn.enable_load_extension(True)
-        sqlite_vec.load(self._conn)
-        self._conn.enable_load_extension(False)
+        # [8/9 P1 follow-up] enable_load_extension 在某些 Python build 里被禁用
+        # (CI hostedtoolcache macOS arm64 sandbox; 7/19 实测 fail AttributeError).
+        # sqlite_vec 提供 SQLite extension 二进制 vec0.dylib/.so, 直接 ctypes 加载
+        # 后用 conn.load_extension() 注入即可 — 不依赖 enable_load_extension.
+        # 本地 venv Python (3.11.15 + sqlite 3.53) 走原路径; CI hostedtoolcache
+        # Python 走 ctypes fallback 路径. 不改应用行为, 修应用代码兼容更多 Python build.
+        try:
+            self._conn.enable_load_extension(True)
+            sqlite_vec.load(self._conn)
+            self._conn.enable_load_extension(False)
+        except AttributeError:
+            # CI / restricted Python: enable_load_extension 被 strip. 用 ctypes 直接 load.
+            import ctypes as _ct
+            import platform as _platform
+            _pkg_dir = os.path.dirname(sqlite_vec.__file__)
+            if _platform.system() == "Darwin":
+                _lib_name = "vec0.dylib"
+            elif _platform.system() == "Windows":
+                _lib_name = "vec0.dll"
+            else:
+                _lib_name = "vec0.so"
+            _lib_path = os.path.join(_pkg_dir, _lib_name)
+            _ct.CDLL(_lib_path)
+            # 现在 enable_load_extension 在 ctypes-loaded lib 后可能能用 (sqlite-vec 注册了它)
+            self._conn.enable_load_extension(True)
+            sqlite_vec.load(self._conn)
+            self._conn.enable_load_extension(False)
         self._conn.row_factory = sqlite3.Row
 
         # [P2-1 优化] warm-up Embedder 避免首次 recall 1s 冷启动
@@ -314,6 +339,22 @@ class Memory:
             logger.info(f"[P2-1] Embedder warm-up disabled ({_cfg.describe()})")
 
         # [P0 §3.0] 存量库轻量自动迁移 (幂等): 补 memory_type 列
+        # [8/9 P1 follow-up] 7/19 前 init_db.py 跑 schema.sql 后 Memory() 自跑迁移.
+        # 主人 8/9 拍板 "按最新版应用服务程序代码来调整测试代码" — Memory() 自建库后,
+        # 如果表不存在 (init_db 没跑过 / 新 DB path) 就执行 schema.sql.
+        # schema.sql 路径: 当前文件目录下的 schema.sql (memory.py 同级).
+        # 占位符替换: {EMBED_DIM} / {EMBED_MODEL} (跟 init_db.py:69 一致).
+        _tables = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('entities','chunks','relations')"
+        ).fetchall()
+        if not _tables:
+            _schema_path = Path(__file__).parent / "schema.sql"
+            if _schema_path.exists():
+                logger.info(f"[8/9] auto-loading schema.sql: {_schema_path}")
+                _sql = _schema_path.read_text(encoding="utf-8")
+                _sql = _sql.replace("{EMBED_DIM}", str(_cfg.embedder_dim))
+                _sql = _sql.replace("{EMBED_MODEL}", _cfg.embedder_model)
+                self._conn.executescript(_sql)
         self._migrate_schema()
 
         # [zvec 集成] SearchIndex 适配器 (DESIGN §3.6) — 默认 sqlite_vec,
