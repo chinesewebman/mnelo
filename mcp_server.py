@@ -28,8 +28,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from auth import AuthError, load_auth_token, verify_bearer
-from task_states import TaskLoopError
 from config import config  # [Round 2] server host/port 配置
+from task_states import TaskLoopError
 from validation import ValidationError
 
 # 路径 — [7/21 fix] 插入本文件所在目录 (repo root), 不再硬编码 live 路径
@@ -46,8 +46,9 @@ if not logger.handlers:
 
 # Guarded import
 try:
-    import uvicorn
     from contextlib import asynccontextmanager
+
+    import uvicorn
     from mcp.server import Server
     from mcp.server.sse import SseServerTransport
     from mcp.server.stdio import stdio_server
@@ -80,7 +81,8 @@ def _get_mem() -> Any:
     """单例 Memory."""
     global _mem_instance
     if _mem_instance is None:
-        from memory import Memory, DB_PATH as _DB_PATH
+        from memory import DB_PATH as _DB_PATH
+        from memory import Memory
 
         _mem_instance = Memory()
         logger.info(f"mnelo MCP ready (db: {_DB_PATH})")
@@ -1249,8 +1251,7 @@ def _build_streamable_app(auth_token: str) -> "Starlette":
 
     [Bearer auth] endpoint 内部读 request.headers (跟 SSE /messages/ 同样的写法).
     """
-    from starlette.requests import Request
-    from starlette.responses import JSONResponse, Response
+    from starlette.responses import JSONResponse
 
     manager = StreamableHTTPSessionManager(
         app=server,

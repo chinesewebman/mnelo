@@ -88,7 +88,7 @@ def test_task_create_with_loop_sets_active():
             interval_hours=24, now="2026-08-06T09:00",
         )
         lid = loop_r["loop_id"]
-        assert not loop_r["enabled"] is False  # default True
+        assert loop_r["enabled"] is not False  # default True
 
         # 建 task
         task_r = ts_mod.task_create(

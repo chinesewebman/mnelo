@@ -24,9 +24,9 @@ mnelo config — load settings from environment variables or config file.
   默认 8086 (与 launchd plist 默认一致, 可改到 1024-65535)
 """
 
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
 
 logger = logging.getLogger("mnelo.config")

@@ -24,12 +24,10 @@ search_index.py — L1 检索层索引抽象 (DESIGN §3.6 / §8.3)
 from __future__ import annotations
 
 import logging
-import os
 import sqlite3
-import subprocess
 import sys
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -149,7 +147,7 @@ class ZvecIndex(SearchIndex):
             schema = self._build_schema()
             self._col = zvec.create_and_open(str(collection_path), schema)
 
-    def _build_schema(self) -> "zvec.CollectionSchema":
+    def _build_schema(self) -> "zvec.CollectionSchema":  # noqa: F821 (zvec lazy-imported in __init__)
         """建 schema: embedding (512d FP32 + HNSW) + content (FTS jieba) + memory_type + source."""
         zv = self._zvec
         # [8/6 fix] zvec 0.6 declarative API: CollectionSchema(name, fields=[...], vectors=[...])
@@ -423,7 +421,7 @@ class UsearchIndex(SearchIndex):
         self._conn = sqlite3.connect(str(db_path), timeout=30, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         # usearch 索引: 已存在则 load, 否则新建
-        from usearch.index import Index, ScalarKind
+        from usearch.index import Index
         self._index = Index(ndim=dim, metric="cos", dtype="f16")
         # [8/6 M38 harden] 运行时断言 - 必须 f16, 防未来 PR 不慎改 dtype.
         # usearch 2.x dtype 在 Index.dtype 属性上返 ScalarKind 枚举 (eg

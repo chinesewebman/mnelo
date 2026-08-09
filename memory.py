@@ -17,9 +17,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import config  # [G2 8/4] _build_digest 用 config.config
-
 import sqlite_vec
+
+import config  # [G2 8/4] _build_digest 用 config.config
 
 logger = logging.getLogger("mnelo")
 if not logger.handlers:
@@ -28,9 +28,9 @@ if not logger.handlers:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
+import config as _config_module  # [7/21 fix] DB 路径解析 (config.resolve_db_path)
 from embedder import embed_bytes
 from metrics import get_registry as _metrics_registry  # [7/19 v0.5.3] observability
-import config as _config_module  # [7/21 fix] DB 路径解析 (config.resolve_db_path)
 
 # validation 模块从 conftest/repo 加载 (live == repo via hook sync).
 # 注意: memory.py 不再硬编码 /Users/apple/.hermes/memory path — repo 自身是 single source of truth.
@@ -1702,7 +1702,6 @@ class Memory:
               - `dry_run`: 是否 dry-run
         """
         from datetime import datetime as _dt
-        from datetime import timedelta as _tdelta
 
         stats = {
             "orphan_purged_queue_rows": 0,
@@ -3235,7 +3234,8 @@ class Memory:
 
         # [8/6 M4 digest 集成 §4.4] block4 — 未闭环 task + dormant loop
         # 用 task_states.list_active_tasks_and_loops + render_digest_block4.
-        from task_states import list_active_tasks_and_loops as _ts_list_active, render_digest_block4 as _ts_render_b4
+        from task_states import list_active_tasks_and_loops as _ts_list_active
+        from task_states import render_digest_block4 as _ts_render_b4
         try:
             active_block = _ts_list_active(
                 self._conn, now=None, stale_days_threshold=7, limit=50

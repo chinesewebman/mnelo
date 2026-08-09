@@ -44,7 +44,7 @@ def _load_from_repo(mod_name: str):
 _validation_repo = _load_from_repo('validation')
 _memory_repo = _load_from_repo('memory')
 # Rebind memory module 的 ValidationError 引用 (它 'from validation import')
-setattr(_memory_repo, 'ValidationError', _validation_repo.ValidationError)  # type: ignore[attr-defined]
+_memory_repo.ValidationError = _validation_repo.ValidationError  # type: ignore[attr-defined]
 
 from validation import ValidationError  # noqa: E402
 

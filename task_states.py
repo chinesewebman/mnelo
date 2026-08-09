@@ -8,9 +8,9 @@
 - RF6: transition() 文档明示调用方需包事务
 - RF7: typing.List 显式导入
 """
+import hashlib
 import json
 import logging
-import hashlib
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -268,7 +268,8 @@ def transition(
         # 若最新一窗 valid_until 有值 (刚关), 取它作 floor
         _max_floor_ts = _ts_row[0] if _ts_row[0] else _ts_row[1]
     if _max_floor_ts and _max_floor_ts >= ts:
-        from datetime import datetime as _dt, timedelta as _td
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
         try:
             _t = _dt.fromisoformat(_max_floor_ts)
             _t = _t + _td(milliseconds=1)
