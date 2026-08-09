@@ -208,7 +208,7 @@ def test_cli_loop_list_enabled_only():
     rc, out, err, _ = _run(["list", "--kind", "loop", "--enabled-only"])
     assert rc == 0, f"rc={rc}, stderr={err[:300]}"
     data = _extract_json(out)
-    names = [l["name"] for l in data["loops"]]
+    names = [loop["name"] for loop in data["loops"]]
     assert "cli-on" in names
     assert "cli-off" not in names
 

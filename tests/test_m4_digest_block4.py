@@ -130,7 +130,7 @@ def test_list_active_tasks_and_loops_basic():
         result = ts_mod.list_active_tasks_and_loops(m._conn, now=now)
 
         active_ids = [t["task_id"] for t in result["active_tasks"]]
-        dormant_names = [l["name"] for l in result["dormant_loops"]]
+        dormant_names = [loop["name"] for loop in result["dormant_loops"]]
 
         assert result["counts"]["active_tasks"] == 2, result["counts"]
         assert result["counts"]["dormant_loops"] == 1, result["counts"]
@@ -203,10 +203,10 @@ def test_render_digest_block4_basic():
         text_lines, refs = ts_mod.render_digest_block4(active_block)
 
         # 含标头
-        assert any("未闭环 task" in l for l in text_lines)
-        assert any("m4-render" in l for l in text_lines)
-        assert any("dormant loop" in l for l in text_lines)
-        assert any("m4-render-loop" in l for l in text_lines)
+        assert any("未闭环 task" in line for line in text_lines)
+        assert any("m4-render" in line for line in text_lines)
+        assert any("dormant loop" in line for line in text_lines)
+        assert any("m4-render-loop" in line for line in text_lines)
         # refs 非空
         assert len(refs) > 0
         # 至少 1 个 task ref
@@ -263,7 +263,7 @@ def test_list_active_excludes_soft_deleted_loop():
         m._conn.commit()
 
         result = ts_mod.list_active_tasks_and_loops(m._conn, now="2026-08-06T12:00")
-        dormant_names = [l["name"] for l in result["dormant_loops"]]
+        dormant_names = [loop["name"] for loop in result["dormant_loops"]]
         assert "m4-soft" not in dormant_names
     finally:
         m.close()

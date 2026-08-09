@@ -29,7 +29,7 @@ import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("mnelo.index")
 
@@ -147,7 +147,7 @@ class ZvecIndex(SearchIndex):
             schema = self._build_schema()
             self._col = zvec.create_and_open(str(collection_path), schema)
 
-    def _build_schema(self) -> "zvec.CollectionSchema":  # noqa: F821 (zvec lazy-imported in __init__)
+    def _build_schema(self) -> Any:  # zvec.CollectionSchema forward-refed (lazy import in __init__)
         """建 schema: embedding (512d FP32 + HNSW) + content (FTS jieba) + memory_type + source."""
         zv = self._zvec
         # [8/6 fix] zvec 0.6 declarative API: CollectionSchema(name, fields=[...], vectors=[...])

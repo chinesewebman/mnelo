@@ -193,7 +193,7 @@ def test_list_loops_basic():
                           enabled=False, now="2026-08-06T09:01")
 
         r = ts_mod.list_loops(m._conn)
-        names = [l["name"] for l in r["loops"]]
+        names = [loop["name"] for loop in r["loops"]]
         assert "tlm12-e1" in names
         assert "tlm12-e2" in names
     finally:
@@ -211,7 +211,7 @@ def test_list_loops_enabled_only():
                           enabled=False, now="2026-08-06T09:01")
 
         r = ts_mod.list_loops(m._conn, enabled_only=True)
-        names = [l["name"] for l in r["loops"]]
+        names = [loop["name"] for loop in r["loops"]]
         assert "tlm12-on" in names
         assert "tlm12-off" not in names
     finally:
@@ -229,7 +229,7 @@ def test_list_loops_state_filter():
                           enabled=False, now="2026-08-06T09:01")
 
         r = ts_mod.list_loops(m._conn, state="dormant")
-        states = [l["current_state"] for l in r["loops"]]
+        states = [loop["current_state"] for loop in r["loops"]]
         assert all(s == "dormant" for s in states)
     finally:
         m.close()

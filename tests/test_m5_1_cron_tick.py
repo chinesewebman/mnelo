@@ -176,8 +176,8 @@ def test_m5_1_due_verdict_correct():
         entries = [entries]
     all_due_ids = set()
     for entry in entries:
-        for l in entry.get("due_loops", []):
-            all_due_ids.add(l["loop_id"])
+        for loop in entry.get("due_loops", []):
+            all_due_ids.add(loop["loop_id"])
     assert lid in all_due_ids, f"loop {lid} should be due, found {all_due_ids}"
 
 

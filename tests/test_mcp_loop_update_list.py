@@ -107,13 +107,13 @@ def test_loop_list_via_mcp():
 
     r = mcp._call_tool("memory_loop_list", {})
     data = json.loads(r)
-    names = [l["name"] for l in data["loops"]]
+    names = [loop["name"] for loop in data["loops"]]
     assert "tlm12m-list1" in names
     assert "tlm12m-list2" in names
 
     # enabled_only
     r2 = mcp._call_tool("memory_loop_list", {"enabled_only": True})
     data2 = json.loads(r2)
-    names2 = [l["name"] for l in data2["loops"]]
+    names2 = [loop["name"] for loop in data2["loops"]]
     assert "tlm12m-list1" in names2
     assert "tlm12m-list2" not in names2

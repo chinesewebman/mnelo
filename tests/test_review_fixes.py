@@ -512,7 +512,7 @@ def test_rf13_list_loops_excludes_soft_deleted():
         )
         m._conn.commit()
         result = ts_mod.list_loops(m._conn)
-        ids = [l["loop_id"] for l in result["loops"]]
+        ids = [loop["loop_id"] for loop in result["loops"]]
         assert active_id in ids, f"active loop missing: {ids}"
         assert soft_id not in ids, f"soft-deleted loop leaked: {ids}"
     finally:
