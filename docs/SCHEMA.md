@@ -266,7 +266,7 @@ def memory_remember(
     """
 ```
 
-### 6.2 `recall` (检索 — 3 路并行 + RRF 融合)
+### 6.2 `recall` (检索 — 4 路并行 + RRF 融合)
 
 ```python
 def memory_recall(
@@ -446,7 +446,7 @@ def memory_update(old_id, new_content=None, new_properties=None, new_importance=
 ### 7.3 检索 (主人口中"检索相关知识")
 
 **问题**: 向量检索忽略图结构, 纯图遍历忽略语义
-**方案**: 3 路并行 + RRF 融合
+**方案**: 4 路并行 + RRF 融合
 
 ```python
 def memory_recall(query, top_k=5, graph_hops=2, filters=None):
@@ -566,7 +566,7 @@ def memory_recall(query, top_k=5, graph_hops=2, filters=None):
 | 6 | entity_resolve.py (alias + 相似度合并) | `entity_resolve.py` | 1 小时 |
 | 7 | api/ 4 MCP tool (memory_remember / memory_recall / memory_relate / memory_forget) | `api/*.py` | 2 小时 |
 | 8 |  cron 接入: trinity_daily.py Part 3 + weng 早报 | `cron/` | 1-2 小时 |
-| 9 | tests/ (CRUD + 3 路 recall + soft delete + 4D 时间) | `tests/test_*.py` | 1-2 小时 |
+| 9 | tests/ (CRUD + 4 路 recall + soft delete + 4D 时间) | `tests/test_*.py` | 1-2 小时 |
 
 总: 1-2 天可跑通基础闭环 (步骤 1-5)。
 
@@ -592,7 +592,7 @@ def memory_recall(query, top_k=5, graph_hops=2, filters=None):
 - [ ] **schema 版本**: v1.0 (4 张核心表 + 3 张辅助表)
 - [ ] **删除策略**: soft delete + 30 天延迟 purge (yes / no / other?)
 - [ ] **更新策略**: 不 UPDATE, 创建新版本 + superseded_by 链 (yes / no / other?)
-- [ ] **检索策略**: 3 路并行 + RRF 融合 (yes / no / other?)
+- [ ] **检索策略**: 4 路并行 + RRF 融合 (yes / no / other?)
 - [ ] **实体 ID 命名**:  ID (sh600089 / 翁氏_D∩W / 2026-08-14-anchor)
 - [ ] **时间维度**: 4D (valid_from / valid_until / soft delete) (yes / no / other?)
 - [ ] **过渡策略**: 1 周 shim, 主路径用 memory_*(yes / no / other?)
