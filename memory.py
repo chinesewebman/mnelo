@@ -310,6 +310,7 @@ class Memory:
             # CI / restricted Python: enable_load_extension 被 strip. 用 ctypes 直接 load.
             import ctypes as _ct
             import platform as _platform
+
             _pkg_dir = os.path.dirname(sqlite_vec.__file__)
             if _platform.system() == "Darwin":
                 _lib_name = "vec0.dylib"
@@ -344,9 +345,7 @@ class Memory:
         # 如果表不存在 (init_db 没跑过 / 新 DB path) 就执行 schema.sql.
         # schema.sql 路径: 当前文件目录下的 schema.sql (memory.py 同级).
         # 占位符替换: {EMBED_DIM} / {EMBED_MODEL} (跟 init_db.py:69 一致).
-        _tables = self._conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('entities','chunks','relations')"
-        ).fetchall()
+        _tables = self._conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('entities','chunks','relations')").fetchall()
         if not _tables:
             _schema_path = Path(__file__).parent / "schema.sql"
             if _schema_path.exists():
