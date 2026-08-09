@@ -5,6 +5,9 @@
 # Test runner
 pytest>=8.0
 
+# Timeout protection (CI --timeout=30 flag)
+pytest-timeout>=2.3
+
 # Coverage reporting (for CI --cov flag)
 pytest-cov>=5.0
 
