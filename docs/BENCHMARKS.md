@@ -24,6 +24,20 @@ python -m benchmarks latency --chunks 10000 --queries 100 --json bench.json
 # 旧入口兼容: python scripts/benchmark.py --chunks 10000 --queries 100 --json bench.json
 ```
 
+## LoCoMo (smoke)
+
+[8/11 P3-followup] 在 chinesewebman/mnelo#11 之上加 `locomo` 子命令 — LoCoMo 风格
+召回质量 smoke。3 个内置 scenario（光伏装机 / 美联储利率 / 比亚迪销量），每个 3
+个 chunk + 3 个 query，测「召回覆盖率」+ 同一批 query 的延迟。
+
+```bash
+python -m benchmarks locomo
+# 输出: coverage per_scenario / mean / latency p50 / mean
+```
+
+完整 10-conversation LoCoMo dataset 接入留作后续 PR — 50MB+ 数据集 + mnelo
+graph-aware scorer 是单独的工作。
+
 ## Memory footprint
 
 One MCP server process, idle (macOS M-series): **~270 MB RSS** — of which
