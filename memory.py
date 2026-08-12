@@ -58,6 +58,17 @@ DB_PATH = _config_module.resolve_db_path()
 # 常量单一事实源在 validation.MEMORY_TYPES, 这里复用避免两份定义漂移。
 from validation import MEMORY_TYPES as _MEMORY_TYPES
 
+# [P2 2026-08-11] Temporal reasoning — 借鉴 mem0 4-intent read-time classification.
+# Reuse classify._T2S / _normalize for 繁→简归一化, 不重复造轮子 (跟 P0 不引入新依赖一致).
+try:
+    from classify import _T2S as _T2S_TEMPORAL
+    from classify import _normalize as _normalize_text
+except ImportError:  # pragma: no cover — 防御性 fallback
+    _T2S_TEMPORAL = {}
+
+    def _normalize_text(x: str) -> str:  # type: ignore[no-redef]
+        return x
+
 
 def norm_memory_type(t) -> str:
     """校验 + 归一化 memory_type, 非法值抛 ValidationError."""
@@ -116,6 +127,141 @@ def now(tz: str = None) -> str:
 
             # Best-effort: use UTC and tell user to upgrade
             return datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
+
+
+# [P2 2026-08-11] Temporal reasoning — query intent classification.
+# 借鉴 mem0 7-mode (我们对齐 4 core: current_state / historical / upcoming / soft_recency).
+# 0-LLM 正则, ~0ms 开销 (跟 classify.py 同源设计).
+# 优先级: upcoming > historical > current_state > soft_recency (默认).
+_TEMPORAL_INTENT_MARKERS: Dict[str, Dict[str, List[str]]] = {
+    "upcoming": {
+        "cn": [
+            "下个月",
+            "下星期",
+            "下周",
+            "下年",
+            "将要",
+            "即将",
+            "马上要",
+            "准备去",
+            "打算去",
+            "将要",
+            "将来",
+            "未来",
+            "之后要去",
+        ],
+        "en": [
+            "next month",
+            "next week",
+            "next year",
+            "going to",
+            "will be",
+            "will ",
+            "plan to move",
+            "planning to",
+        ],
+    },
+    "historical": {
+        "cn": [
+            "以前",
+            "曾经",
+            "过去",
+            "当时",
+            "去年",
+            "前年",
+            "上个月",
+            "上星期",
+            "上周",
+            "已经搬",
+            "曾经住",
+        ],
+        "en": [
+            "last year",
+            "last month",
+            "last week",
+            "previously",
+            "formerly",
+            "used to",
+            "in the past",
+            "ago",
+            "before",
+        ],
+    },
+    "current_state": {
+        "cn": [
+            "现在",
+            "目前",
+            "当前",
+            "如今",
+            "此刻",
+            "住在哪里",
+            "住哪",
+            "在哪",
+        ],
+        "en": [
+            "now",
+            "currently",
+            "current",
+            "at present",
+            "right now",
+            "where do i live",
+            "where am i",
+        ],
+    },
+    "soft_recency": {
+        "cn": ["最近", "最新", "近期", "新近", "刚刚"],
+        "en": ["recent", "recently", "latest", "newest", "lately"],
+    },
+}
+
+
+def detect_query_intent(query: str) -> str:
+    """[P2 2026-08-11] 借鉴 mem0 4-intent — classify query 时间意图 (0-LLM 正则).
+
+    4 类 (对齐 mem0 简化版, 任务卡指定):
+      - current_state: 默认当前态查询 ("现在住哪" / "where do i live now")
+      - historical:    历史窗口查询 ("去年住哪" / "last year")
+      - upcoming:      未来有效查询 ("下个月要去" / "going to move")
+      - soft_recency:  软时效排序 ("最近" / "recent") — 也是无 marker 的默认
+
+    优先级: upcoming > historical > current_state > soft_recency.
+    多 marker 冲突时高优先级赢 (e.g. "去年计划下个月搬家" → upcoming).
+
+    Args:
+        query: 用户原始 query (可以是 str 或 None).
+
+    Returns:
+        intent 字符串 (4 个值之一). 空串/None 返 soft_recency (默认行为).
+    """
+    if not query or not isinstance(query, str):
+        return "soft_recency"
+    # 繁→简归一 (跟 classify._normalize 同源)
+    norm = _normalize_text(query).lower()
+    # 优先级顺序扫描
+    for intent in ("upcoming", "historical", "current_state", "soft_recency"):
+        markers = _TEMPORAL_INTENT_MARKERS[intent]
+        for lang_markers in (markers["cn"], markers["en"]):
+            for marker in lang_markers:
+                if marker in norm:
+                    return intent
+    # 无 marker 命中 → 默认 soft_recency (跟默认 timestamp DESC 行为对齐)
+    return "soft_recency"
+
+
+def _temporal_class_for_validity(valid_from: Optional[str], valid_until: Optional[str], now_ts: str) -> Optional[str]:
+    """[P2 2026-08-11] write-time temporal signature — 根据时间窗自动归类.
+
+    返回 metadata_json.temporal_class 字段值; None = 不写字段 (避免 metadata 膨胀).
+    规则:
+      - valid_until 已设 且 < now_ts → 'historical' (已失效, 但历史可查)
+      - valid_from 已设 且 > now_ts → 'upcoming' (未来生效)
+      - 其他 (current_state) → None (不写, 默认行为)
+    """
+    if valid_until and valid_until < now_ts:
+        return "historical"
+    if valid_from and valid_from > now_ts:
+        return "upcoming"
+    return None
 
 
 def generate_id(prefix: str = "chunk") -> str:
@@ -671,6 +817,18 @@ class Memory:
             if v is not None:
                 meta_dict[k] = v
 
+        # [P2 2026-08-11] write-time temporal signature — 根据 timestamp/valid_until
+        # 自动归类. historical (已 supersede) 通过 update() 路径触发; 这里只处理
+        # upcoming (timestamp > now) + current_state (timestamp <= now, 不写字段).
+        # 注意: chunks 表没有 valid_from 列, 未来事件靠 timestamp 列识别.
+        _temporal_cls = _temporal_class_for_validity(
+            valid_from=timestamp,  # timestamp > now → upcoming
+            valid_until=None,  # remember() 不接受 valid_until (supersede 走 update)
+            now_ts=now(),
+        )
+        if _temporal_cls is not None:
+            meta_dict["temporal_class"] = _temporal_cls
+
         # 0.5 [8/8 P1 fix] 预校验 entities — 必须在 INSERT chunk 之前
         # 否则 namespace guard 抛 ValidationError 时 chunk INSERT 已进 SQLite WAL,
         # mcp_server 单例 Memory conn 复用下次 commit 可能连同提交, 留下孤儿 chunk.
@@ -876,6 +1034,22 @@ class Memory:
             "UPDATE chunks SET superseded_by = ?, valid_until = ? WHERE id = ? AND valid_until IS NULL",
             (new_id, now(), old_id),
         )
+        # [P2 2026-08-11] write-time temporal signature — 老 chunk 已被 valid_until 设
+        # (= 历史), 标 metadata_json.temporal_class='historical' 供后续 read-time
+        # historical intent query 直接召回. 读旧 metadata_json (None 也 OK).
+        try:
+            old_meta_row = self._conn.execute("SELECT metadata_json FROM chunks WHERE id = ?", (old_id,)).fetchone()
+            if old_meta_row:
+                old_meta_raw = old_meta_row[0]
+                old_meta = json.loads(old_meta_raw) if old_meta_raw else {}
+                if "temporal_class" not in old_meta:
+                    old_meta["temporal_class"] = "historical"
+                    self._conn.execute(
+                        "UPDATE chunks SET metadata_json = ? WHERE id = ?",
+                        (json.dumps(old_meta, ensure_ascii=False), old_id),
+                    )
+        except Exception as e:  # noqa: BLE001 — 失败不阻塞 supersede 主流程
+            logger.warning(f"[P2] failed to mark historical on supersede {old_id}: {e}")
         # [7/21] 向量索引变更下沉到 SearchIndex 适配器
         # (原 v0.5.6: 删旧向量 + 重嵌新内容 — 行为不变)
         self._index.remove(old_id, conn=self._conn)
@@ -1177,6 +1351,13 @@ class Memory:
         json_extract(metadata_json, '$.agent_id') = ? 过滤. NULL metadata_json
         或缺 agent_id → json_extract 返回 NULL → != filter → 自动保留
         (旧数据不误过滤).
+
+        [P2 2026-08-11] temporal reasoning: detect_query_intent(query) 决定
+        SQL 加成 (跟 P0 scoping 共存, 加 AS 额外约束, 不替换).
+          - current_state: AND valid_until IS NULL (强制当前态)
+          - upcoming:      AND timestamp > ? (未来事件, 用 now() 作 asof 基准)
+          - historical:    不排斥 valid_until (supersede 历史浮出, 默认 ASof 仍过滤 < now)
+          - soft_recency:  默认行为 (不变)
         """
         # [7/21 fix] asof: 只看 asof 时点仍有效的 chunk
         # [P0 2026-08-11] scoping: agent_id 走 json_extract SQL 过滤 (NULL 不误过滤)
@@ -1198,6 +1379,19 @@ class Memory:
             # 这天然保证旧数据兼容.
             sql += " AND json_extract(metadata_json, '$.agent_id') = ?"
             params.append(filters["agent_id"])
+        # [P2 2026-08-11] temporal intent 加成 — 用 detect_query_intent
+        # 注意: recall() 入口处已 validate_query(), 这里 query 非空.
+        intent = detect_query_intent(query)
+        # [P2 2026-08-11] upcoming 用 asof 作基准. 当 caller 传 asof=None, 跟 SQL
+        # 主条件一致归一为 now() (避免 NULL 比较失败).
+        if intent == "upcoming":
+            _now_ts = asof if asof else now()
+            sql += " AND timestamp > ?"
+            params.append(_now_ts)
+        elif intent == "current_state":
+            # 强制当前态: valid_until 必须 IS NULL (排除已 supersede)
+            sql += " AND valid_until IS NULL"
+        # historical / soft_recency: 不加约束 (历史浮出, 默认行为)
         sql += " ORDER BY importance DESC, timestamp DESC LIMIT ?"
         params.append(top_k)
         rows = conn.execute(sql, params).fetchall()
@@ -1394,6 +1588,9 @@ class Memory:
         agent_id 走 json_extract SQL 过滤; NULL metadata_json / 缺 agent_id
         保留 (旧数据兼容). 这是 meta_only 策略走的 sequential fallback,
         必须跟并行 _with_conn 行为一致 — 漏一路即失败 (P0 验收).
+
+        [P2 2026-08-11] temporal reasoning: 与 _meta_recall_with_conn 同语义.
+        current_state / upcoming 加 SQL 约束; historical / soft_recency 默认.
         """
         # [7/21 fix] asof: 只看 asof 时点仍有效的 chunk
         # [P0 2026-08-11] scoping: agent_id 走 json_extract SQL 过滤
@@ -1412,6 +1609,15 @@ class Memory:
         if filters and "agent_id" in filters:
             sql += " AND json_extract(metadata_json, '$.agent_id') = ?"
             params.append(filters["agent_id"])
+        # [P2 2026-08-11] temporal intent 加成 — 跟 _meta_recall_with_conn 同源
+        intent = detect_query_intent(query)
+        if intent == "upcoming":
+            _now_ts = asof if asof else now()
+            sql += " AND timestamp > ?"
+            params.append(_now_ts)
+        elif intent == "current_state":
+            sql += " AND valid_until IS NULL"
+        # historical / soft_recency: 不加约束
         sql += " ORDER BY importance DESC, timestamp DESC LIMIT ?"
         params.append(top_k)
 
