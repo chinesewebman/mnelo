@@ -26,14 +26,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from config import config as _config  # noqa: E402
 from search_index import (  # noqa: E402
     UsearchIndex,
     ZvecIndex,
     build_search_index,
-    usearch_available,
     zvec_available,
 )
-from config import config as _config  # noqa: E402
 
 
 def _iter_index_ids_usearch(idx: UsearchIndex):
@@ -68,7 +67,8 @@ def _probe_usearch_dim(db_path: Path) -> int:
 
     读不到/损坏 → 回落 512 (此时 UsearchIndex 预检失败, _auto_rebuild 正常兜底重建).
     """
-    idx_path = db_path.parent / "usearch.index"
+    # [8/12 fix] 索引路径跟 db_path.stem 绑定 — 跟 search_index.py:412 一致
+    idx_path = db_path.parent / f"{db_path.stem}.usearch.index"
     if not idx_path.exists():
         return 512
     try:

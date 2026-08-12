@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sqlite3
 import struct
 import sys
@@ -21,11 +20,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from embedder import embed  # noqa: E402
-from search_index import build_search_index  # noqa: E402
-
 # [8/5 fix] 默认 DB 路径从 config 解析 (env > config.toml > ~/.hermes/memory/memory.db)
 from config import config as _config  # noqa: E402
+from embedder import embed  # noqa: E402
+from search_index import build_search_index  # noqa: E402
 
 
 def _iter_chunks(conn):
@@ -48,16 +46,16 @@ def _unlink_existing_index_files(db_path: Path) -> dict:
     import shutil
 
     removed = []
-    # usearch: 单文件 .index
-    p_usearch = db_path.parent / "usearch.index"
+    # usearch: 单文件 .index (跟 db_path.stem 绑定 — 8/12 fix)
+    p_usearch = db_path.parent / f"{db_path.stem}.usearch.index"
     if p_usearch.exists():
         try:
             p_usearch.unlink()
             removed.append(str(p_usearch))
         except OSError as e:
             print(f"[rebuild] failed to unlink {p_usearch}: {e}", file=sys.stderr)
-    # zvec: collection 目录
-    p_zvec = db_path.parent / "search_index.zv"
+    # zvec: collection 目录 (跟 db_path.stem 绑定 — 8/12 fix)
+    p_zvec = db_path.parent / f"{db_path.stem}.search_index.zv"
     if p_zvec.exists():
         try:
             if p_zvec.is_dir():
