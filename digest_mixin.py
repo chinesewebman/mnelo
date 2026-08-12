@@ -19,10 +19,12 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import config
-from memory import generate_id, now
+
+if TYPE_CHECKING:
+    pass  # forward refs only — avoid circular import at runtime
 
 logger = logging.getLogger("mnelo")
 
@@ -50,6 +52,8 @@ class DigestMixin:
         text, line_refs, truncated = self._build_digest()
         if not text:
             return None
+        from memory import generate_id, now  # lazy import — avoid circular at module load
+
         ts = now()
         new_id = generate_id("chunk") + "_digest"
         metadata = json.dumps(

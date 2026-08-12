@@ -54,28 +54,20 @@ _MISSING = object()
 
 # [P0 §3.0] Memory type taxonomy — reuse validation.MEMORY_TYPES (single source of truth).
 
-# Module-level helpers (re-export from memory.py facade — 单源真相, 避免 copy)
-# memory.py 持有所有 helpers 定义; 这里 re-import 让 class body 直接用.
-# 顺序: facade 先 import Memory 后才定义 class; 此处 MemoryCore class 引用 helpers
-# 在 class body 解析期, 因此必须 module-level 解析, 不能 lazy import.
-from memory import (  # noqa: E402
-    _enforce_entity_namespace_guard,  # _upsert_entity 用
-    _kind_from_source,  # _upsert_entity 用
-    _load_vec0_module,  # __init__ 用
-    _temporal_class_for_validity,  # remember() write-time signature 用
-    clamp01,  # _upsert_entity / stats 用
-    detect_query_intent,  # recall() SQL intent 加成用
-    generate_id,  # 内部用
-    norm_memory_type,  # 内部用
-    now,  # 多个方法用
-)
+# Module-level helpers — 不在 module-level `from memory import ...` (会触发循环 import
+# 当 memory.py partial-init 时). 改成 class body 内的 `from memory import X` lazy import
+# 或方法内 lazy. helpers 仍在 memory.py facade 单源真相.
+# 例: __init__ 用 _load_vec0_module → 改 `from memory import _load_vec0_module` 内联.
 
 
 class MemoryCore:
     """核心 CRUD 接口."""
 
     def __init__(self, db_path: Path = DB_PATH):
+        from memory import _load_vec0_module  # lazy import — avoid circular at module load
+
         self.db_path = db_path
+
         # [8/9 P1 follow-up] Memory() 自建库 — 7/19 init_db.py 父目录 mkdir
         # 责任迁到 Memory(). 测试 fixture (test_memory 等 setUpClass) 调 Memory()
         # 不再前置建目录,Memory() 一行兜底.
@@ -190,6 +182,8 @@ class MemoryCore:
         幂等 — 已存在则跳过 (PRAGMA table_info 检查 + ALTER)。
         跟 schema.sql 双改一致 (A 修正, deepseek 8/4 cross-check)。
         """
+        from memory import now  # lazy import — avoid circular at module load
+
         # [P0 §3.0] f1bc1bf — memory_type
         for table in ("entities", "chunks"):
             cols = {r[1] for r in self._conn.execute(f"PRAGMA table_info({table})").fetchall()}
@@ -326,6 +320,7 @@ class MemoryCore:
 
     def close(self) -> None:
         """Close the underlying SQLite connection + search index."""
+
         try:
             self._index.close()
         except Exception as e:  # noqa: BLE001
@@ -334,10 +329,12 @@ class MemoryCore:
 
     def __enter__(self) -> "Memory":  # noqa: F821  forward ref to composed class
         """Support `with Memory() as m:` — returns self."""
+
         return self
 
     def __exit__(self, *args) -> None:
         """Auto-close on context exit."""
+
         self.close()
 
     # === CRU ========================
@@ -371,6 +368,8 @@ class MemoryCore:
         [P0 2026-08-11] scoping IDs (agent_id / user_id / run_id) — 写入
             metadata_json (与现有 'tags' 键 merge). 召回时按这些字段过滤.
         """
+        from memory import _enforce_entity_namespace_guard, _temporal_class_for_validity, clamp01, generate_id, norm_memory_type, now  # lazy import — avoid circular at module load
+
         ts = timestamp or now()
         chunk_id = generate_id("chunk")
 
@@ -528,6 +527,8 @@ class MemoryCore:
         properties: Dict = None,
     ) -> int:
         """新建一条关系."""
+        from memory import clamp01, now  # lazy import — avoid circular at module load
+
         # [7/19 P1-1] id 格式验证 (白名单正则)
         source_id = validate_id(source_id, "source_id")
         target_id = validate_id(target_id, "target_id")
@@ -580,6 +581,8 @@ class MemoryCore:
         Returns:
             新 chunk id (新版本 id)
         """
+        from memory import clamp01, generate_id, now  # lazy import — avoid circular at module load
+
         # [7/19 P1-1] id 格式验证
         old_id = validate_id(old_id, "old_id")
         # [7/19 P0-3] 新 content 也走 sanitize (None = 保留老内容, 跳过)
@@ -667,6 +670,8 @@ class MemoryCore:
         status='applied') 留痕.
         chunk/entity/relation 走原 L2 decay 路径 (无豁免).
         """
+        from memory import now  # lazy import — avoid circular at module load
+
         # [7/19 P1-1] id 格式验证
         target_id = validate_id(target_id, "target_id")
         # [M5.3 + 8/6 M28 fix] D11 TTL 豁免 — task/loop 一律拦截, 强制显式路径.
@@ -733,6 +738,8 @@ class MemoryCore:
         strategy: 'rrf' / 'vector_only' / 'graph_only' / 'meta_only' / 'entity_only'
         asof: 时间切片查询 ('2026-07-17T15:00:00')
         """
+        from memory import _load_vec0_module, now  # lazy import — avoid circular at module load
+
         # [P2+ #1 7/18 patch] Skip noisy / placeholder queries  recall_log 信号纯度
         # 数据: 24h 919 recall, 80 (8%) 空 hits — 一半是 'anything' / test_crud_xxx 占位符
         # 这些 query 没意义, 不应该污染 recall_log / recall_count / last_recalled
@@ -874,6 +881,7 @@ class MemoryCore:
 
     def _vector_recall(self, query: str, top_k: int, filters: Dict, asof: str) -> List[Dict]:
         """路 1: 向量检索 (SearchIndex 适配器, DESIGN §3.6)."""
+
         return self._vector_recall_with_conn(self._conn, query, top_k, filters, asof)
 
     def _vector_recall_with_conn(self, conn, query, top_k, filters, asof) -> List[Dict]:
@@ -886,6 +894,8 @@ class MemoryCore:
         Args:
             conn: 独立 sqlite3 connection (每路独立; 用于 chunk 侧查询)
         """
+        from memory import norm_memory_type  # lazy import — avoid circular at module load
+
         q_bytes = embed_bytes(query)
         # [审计 4.3 ] filter 多时, 多取一些确保过滤后还够 top_k; strategy 也加大召回
         fetch_limit = top_k * (8 if (filters or top_k >= 3) else 2)
@@ -943,6 +953,8 @@ class MemoryCore:
           - historical:    不排斥 valid_until (supersede 历史浮出, 默认 ASof 仍过滤 < now)
           - soft_recency:  默认行为 (不变)
         """
+        from memory import detect_query_intent, norm_memory_type, now  # lazy import — avoid circular at module load
+
         # [7/21 fix] asof: 只看 asof 时点仍有效的 chunk
         # [P0 2026-08-11] scoping: agent_id 走 json_extract SQL 过滤 (NULL 不误过滤)
         sql = """
@@ -991,6 +1003,8 @@ class MemoryCore:
         evidence_chunk_id=chunk_id, 见 3027 行). LEFT JOIN 让老 entity (无
         evidence relation) 保留 — c_meta NULL → 旧数据兼容.
         """
+        from memory import norm_memory_type, now  # lazy import — avoid circular at module load
+
         if " " in query.strip():
             tokens = query.strip().split()
         else:
@@ -1079,6 +1093,8 @@ class MemoryCore:
 
     def _graph_recall(self, seed_hits: List[Dict], hops: int, asof: str) -> List[Dict]:
         """路 2: 图遍历 (NetworkX 内存层 + hops 跳)."""
+        from memory import now  # lazy import — avoid circular at module load
+
         if not seed_hits:
             return []
         seed_ids = {h["chunk_id"] for h in seed_hits}
@@ -1086,6 +1102,7 @@ class MemoryCore:
         placeholders = ",".join("?" * len(seed_ids))
         rows = self._conn.execute(
             f"""
+
             SELECT source_id, target_id FROM relations
             WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders}))
               AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?)
@@ -1176,6 +1193,8 @@ class MemoryCore:
         [P2 2026-08-11] temporal reasoning: 与 _meta_recall_with_conn 同语义.
         current_state / upcoming 加 SQL 约束; historical / soft_recency 默认.
         """
+        from memory import detect_query_intent, norm_memory_type, now  # lazy import — avoid circular at module load
+
         # [7/21 fix] asof: 只看 asof 时点仍有效的 chunk
         # [P0 2026-08-11] scoping: agent_id 走 json_extract SQL 过滤
         sql = """
@@ -1227,6 +1246,8 @@ class MemoryCore:
         等任一时, 直接拉 user 所有 identity_fact 关系 (无需 query-token 重叠,
         这是关键 — '我住在哪里' token 与 '北京市大兴区亦庄镇' 无 2-gram 重叠).
         """
+        from memory import norm_memory_type, now  # lazy import — avoid circular at module load
+
         hits = []
         seen_ids = set()
 
@@ -1386,6 +1407,8 @@ class MemoryCore:
         """
         import math
 
+        from memory import _kind_from_source  # lazy import — avoid circular at module load
+
         rrf_score: Dict[str, float] = {}
         rrf_hits: Dict[str, Dict] = {}
         k = 60
@@ -1428,6 +1451,8 @@ class MemoryCore:
         - 新存 recall_details_json: top-K 完整 dict (method, distance/score, importance)
           让 daily_check / analytics 能分析 召回质量 (用什么路召回的, 距离分布)
         """
+        from memory import now  # lazy import — avoid circular at module load
+
         #  feedback loop: 每条命中的 method + 距离 + 排名 (top-5 by RRF score)
         detail = [
             {
@@ -1466,6 +1491,8 @@ class MemoryCore:
         asof: str = None,
     ) -> Dict:
         """子图: start_node 起, max_hops 跳内的所有节点 + 边."""
+        from memory import now  # lazy import — avoid circular at module load
+
         # [7/19 P1-1] start_node 格式验证
         start_node = validate_id(start_node, "start_node")
         asof = asof or now()
@@ -1523,6 +1550,7 @@ class MemoryCore:
         Returns:
             dict 含 chunk_id/content/source/timestamp/importance/method + extra
         """
+
         return {
             "chunk_id": row["id"],
             "content": row["content"],
@@ -1550,6 +1578,8 @@ class MemoryCore:
                 - source (str, optional): defaults to 'manual'
                 - importance (float, optional): defaults to 0.5, clamped
         """
+        from memory import _enforce_entity_namespace_guard, clamp01, now  # lazy import — avoid circular at module load
+
         # [7/19 P1-1 + P1-2 + P1-5] entity 整体清洗 (id 验证 + name/summary/kind 剥离控制 + bidi)
         ent = validate_entity_payload(ent)
         # [8/8 P1] namespace 防御 — 阻止历史 importer 残留 (Honcho anno:*) + 随机 ID (TOKEN_C_*)
@@ -1653,22 +1683,6 @@ class MemoryCore:
     # [7/19 P2-4] 显式白名单, 防止以后误把 user input 传进来 → SQL injection
     _ALLOWED_TABLES = frozenset({"entities", "chunks", "relations"})
 
-    def stats(self) -> Dict:
-        """统计."""
-        stats = {}
-        for t in self._ALLOWED_TABLES:  # 永远是 3 个白名单字符串
-            total = self._conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
-            active = self._conn.execute(f"SELECT count(*) FROM {t} WHERE valid_until IS NULL").fetchone()[0]
-            stats[t] = {"total": total, "active": active, "deleted": total - active}
-        # [8/5] vectors 按实际 search 后端计数 (usearch/zvec 下 sqlite_vec 的 vectors 表恒 0)
-        try:
-            stats["vectors"] = self._index.size()
-        except Exception as e:
-            logger.warning(f"[stats] search index size failed: {e}")
-            stats["vectors"] = 0
-        stats["recall_log"] = self._conn.execute("SELECT count(*) FROM recall_log").fetchone()[0]
-        return stats
-
     def cleanup_orphan_vectors(self, dry_run: bool = False) -> Dict[str, int]:
         """[8/6 plan §3] 后端感知孤儿向量清理 — 薄委托给 self._index.cleanup_orphans.
 
@@ -1688,6 +1702,7 @@ class MemoryCore:
               - `vectors_remaining`: count after cleanup
               - `dry_run`: True if no changes were made
         """
+
         result = self._index.cleanup_orphans(conn=self._conn, dry_run=dry_run)
         if not dry_run:
             try:

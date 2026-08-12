@@ -521,3 +521,83 @@ __all__ = [
     "_temporal_class_for_validity",
     "ValidationError",
 ]
+
+
+# === 自测 ===
+# [refactor 2026-08-12] 保留原 memory.py 末尾的 demo block — test_main_blocks_coverage.py
+# 依赖 `python memory.py` 能跑. 8 个 demo step: remember/relate/recall/graph_query/stats/
+# update/forget/recall_after_updates.
+if __name__ == "__main__":
+    import time
+
+    from memory import Memory as _Memory_for_demo
+
+    with _Memory_for_demo() as m:
+        # Use unique demo entities so this __main__ block doesn't collide
+        # with real data in LIVE DB. The 'main_block_demo_<ts>:' suffix
+        # keeps every run isolated.
+        demo_ts = int(time.time())
+        demo_stock = f"main_block_demo_{demo_ts}:sh600089"
+        demo_person = f"main_block_demo_{demo_ts}:person_x"
+
+        # 1. remember (8 entities, 1 relation, return chunk_id)
+        cid = m.remember(
+            f"测试插入: {demo_stock} 在 2026-08-12 持股 12,000 股 @ 18.96",
+            entities=[
+                {
+                    "id": demo_stock,
+                    "kind": "stock",
+                    "name": "demo stock",
+                    "aliases": ["demo stock", "DS"],
+                    "properties": {"ticker": demo_stock, "sector": "demo"},
+                },
+                {
+                    "id": demo_person,
+                    "kind": "person",
+                    "name": "demo person",
+                },
+            ],
+            relations=[
+                {
+                    "source_id": demo_person,
+                    "target_id": demo_stock,
+                    "relation": "_建仓_于",
+                    "weight": 1.0,
+                    "properties": {"quantity": 12000, "price": 18.96, "amount": 227520},
+                },
+            ],
+        )
+        print(f"✅ remember → chunk_id: {cid}")
+
+        # 2. relate
+        rid = m.relate(demo_person, demo_stock, "_关注", weight=0.7, evidence_chunk_id=cid)
+        print(f"✅ relate → relation_id: {rid}")
+
+        # 3. recall
+        results = m.recall(f"{demo_stock} demo stock", top_k=3)
+        print(f"✅ recall → {len(results)} hits")
+        for r in results:
+            score = r.get("rrf_score", r.get("distance", "?"))
+            print(f"  - {r['method']} | score={score} | {r['content'][:60]}")
+
+        # 4. graph_query
+        graph = m.graph_query(demo_stock, max_hops=2)
+        print(f"✅ graph_query → {len(graph['nodes'])} nodes, {len(graph['edges'])} edges")
+
+        # 5. stats
+        s = m.stats()
+        print(f"✅ stats: {s}")
+
+        # 6. update
+        new_cid = m.update(cid, reason="修正", new_content=f"测试修正: {demo_stock} 实际 7,800")
+        print(f"✅ update → new chunk_id: {new_cid}")
+
+        # 7. forget
+        f = m.forget(rid, target_kind="relation", reason="outdated")
+        print(f"✅ forget → {f}")
+
+        # 8. recall again
+        results = m.recall("sh600089", top_k=3)
+        print(f"✅ recall after updates → {len(results)} hits")
+        for r in results:
+            print(f"  - {r['method']} | {r['content'][:60]}")

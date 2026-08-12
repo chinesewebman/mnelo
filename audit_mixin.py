@@ -15,9 +15,10 @@ import json
 import logging
 import sqlite3
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from memory import now
+if TYPE_CHECKING:
+    pass  # forward refs only — avoid circular import at runtime
 
 logger = logging.getLogger("mnelo")
 
@@ -136,6 +137,8 @@ class AuditMixin:
             raise ValueError(f"audit record {audit_id} has no revert_sql")
         # executescript is intentional: TTL undo stores UPDATE + DELETE.
         self._conn.executescript(revert_sql)
+        from memory import now  # lazy import — avoid circular at module load
+
         ts = now()
         self._conn.execute(
             """INSERT INTO audit_log
