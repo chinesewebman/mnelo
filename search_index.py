@@ -24,6 +24,7 @@ search_index.py — L1 检索层索引抽象 (DESIGN §3.6 / §8.3)
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 import sys
 from abc import ABC, abstractmethod
@@ -154,12 +155,15 @@ class ZvecIndex(SearchIndex):
     def _build_schema(self) -> Any:  # zvec.CollectionSchema forward-refed (lazy import in __init__)
         """建 schema: embedding (512d FP32 + HNSW) + content (FTS jieba) + memory_type + source."""
         zv = self._zvec
+        # [8/12 fix] zvec collection name 必须 match [_a-zA-Z0-9]+ — 拒绝 '.' ':' '-'.
+        # db_path.stem 可能含 '.' (e.g. "r0.db" → "r0.db" 不是 "r0"), 替换非安全字符.
+        safe_name = re.sub(r"[^_a-zA-Z0-9]", "_", self.collection_path.stem)
         # [8/6 fix] zvec 0.6 declarative API: CollectionSchema(name, fields=[...], vectors=[...])
         # 旧 method-style add_*_field 在 0.6 不存在. VECTOR_FP32 = 跟 sqlite-vec / usearch 同精度.
         # HNSW 用默认 HnswIndexParam() (ef_construction=200, m=16 文档 default).
         # FTS 用 jieba (中文 tokenizer, 主人偏好, 见 README §向量后端部署矩阵).
         schema = zv.CollectionSchema(
-            name=self.collection_path.stem,
+            name=safe_name,
             fields=[
                 zv.FieldSchema(name="content", data_type=zv.DataType.STRING, index_param=zv.FtsIndexParam(tokenizer_name="jieba")),
                 zv.FieldSchema(name="memory_type", data_type=zv.DataType.STRING),
@@ -409,10 +413,13 @@ class UsearchIndex(SearchIndex):
     def __init__(self, db_path: Path, dim: int):
         self.db_path = db_path
         self.dim = dim
-        self._index_path = db_path.parent / "usearch.index"
+        # [8/12 fix] 索引路径跟 db_path.stem 绑定 — 同 dir 多 db file 互不冲突.
+        # 旧实现: db_path.parent / "usearch.index" → 同 dir 多 db 共享同一 usearch.index file,
+        # 跨 db 数据污染 + close() 后 load 读错数据.
+        self._index_path = db_path.parent / f"{db_path.stem}.usearch.index"
         # [8/8 根因修复] sidecar 指纹 — close() 记录 active chunk 集合签名,
         # 启动时比对 SQLite (唯一事实源), 不一致 → 判定索引 stale → 自动重建.
-        self._meta_path = db_path.parent / "usearch.index.verified.json"
+        self._meta_path = db_path.parent / f"{db_path.stem}.usearch.index.verified.json"
         # 映射查询用自有 sqlite 连接 (usearch 不在 memory.py 事务里)
         self._conn = sqlite3.connect(str(db_path), timeout=30, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -790,16 +797,20 @@ def zvec_available() -> bool:
 # [8/6 plan §1] 向量库必选二选一 — usearch/zvec 都不可用时 RuntimeError.
 def _pick_backend(requested: str, db_path: Path, dim: int) -> SearchIndex:
     """按 backend 字符串选择后端. requested 默认 'auto' → zvec (INT8, 优先) > usearch (f16); 都不可用抛 RuntimeError."""
+    # [8/12 fix] 索引路径跟 db_path.stem 绑定 — 同 dir 多 db file 互不冲突.
+    # 旧实现: db_path.parent / "search_index.zv" → 同 dir 多 db 共享同一 zvec
+    # collection, zvec 0.6 没有 close()/release() 释放 LOCK, 第二次 Memory() 即
+    # "Can't lock read-write collection" 报错. 改用 {db_path.stem}.search_index.zv.
     if requested == "auto":
         if zvec_available():
-            return ZvecIndex(db_path.parent / "search_index.zv", dim)
+            return ZvecIndex(db_path.parent / f"{db_path.stem}.search_index.zv", dim)
         if usearch_available():
             logger.info("[search_index] auto: zvec 未装, 用 usearch (f16)")
             return UsearchIndex(db_path, dim)
         raise RuntimeError("向量库是必选依赖 — zvec 与 usearch 均不可用. 请 `pip install usearch>=2.26` 或 `pip install zvec`.")
     if requested == "zvec":
         if zvec_available():
-            return ZvecIndex(db_path.parent / "search_index.zv", dim)
+            return ZvecIndex(db_path.parent / f"{db_path.stem}.search_index.zv", dim)
         raise RuntimeError("zvec 不可用 (本机可能缺 AVX2+ 指令). 改 'auto' 让 mnelo 回落 usearch, 或换支持 zvec 的部署机.")
     if requested == "usearch":
         if usearch_available():
