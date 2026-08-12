@@ -48,6 +48,7 @@ async def run_stdio() -> None:
     (直接读 module global 会绕过 monkeypatch — refactor 后需要走 facade).
     """
     import sys
+
     if not _MCP_AVAILABLE:
         raise RuntimeError("MCP libraries not available")
     _stdio_server = sys.modules["mcp_server"].stdio_server
