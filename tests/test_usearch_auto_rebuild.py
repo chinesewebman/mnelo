@@ -103,13 +103,13 @@ def test_clean_reopen_no_rebuild(tmp_path):
     idx = _si.UsearchIndex(db, DIM)
     _add_all(idx, db, ("a", "b"))
     idx.close()
-    assert (tmp_path / "usearch.index").exists()
-    assert (tmp_path / "usearch.index.verified.json").exists()
+    assert (tmp_path / f"{db.stem}.usearch.index").exists()
+    assert (tmp_path / f"{db.stem}.usearch.index.verified.json").exists()
 
     idx2 = _si.UsearchIndex(db, DIM)
     try:
         assert idx2.size() == 2
-        assert not list(tmp_path.glob("usearch.index.corrupt-*"))
+        assert not list(tmp_path.glob(f"{db.stem}.usearch.index.corrupt-*"))
     finally:
         idx2.close()
 
@@ -118,15 +118,15 @@ def test_corrupt_file_auto_rebuilds(tmp_path):
     """垃圾文件 → 文件头预检 ValueError (不盲 load abort) → 自动重建."""
     db = _make_db(tmp_path, chunk_ids=("a", "b"))
     garbage = b"garbage not usearch " * 10
-    (tmp_path / "usearch.index").write_bytes(garbage)
+    (tmp_path / f"{db.stem}.usearch.index").write_bytes(garbage)
 
     idx = _si.UsearchIndex(db, DIM)
     try:
         assert idx.size() == 2  # 从 SQLite 重建, 数据不丢
-        corrupts = list(tmp_path.glob("usearch.index.corrupt-*"))
+        corrupts = list(tmp_path.glob(f"{db.stem}.usearch.index.corrupt-*"))
         assert len(corrupts) == 1
         assert corrupts[0].read_bytes() == garbage  # 坏文件留档
-        assert (tmp_path / "usearch.index.verified.json").exists()
+        assert (tmp_path / f"{db.stem}.usearch.index.verified.json").exists()
     finally:
         idx.close()
 
@@ -136,7 +136,7 @@ def test_f32_file_auto_rebuilds_to_f16(tmp_path):
     import usearch.index as ui
 
     db = _make_db(tmp_path, chunk_ids=("a", "b"))
-    ui.Index(ndim=DIM, metric="cos", dtype="f32").save(str(tmp_path / "usearch.index"))
+    ui.Index(ndim=DIM, metric="cos", dtype="f32").save(str(tmp_path / f"{db.stem}.usearch.index"))
 
     idx = _si.UsearchIndex(db, DIM)
     try:
@@ -144,7 +144,7 @@ def test_f32_file_auto_rebuilds_to_f16(tmp_path):
 
         assert idx._index.dtype == ScalarKind.F16
         assert idx.size() == 2
-        assert len(list(tmp_path.glob("usearch.index.corrupt-*"))) == 1
+        assert len(list(tmp_path.glob(f"{db.stem}.usearch.index.corrupt-*"))) == 1
     finally:
         idx.close()
 
@@ -161,7 +161,7 @@ def test_stale_index_auto_rebuilds(tmp_path):
     idx2 = _si.UsearchIndex(db, DIM)
     try:
         assert idx2.size() == 2
-        assert len(list(tmp_path.glob("usearch.index.corrupt-*"))) == 1
+        assert len(list(tmp_path.glob(f"{db.stem}.usearch.index.corrupt-*"))) == 1
     finally:
         idx2.close()
 
@@ -172,7 +172,7 @@ def test_no_sidecar_count_fallback_rebuilds(tmp_path):
     idx = _si.UsearchIndex(db, DIM)
     _add_all(idx, db, ("a",))
     idx.close()
-    (tmp_path / "usearch.index.verified.json").unlink()  # 手删 sidecar
+    (tmp_path / f"{db.stem}.usearch.index.verified.json").unlink()  # 手删 sidecar
     _insert(db, "b")
 
     idx2 = _si.UsearchIndex(db, DIM)
@@ -187,12 +187,12 @@ def test_no_chunks_table_tolerance(tmp_path):
     import usearch.index as ui
 
     db = tmp_path / "empty.db"  # 不存在 → sqlite 自动建空库
-    ui.Index(ndim=DIM, metric="cos", dtype="f16").save(str(tmp_path / "usearch.index"))
+    ui.Index(ndim=DIM, metric="cos", dtype="f16").save(str(tmp_path / f"{db.stem}.usearch.index"))
 
     idx = _si.UsearchIndex(db, DIM)
     try:
         assert idx.size() == 0
-        assert not list(tmp_path.glob("usearch.index.corrupt-*"))
+        assert not list(tmp_path.glob(f"{db.stem}.usearch.index.corrupt-*"))
     finally:
         idx.close()
 
@@ -202,7 +202,7 @@ def test_rebuild_without_embedder_raises(tmp_path, monkeypatch):
     import types
 
     db = _make_db(tmp_path, chunk_ids=("a",))
-    (tmp_path / "usearch.index").write_bytes(b"garbage " * 10)
+    (tmp_path / f"{db.stem}.usearch.index").write_bytes(b"garbage " * 10)
     broken = types.ModuleType("embedder")  # 无 embed attr → ImportError
     monkeypatch.setitem(sys.modules, "embedder", broken)
 

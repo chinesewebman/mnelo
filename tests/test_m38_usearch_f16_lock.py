@@ -125,7 +125,7 @@ def test_m38_4_add_then_save_writes_f16_index():
             idx.add(f"chunk_{i}", vec_bytes)
         idx.close()
 
-        idx_file = Path(tmpdir) / "usearch.index"
+        idx_file = Path(tmpdir) / f"{db.stem}.usearch.index"
         assert idx_file.exists(), "save 后应生成 usearch.index"
         size = idx_file.stat().st_size
         assert size > 100, f"save 后文件应 > 100 字节, got {size}"

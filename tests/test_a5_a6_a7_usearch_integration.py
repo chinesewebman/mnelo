@@ -19,6 +19,8 @@ sys.path.insert(0, str(ROOT))
 # [8/5 fix] DB 路径不再硬编码 — 用 config 解析
 from config import config as _config_mod  # noqa: E402
 _DEFAULT_DB_PATH = _config_mod.db_path
+# [8/12 fix] 索引路径跟 db_path.stem 绑定 — 跟 search_index.py:412-415 一致
+_DEFAULT_INDEX_PATH = _DEFAULT_DB_PATH.parent / f"{_DEFAULT_DB_PATH.stem}.usearch.index"
 
 
 def _run_script(script_name, *args):
@@ -63,7 +65,7 @@ def test_a6_rebuild_dry_run_counts_chunks():
 
 def test_a6_rebuild_dry_run_does_not_create_index():
     """[A6 §4] --dry-run 不真建索引 (usearch.index 文件不应被新建)."""
-    usearch_path = ROOT / "usearch.index"
+    usearch_path = _DEFAULT_INDEX_PATH
     existed_before = usearch_path.exists()
     rc, out, err = _run_script("rebuild_index.py", "--backend", "usearch", "--dry-run")
     assert rc == 0

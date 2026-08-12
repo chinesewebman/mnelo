@@ -282,7 +282,7 @@ class TestUsearchF16Assertion(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
-            self._build_empty("f16", td / "usearch.index")
+            self._build_empty("f16", td / "memory.usearch.index")
             idx = UsearchIndex(td / "memory.db", 512)
             try:
                 self.assertEqual(idx._index.dtype, ScalarKind.F16)
@@ -310,14 +310,14 @@ class TestUsearchF16Assertion(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as td:
                 td = Path(td)
-                self._build_empty("f32", td / "usearch.index")
+                self._build_empty("f32", td / "memory.usearch.index")
                 idx = UsearchIndex(td / "memory.db", 512)
                 try:
                     self.assertEqual(idx._index.dtype, ScalarKind.F16)
                     self.assertEqual(idx._index.size, 0)
                 finally:
                     idx.close()
-                corrupts = list(td.glob("usearch.index.corrupt-*"))
+                corrupts = list(td.glob("memory.usearch.index.corrupt-*"))
                 self.assertEqual(len(corrupts), 1)
         finally:
             sys.modules.pop("embedder", None)
