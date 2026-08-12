@@ -17,6 +17,8 @@ composition):
   - `task_states.X` → facade attribute (含 28+ tests + mcp_server + digest_mixin)
 """
 
+from typing import List  # noqa: F401  re-export (test_review_fixes.py::test_rf7_list_typing_imported contract: task_states namespace 含 typing.List)
+
 from task_states_core import (  # noqa: F401  re-export
     # 常量
     ALL_STATES,  # noqa: F401  re-export
