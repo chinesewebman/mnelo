@@ -67,7 +67,14 @@ from mcp_transports import (  # noqa: F401  re-export
     run_sse,
     run_stdio,
     run_streamable_http,
+    stdio_server,  # noqa: F401  re-export (test_dead_code_round13 mock contract)
 )
+
+# [refactor 2026-08-12] Patch mcp_transports.run_stdio to read stdio_server
+# through mcp_server facade. Reason: tests do `monkeypatch.setattr(mcp_server,
+# 'stdio_server', mock)` to intercept run_stdio() — but mcp_transports.run_stdio()
+# uses its OWN stdio_server reference (bound at import time). This indirection
+# makes the monkeypatch reach.
 
 # [refactor 2026-08-12] PEP 562 module-level __getattr__ proxies module attributes:
 #  - _mem_instance → dispatcher singleton (live state for tests)

@@ -41,10 +41,17 @@ if not logger.handlers:
 
 
 async def run_stdio() -> None:
-    """: 主路径 stdio transport (与 MCP 客户端对接)."""
+    """: 主路径 stdio transport (与 MCP 客户端对接).
+
+    [refactor 2026-08-12] 通过 sys.modules['mcp_server'].stdio_server 读取, 这样
+    测试用 `monkeypatch.setattr('mcp_server.stdio_server', mock)` 能拦截
+    (直接读 module global 会绕过 monkeypatch — refactor 后需要走 facade).
+    """
+    import sys
     if not _MCP_AVAILABLE:
         raise RuntimeError("MCP libraries not available")
-    async with stdio_server() as (read_stream, write_stream):
+    _stdio_server = sys.modules["mcp_server"].stdio_server
+    async with _stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
