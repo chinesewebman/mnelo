@@ -14,6 +14,7 @@ state_transitions (规则矩阵表, 无 task_id 列) — OperationalError.
 正解: transition 写 task_states (UPDATE 关旧 + INSERT 开新),
 state_transitions 是设计阶段 seed 的规则不放实例.
 """
+
 import json
 import sys
 import sqlite3
@@ -37,6 +38,9 @@ _load("embedder")
 _load("search_index")
 _load("validation")
 _load("auth")
+mcp_tool_dispatcher = _load("mcp_tool_dispatcher")
+_load("mcp_tool_handlers")
+_load("mcp_tool_definitions")
 mcp = _load("mcp_server")
 
 
@@ -46,10 +50,11 @@ def _isolated_db(tmp_path):
     [8/10 主人验证 fix] 同时把 mcp._get_mem() 单例切到隔离 mem —— 否则
     task_create/transition 走 mcp 单例写 config/env 库, 回查 mem(tmp_path
     库) 永远 0 行, 隔离不生效 (且 config 指向 live 时会污染 live).
-    测试 finally 恢复 mcp._mem_instance = None.
+    测试 finally 恢复 mcp_tool_dispatcher._mem_instance = None.
     """
     import shutil
     from memory import Memory
+
     # 隔离 DB 路径
     db_path = tmp_path / "memory.db"
     # 复制 schema (用 init_db 模板)
@@ -57,13 +62,14 @@ def _isolated_db(tmp_path):
     if src_db.exists():
         shutil.copy(src_db, db_path)
     mem = Memory(db_path=db_path)
-    mcp._mem_instance = mem
+    mcp_tool_dispatcher._mem_instance = mem
     return mem, db_path
 
 
 def memory_DB_PATH():
     """[8/9 B13] 解析 live DB path 用于 copy schema. 跟 memory.py 同 .resolve_db_path"""
     from config import resolve_db_path
+
     return resolve_db_path()
 
 
@@ -71,14 +77,8 @@ def _setup_isolated(mem):
     """[8/9 B13] 用隔离 mem 删除 mcp_task_transition fixture 残留 task_states."""
     mem._conn.execute("PRAGMA foreign_keys = OFF")
     try:
-        mem._conn.execute(
-            "DELETE FROM task_states WHERE task_id LIKE 'task:tlm8-%' "
-            "OR task_id LIKE 'task:20260806-t8-%'"
-        )
-        mem._conn.execute(
-            "DELETE FROM entities WHERE id LIKE 'task:tlm8-%' "
-            "OR id LIKE 'task:20260806-t8-%'"
-        )
+        mem._conn.execute("DELETE FROM task_states WHERE task_id LIKE 'task:tlm8-%' OR task_id LIKE 'task:20260806-t8-%'")
+        mem._conn.execute("DELETE FROM entities WHERE id LIKE 'task:tlm8-%' OR id LIKE 'task:20260806-t8-%'")
     finally:
         mem._conn.execute("PRAGMA foreign_keys = ON")
     mem._conn.commit()
@@ -93,9 +93,7 @@ def _count_state_transitions_for_task(mem, task_id):
     state_transitions 是设计阶段的转移规则 (scope/from_state/to_state)
     seed 进去, 不放每次 transition 实例.
     """
-    return mem._conn.execute(
-        "SELECT COUNT(*) FROM task_states WHERE task_id = ?", (task_id,)
-    ).fetchone()[0]
+    return mem._conn.execute("SELECT COUNT(*) FROM task_states WHERE task_id = ?", (task_id,)).fetchone()[0]
 
 
 def test_tool_schema_listed():
@@ -111,18 +109,24 @@ def test_call_tool_task_transition_normal(tmp_path):
     mem, _db = _isolated_db(tmp_path)
     try:
         _setup_isolated(mem)
-        create_r = mcp._call_tool("memory_task_create", {
-            "name": "t8-normal",
-            "now": "2026-08-06T10:00",
-        })
+        create_r = mcp._call_tool(
+            "memory_task_create",
+            {
+                "name": "t8-normal",
+                "now": "2026-08-06T10:00",
+            },
+        )
         task_id = json.loads(create_r)["task_id"]
 
-        r = mcp._call_tool("memory_task_transition", {
-            "task_id": task_id,
-            "to_state": "in_progress",
-            "reason": "agent A: handoff",
-            "now": "2026-08-06T10:05",
-        })
+        r = mcp._call_tool(
+            "memory_task_transition",
+            {
+                "task_id": task_id,
+                "to_state": "in_progress",
+                "reason": "agent A: handoff",
+                "now": "2026-08-06T10:05",
+            },
+        )
         data = json.loads(r)
         assert data["from_state"] == "open"
         assert data["to_state"] == "in_progress"
@@ -133,7 +137,7 @@ def test_call_tool_task_transition_normal(tmp_path):
         n = _count_state_transitions_for_task(mem, task_id)
         assert n == 2, f"CAS 副作用应写 2 行 (关旧 + 开新), got {n}"
     finally:
-        mcp._mem_instance = None
+        mcp_tool_dispatcher._mem_instance = None
         mem.close()
 
 
@@ -142,18 +146,24 @@ def test_call_tool_task_transition_invalid_rejected(tmp_path):
     mem, _db = _isolated_db(tmp_path)
     try:
         _setup_isolated(mem)
-        create_r = mcp._call_tool("memory_task_create", {
-            "name": "t8-invalid",
-            "now": "2026-08-06T10:00",
-        })
+        create_r = mcp._call_tool(
+            "memory_task_create",
+            {
+                "name": "t8-invalid",
+                "now": "2026-08-06T10:00",
+            },
+        )
         task_id = json.loads(create_r)["task_id"]
 
-        r = mcp._call_tool("memory_task_transition", {
-            "task_id": task_id,
-            "to_state": "waiting",
-            "reason": "should fail",
-            "now": "2026-08-06T10:05",
-        })
+        r = mcp._call_tool(
+            "memory_task_transition",
+            {
+                "task_id": task_id,
+                "to_state": "waiting",
+                "reason": "should fail",
+                "now": "2026-08-06T10:05",
+            },
+        )
         data = json.loads(r)
         # 走 mcp_server 错误路径: ValidationError 之类
         assert "error" in data or data.get("type") == "error", f"unexpected {data}"
@@ -163,7 +173,7 @@ def test_call_tool_task_transition_invalid_rejected(tmp_path):
         n = _count_state_transitions_for_task(mem, task_id)
         assert n == 1, f"非法 transition 应保持初始 1 行 (open 窗), got {n}"
     finally:
-        mcp._mem_instance = None
+        mcp_tool_dispatcher._mem_instance = None
         mem.close()
 
 
