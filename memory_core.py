@@ -1422,6 +1422,12 @@ class MemoryCore:
 
         rrf_score: Dict[str, float] = {}
         rrf_hits: Dict[str, Dict] = {}
+        # [8/15 E-4] methods accumulator — 同 chunk_id 多路命中时, 必须 accumulate
+        # 所有参与的 method. 之前 `rrf_hits[cid] = h` 直接覆盖导致 lane 后者
+        # 覆盖前者 (e.g. entity 永远在 hit_lists 末尾, 覆盖 vector/graph/meta),
+        # 污染 recall_log.recall_details_json.method 字段, 拖累 E-3
+        # memory_recall_stats method 分布数据 (DESIGN §1.2 #4).
+        rrf_methods: Dict[str, List[str]] = {}
         k = 60
         # [8/5 普适化] RRF 实体 boost — 可配置 kind 清单 (config [recall].boost_kinds / env
         # MNELO_MEMORY_RECALL_BOOST_KINDS)。默认 ['stock'] 兼容旧行为; 设自己领域的
@@ -1445,12 +1451,20 @@ class MemoryCore:
                     boost = ENTITY_BOOST / math.sqrt(rank + 1)
                     rank_score += boost
                 rrf_score[cid] = rrf_score.get(cid, 0) + rank_score
-                rrf_hits[cid] = h
+                # [8/15 E-4] 首次见 → 直接 set, 后续 → accumulate (保持第一路 hit 数据)
+                if cid not in rrf_hits:
+                    rrf_hits[cid] = h
+                # [8/15 E-4] accumulate methods (按遍历序, 去重)
+                m = h.get("method")
+                if m and m not in rrf_methods.get(cid, []):
+                    rrf_methods.setdefault(cid, []).append(m)
         ranked = sorted(rrf_score.items(), key=lambda x: -x[1])
         out = []
         for cid, score in ranked[:top_k]:
             h = rrf_hits[cid]
             h["rrf_score"] = score
+            # [8/15 E-4] 写入完整 methods 列表 (保留 backward-compat method 字段 = 第一路)
+            h["methods"] = rrf_methods.get(cid, [h.get("method")] if h.get("method") else [])
             out.append(h)
         return out
 
@@ -1464,12 +1478,16 @@ class MemoryCore:
         """
         from memory import now  # lazy import — avoid circular at module load
 
-        #  feedback loop: 每条命中的 method + 距离 + 排名 (top-5 by RRF score)
+        # [8/15 E-4] feedback loop: 每条命中的 methods 列表 (新) + method 单字段 (backward-compat)
+        # methods 列表含所有 RRF 命中的 lane (e.g. ["vector", "graph"]), 修复
+        # DESIGN §1.2 #4 RRF lane 覆盖问题 — 之前 rrf_hits[cid] = h 覆盖,
+        # recall_details_json.method 只记最后遍历 lane, 拖累 E-3 recall_stats.
         detail = [
             {
                 "rank": i + 1,
                 "chunk_id": r.get("chunk_id"),
-                "method": r.get("method"),
+                "method": r.get("method"),  # backward-compat: 第一路
+                "methods": r.get("methods", [r.get("method")] if r.get("method") else []),
                 "distance": r.get("distance"),  # 0.0-2.0 越小越相似 (vector_only)
                 "rrf_score": r.get("rrf_score"),  # RRF 融合分数 (rrf strategy)
                 "importance": r.get("importance"),

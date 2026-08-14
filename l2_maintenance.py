@@ -1250,7 +1250,9 @@ class L2MaintenanceMixin:
             latency = {"p50": 0.0, "p95": 0.0, "p99": 0.0, "avg": 0.0, "min": 0.0, "max": 0.0, "n": 0}
 
         # === 3. Methods breakdown ===
-        # recall_details_json 是 JSON 数组, 每项含 method / rank / rrf_score / distance.
+        # [8/15 E-4] recall_details_json 写入 'methods' 列表 (新字段, 含所有 RRF 命中 lane),
+        # 保留 'method' 单字段 (backward-compat, = 第一路). 这里优先用 'methods',
+        # 缺失时 fallback 到 'method' 单字段 (兼容 pre-E-4 老数据).
         # SQLite 没原生 JSON iteration, 用 json_each() 展开.
         # 注意: json_each() 已经是 cross-join, where 条件要加在 recall_log r 上.
         methods: Dict[str, Dict] = {}
@@ -1262,16 +1264,25 @@ class L2MaintenanceMixin:
                 join_where = where_sql.replace("WHERE ", "AND ", 1)
             else:
                 join_where = ""
+            # [8/15 E-4] json_each 展开 recall_details_json 数组, 取 'methods' 列表
+            # json_each(je.value, '$.methods') 把列表展开成多行, 每行一个 method string.
+            # COALESCE: 老数据没 'methods' 字段, 退回 'method' 单字段.
             method_rows = self._conn.execute(
                 f"""SELECT
-                        json_extract(je.value, '$.method') AS method_str,
+                        je_m.value AS method_str,
                         COUNT(*) AS hit_count,
                         AVG(CAST(json_extract(je.value, '$.rank') AS REAL)) AS avg_rank,
                         AVG(CAST(json_extract(je.value, '$.rrf_score') AS REAL)) AS avg_rrf,
                         AVG(CAST(json_extract(je.value, '$.distance') AS REAL)) AS avg_dist
-                    FROM recall_log r, json_each(r.recall_details_json) je
+                    FROM recall_log r, json_each(r.recall_details_json) je,
+                         json_each(
+                           COALESCE(
+                             json_extract(je.value, '$.methods'),
+                             json_array(json_extract(je.value, '$.method'))
+                           )
+                         ) je_m
                     WHERE 1=1 {join_where}
-                    GROUP BY json_extract(je.value, '$.method')
+                    GROUP BY je_m.value
                     ORDER BY hit_count DESC""",
                 params,
             ).fetchall()
