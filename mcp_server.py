@@ -14,19 +14,18 @@
 向后兼容:
   - `from mcp_server import X` 走 PEP 562 `__getattr__` 转发到源 sub-module
   - `mcp_server.X` (read) 走 PEP 562 `__getattr__`
-  - `mcp_server.X = Y` (write) 走 PEP 562 `__setattr__`, 透到 sub-module.X
-  - `monkeypatch.setattr(mcp_server, 'X', value)` 生效 (透到 sub-module.X)
 
-[8/14 P1 fix] 之前 `from X import Y` 是 value-binding — `from mcp_server import run_sse`
-让 caller 拿到老值. `monkeypatch.setattr(mcp_server, 'run_sse', mock)` 改 mcp_server module
-dict, 但 `mcp_transports.run_stdio` 用了 import 时的 value-binding ref, 永远看不到 mock.
-
-改成 `import X` + `__getattr__` + `__setattr__` 全动态转发, facade 真成 attribute router.
+[8/14 P1] PEP 562 module-level `__setattr__` / `__delattr__` does **NOT** fire for
+C-level `setattr(module, name, value)` (bypasses Python hook). 所以 facade
+`__setattr__` 不可行 — test 需 monkeypatch 直 sub-module (e.g.
+`monkeypatch.setattr(mcp_guard, '_MCP_AVAILABLE', True)`) 而不是 facade。
 
 Test contract:
-  - `monkeypatch.setattr(mcp_server, 'X', value)` → X 在 sub-module 那里被 set
-  - 外部代码 `mcp_server.X` (or `from mcp_server import X`) 拉到 updated value
-  - 内部函数 (main() 等) 用 direct sub-module ref; 测试时改 facade 属性**不影响** main() —
+  - `from mcp_server import X` (read)  走 PEP 562 转发
+  - `mcp_server.X` (read)  走 PEP 562 转发
+  - `monkeypatch.setattr(mcp_server, X, val)` 不影响 sub-module (写 facade 本地 dict)
+  - `monkeypatch.setattr(mcp_guard, X, val)` 改 sub-module, 下次 facade read 转发到新值
+  - 内部 main() 等用 direct sub-module ref; 测试时改 facade 属性**不影响** main() —
     这是 Python 函数 local-binding 决定的 (module attribute access 才能 reflect 改动)。
 
 [运行]
@@ -72,11 +71,15 @@ def __getattr__(name):  # noqa: D401  — PEP 562 module __getattr__
 
     Enables:
       - `from mcp_server import _MCP_AVAILABLE` (re-export)
-      - `mcp_server._MCP_AVAILABLE` (transitive access)
-      - 外部代码访问 facade 拿到 forward 后的真实 sub-module 属性
+      - `mcp_server._MCP_AVAILABLE` (transitive access, dynamic)
 
-    Lazy lookups (per-call) — does NOT bind at import time — so test-set values
-    on facade actually reach external code paths.
+    Lazy lookups (per-call) — does NOT bind at import time.
+
+    Caveat: PEP 562 __setattr__/__delattr__ on module does NOT fire for
+    C-level `setattr(module, ...)` (bypasses Python-level hook). For tests
+    wanting to override mock-target attributes, use direct sub-module
+    setattr (e.g. `monkeypatch.setattr(mcp_guard, '_MCP_AVAILABLE', ...)`)
+    NOT facade setattr.
     """
     for mod in _SUB_MODULES:
         if hasattr(mod, name):
@@ -84,40 +87,11 @@ def __getattr__(name):  # noqa: D401  — PEP 562 module __getattr__
     raise AttributeError(f"module 'mcp_server' has no attribute {name!r}")
 
 
-def __setattr__(name, value):  # noqa: D401  — PEP 562 module __setattr__
-    """Forward attribute writes to sub-module where name is defined.
-
-    Solves Pattern X/Y 8/12 split regression:
-      - `monkeypatch.setattr(mcp_server, '_MCP_AVAILABLE', True)` → mcp_guard._MCP_AVAILABLE = True
-      - 然后外部代码读 `mcp_server._MCP_AVAILABLE` 拿到 True (走 __getattr__)
-
-    Caveat: 函数内 local binding (`run_sse = mcp_server.run_sse`) 不反映 setattr 改动 —
-    这是 Python function scope 决定的. 想要 reflect, 用 `getattr(mcp_server, 'run_sse')()`
-    或者 monkeypatch 直 sub-module (e.g. `mcp_transports.run_sse`).
-    """
-    for mod in _SUB_MODULES:
-        if hasattr(mod, name):
-            setattr(mod, name, value)
-            return
-    # Fallback: write to local module dict (for facade-internal state like test fixtures)
-    super().__setattr__(name, value)
-
-
-def __delattr__(name):  # noqa: D401  — PEP 562 module __delattr__
-    """Forward attribute deletes to sub-module where name is defined."""
-    for mod in _SUB_MODULES:
-        if hasattr(mod, name):
-            delattr(mod, name)
-            return
-    super().__delattr__(name)
-
-
 def main():
     """[refactor 2026-08-12] facade — boot mcp_server via chosen transport.
 
-    [8/14 P1] 使用 direct sub-module ref (不是 facade), main() 内 module-level binding 永远
-    捕获 import-time value. 测试想 mock main() 内的 transport call, 直接 patch
-    `mcp_transports.run_sse` (sub-module) 不是 facade — 那样 setattr 才会通过 PEP 562 路由.
+    [8/14 P1] Uses direct sub-module refs. Tests mocking main() internals must
+    patch sub-modules directly (mcp_guard, mcp_transports, etc).
     """
     ap = argparse.ArgumentParser(description="mnelo MCP Server")
     ap.add_argument(
