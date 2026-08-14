@@ -2,7 +2,9 @@
 
 > **定位**：本文件是 mnelo 的**演进蓝图**——描述目标架构、各层设计与演进路线。
 > **现状基线**：`ARCHITECTURE.md`（当前实现分析）、`SCHEMA.md`（SQL schema 参考）。
-> **版本**：v0.13 · 2026-08-04 · 依据 7/21 修复 + 8/4 实际数据评估 (v0.3 报告) + 8/4 bug 修 (4bd654d) + 8/4 H-1 落地 (d98cd93/3421d99) + 8/4 可逆压缩 (v0.13) 后的状态。
+> **版本**：v0.14 · 2026-08-14 · 8/12 mcp_server.py split (506d5bc) + 8/14 PEP 562 facade 设计定型 (db522b3/c9697f8/d3972e8/c71801b/c51c72d) + §6.6 新章节。
+> **v0.14 变更**（8/14 mcp_server split 实战落地）——§6.6 新增 mcp_server.py 拆分 + PEP 562 facade 设计章节：6 个子模块职责表 + facade 代码 pattern + 4 条已知坑（PEP 562 setattr 不 work / from import value-binding / _load_from_repo separate instance / facade import 占 dict）+ Test contract 表 + CI 实战 aggregate 0 fail 验证。Subagent 8/14 通过隔离测试发现 PEP 562 setattr 限制，反向 commit c9697f8 修正 db522b3 错设计（**专家纪律价值示范**：subagent self-verify 救主）→ 主人 8/6 教训升级。
+> **v0.13 变更**（8/4 可逆压缩设计）——§4.5.2 新增**可逆压缩**（⟵ 借鉴 Headroom CCR）：摘要行带 `source_chunk_ids` provenance 指针 + `memory_get_digest(ref=...)` 按需展开；信息单源不破，截断可恢复。§5.7 工具清单同步 `memory_get_digest(ref=None)` 双模式。
 > **v0.12 变更**（hermes 实际数据评审 8/4 + 主人 deepseek-v4-flash 交叉验证 + bug 修复）——§1.1 **实际回灌**：实测召回量 1.1 次/日（人脑级）+ Phase 1 placeholder id 100% 命名错位 + Phase 2 30 天延迟清的"延期/清"两步半完成状态；**§3.8 §5.6 done bug 修**：`run_purge_worker()` 落地 (commit 4bd654d, 125 行) — 3 phase (clean_orphan_target_ids / 物理删 + set done=1 / vec0 orphan cleanup)；§1.1 标注 TASKS 未建 schema 前置 (`user_confirmed` / `processed_at` / `audit_log` 仍缺 — H0 真前置)；§3.0 memory_type 字段已落地但实际 0% non-fact (根因：写入方不分类 + 无 P1 提取器)；§8.3 P3 升级档触发条件实际 scale 评估 (4344 chunks 距 50 万差 115 倍，延迟 30ms 内 — 升级档面向未来备选)。
 > **v0.13 变更**（8/4 可逆压缩设计）——§4.5.2 新增**可逆压缩**（⟵ 借鉴 Headroom CCR）：摘要行带 `source_chunk_ids` provenance 指针 + `memory_get_digest(ref=...)` 按需展开；信息单源不破，截断可恢复。§5.7 工具清单同步 `memory_get_digest(ref=None)` 双模式。
 > **v0.3 变更**：全方位专家评审后补入——产品边界（§1.4）、记忆类型谱系（§3.0）、双轨组织模型（§4.8）、新近度加权（§4.9）、来源可信度（§4.10）、并发与保留（§3.9）、工具收敛（§6.5）。
@@ -911,6 +913,87 @@ l2.running             = bool         # 防重叠
 
 - 保留 `forget` 为独立工具（危险动作显式化，不让它藏在 write 里）
 - 客户端 `MneloClient` 同步收敛为高层方法
+
+### 6.6 mcp_server.py 拆分 + facade 设计（[8/12] P0 落地）
+
+**背景**：原 `mcp_server.py` 单文件 ~1614 行，跨多职责（heavy import guard + 22 Tool() schema + handler dispatch + 4 种 transport + health/metrics endpoint + main CLI）。8/12 split 让 P1 测试粒度可拆、code review 可分 commit、CD 可单 module 重启。
+
+**落地架构**（8/12 commit 506d5bc + 8/14 commits db522b3/c9697f8/d3972e8/c71801b/c51c72d）：
+
+| 模块 | 行数 | 职责 |
+|---|---|---|
+| `mcp_server.py` | ~80 | facade（PEP 562 `__getattr__` 转发 + main() CLI） |
+| `mcp_guard.py` | ~50 | `_MCP_AVAILABLE` flag + heavy mcp/Starlette/uvicorn 导入（让 unit test 跳过重型 deps） |
+| `mcp_tool_definitions.py` | ~400 | 22 个 Tool() JSON schema（与 dispatch 解耦，e2e 单独 snapshot） |
+| `mcp_tool_handlers.py` | ~250 | `_TOOL_REGISTRY` / `_TASK_TOOL_REGISTRY` / `_CUSTOM_HANDLERS` + `_handle_*` |
+| `mcp_tool_dispatcher.py` | ~350 | `_call_tool` / `_get_mem` / `_rate_limit_check` / server wiring |
+| `mcp_transports.py` | ~600 | stdio/SSE/HTTP/dual transport + health/metrics endpoint |
+
+**PEP 562 facade 设计**（c51c72d 终态）：
+
+```
+import uvicorn  # re-export (test contract)
+import auth
+import mcp_guard
+import mcp_tool_definitions
+import mcp_tool_dispatcher
+import mcp_tool_handlers
+import mcp_transports
+# 注意: 不 `import config` 在 top-level — 让 PEP 562 __getattr__('config')
+# 转发到 _config_mod.config (Config instance), 不是 bare module
+import config as _config_mod  # noqa: E402
+
+_SUB_MODULES = (
+    mcp_tool_dispatcher,
+    mcp_tool_handlers,
+    mcp_tool_definitions,
+    mcp_transports,
+    mcp_guard,
+    auth,
+    _config_mod,
+)
+
+def __getattr__(name):
+    """PEP 562 — read-only attribute router. __setattr__/__delattr__ 不 work (CPython
+    module-level C-level setattr 抢先生效, 绕过 Python hook)."""
+    for mod in _SUB_MODULES:
+        if hasattr(mod, name):
+            return getattr(mod, name)
+    raise AttributeError(f"module 'mcp_server' has no attribute {name!r}")
+```
+
+**Test contract**（c51c72d 落地后的契约）：
+
+| 调用 | 行为 |
+|---|---|
+| `from mcp_server import X` | 走 PEP 562 转发到子模块 |
+| `mcp_server.X` (read) | 走 PEP 562 转发 |
+| `monkeypatch.setattr(mcp_server, X, val)` | **不工作** — CPython C-level setattr 不触发 PEP 562 `__setattr__` |
+| `monkeypatch.setattr(<子模块>, X, val)` | 改子模块，下次 facade read 转发到新值 |
+| 子模块内部 `from X import Y` (value-binding) | 单测内部 call 永远拿 import-time 值，monkeypatch 不生效 → 必须改 module attribute lookup |
+
+**已知坑**（commit msg 必写的 4 条教训）：
+
+1. **PEP 562 `__setattr__` 在 module 上不可靠**——CPython module 的 setattr 在 C 层，Bypass Python hook。
+   Subagent 8/14 通过隔离测试发现这点，帮我回了 db522b3 的错设计（commit c9697f8）。
+   Lesson：下次设计 PEP 562 module facade 默认只保留 `__getattr__`，不要画蛇添足写 `__setattr__`/`__delattr__`。
+2. **`from X import Y` value-binding 让 monkeypatch 失效**——mcp_transports 内部 `_MCP_AVAILABLE` / `_mem_instance` 都靠这个。
+   Fix pattern：函数内 `import mcp_guard as _mg; if not _mg._MCP_AVAILABLE:` 走 module attribute lookup。
+3. **`_load_from_repo()` 用 `spec_from_file_location` 拿子模块是 separate instance**——写它不真改 `sys.modules['mcp_tool_dispatcher']`。
+   Fix pattern：test 用 `sys.modules['X']` 拿 singleton 改。
+4. **facade `import X` 在 top-level 占 dict 让 PEP 562 `__getattr__('X')` 不触发**（db522b3 错设计）——client 拿到 raw module 而不是期望的 instance。
+   Fix pattern：test-only imports 用 `import X as _X` 写到全局但不在 facade top-level；或者改 facade `__getattr__('X')` 走 chain → 找到 `_X.X` (instance)。
+
+**CI 实战**（ci_per_file_runner.py 镜像 CI 跑同款）：
+- 起点：mcp_server.py split 后 24 test fail（8/12 commit 后 first CI run）
+- 终点：c51c72d 后 aggregate 0 fail（每个 file fresh-DB-per-run 隔离掉 SSE port race）
+- 中间发现关键 insight：PEP 562 setattr 不 work → 全部 test 改 sys.modules singleton patch
+- remaining 10 native crash（SIGSEGV exit -11）— 跑测环境 macos-26-arm64 usearch/sqlite_vec 已知 race，与本 split 无关
+
+**未来延伸**（§6.6 落地后回归）：
+- `memory.py` 单巨石 (~3000 行) 同样模式可拆 (task_states split 已落地 c72e1b2)
+- `mcp_tool_definitions.py` (~400 行) 是另一个潜在拆分点 — 按 L1/L2/L3 工具族分文件
+- facade pattern 不限于 mcp_server: `auth.py` / `config.py` 同样是 value-binding 重灾区，未来重构时同 design
 
 ---
 
