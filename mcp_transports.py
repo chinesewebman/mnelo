@@ -425,7 +425,12 @@ def run_streamable_http(host: Optional[str] = None, port: Optional[int] = None, 
     [8/7 P1] host 只接受 loopback (跟 run_sse 同安全策略).
     [8/7 P2] Bearer token 复用 run_sse 加载逻辑 (load_auth_token()).
     [8/7 P3] port 默认从 config.server_port 读 (跟 SSE 共用 8086).
+    [8/14 P1 fix] 内部用 module-attribute call (getattr(auth, 'load_auth_token')())
+    走 facade forwarding — 这样 `monkeypatch.setattr('mcp_server.load_auth_token', mock)`
+    (或 `monkeypatch.setattr(auth, 'load_auth_token', mock)`) 都能拦截.
     """
+    import auth as _auth_mod
+
     if host is None or port is None:
         cfg_host, cfg_port = _resolve_server_defaults()
         host = host if host is not None else cfg_host
@@ -436,7 +441,7 @@ def run_streamable_http(host: Optional[str] = None, port: Optional[int] = None, 
 
     if auth_token is None:
         try:
-            auth_token = load_auth_token()
+            auth_token = _auth_mod.load_auth_token()
         except AuthError as e:
             logger.error(f"streamable_http transport requires auth token: {e}")
             raise
@@ -609,7 +614,12 @@ def run_sse(host: Optional[str] = None, port: Optional[int] = None, auth_token: 
     - 都没 → fail-fast
 
     [Round 2] host/port 不传 → 从 config.server_host/server_port 读 (config.toml [server] 段)
+
+    [8/14 P1 fix] 内部用 `_auth_mod.load_auth_token()` 走 facade forwarding —
+    `monkeypatch.setattr('mcp_server.load_auth_token', mock)` 或 setattr auth module 都生效.
     """
+    import auth as _auth_mod
+
     # 1. resolve host/port from config if not provided
     if host is None or port is None:
         cfg_host, cfg_port = _resolve_server_defaults()
@@ -622,7 +632,7 @@ def run_sse(host: Optional[str] = None, port: Optional[int] = None, auth_token: 
     # 2. Bearer token 加载 (fail-fast)
     if auth_token is None:
         try:
-            auth_token = load_auth_token()
+            auth_token = _auth_mod.load_auth_token()
         except AuthError as e:
             logger.error(f"SSE transport requires auth token: {e}")
             raise

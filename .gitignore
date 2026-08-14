@@ -37,6 +37,11 @@ Thumbs.db
 # logs/ = hygiene / hygiene dry-run json 输出
 search_index.zv/
 usearch.index*
+# [8/14 fix] 8/12 split 后索引路径绑定 db_path.stem (e.g. memory.db → memory.usearch.index),
+# 旧 gitignore 没覆盖前缀, runtime files leak 到 git status
+*.usearch.index
+*.usearch.index.verified.json
+*.usearch.index.corrupt-*
 usearch.index*.verified.json
 snapshots/
 .sync-backups/
