@@ -19,6 +19,7 @@ m._conn.rollback() 模拟 — 测的是 task_states 层语义, 不是被改的�
 ts_mod.TaskLoopError 可能不同类, except TaskLoopError catch 不到. 用 subprocess
 隔离彻底避开.
 """
+
 import json
 import os
 import subprocess
@@ -38,21 +39,33 @@ def test_rf15_real_mcp_wiring_in_source():
     """[RF15 8/6] 静态契约验证 mcp_server 含正确 rollback wiring.
 
     修真测走 subprocess 隔离避开 _ilu 问题, 但本静态测试作为 RF15 第一道防线.
+
+    [8/14 P1 fix] 8/12 refactor (506d5bc) 把 mcp_server 1614 行拆为 facade + 5 modules,
+    老 except TaskLoopError / rollback / commit / logger.exception 整段搬到 mcp_tool_handlers.py
+    (line 88-112, _handle_task_simple function). 本 test 改走新位置, 验证契约仍落地,
+    不再 hardcode mcp_server.py 文件路径.
     """
-    src = mcp_server_path.read_text()
-    # 必须 try/except/rollback + 显式 except TaskLoopError 分支
-    assert "except TaskLoopError as e:" in src, \
-        "mcp_server.py missing TaskLoopError exception branch (RF16)"
-    assert "mem._conn.rollback()" in src, \
-        "mcp_server.py missing rollback on exception (RF8)"
-    assert "mem._conn.commit()" in src, \
-        "mcp_server.py missing commit on success"
+    # [8/14 P1] 6 个文件路径/post-split positions of RF15 + RF16 contracts
+    # facade + dispatcher + handlers 各占一段; 一起验, 任何一个文件丢契约都会爆
+    contract_files = [
+        mcp_server_path,
+        _REPO / "mcp_tool_handlers.py",  # 8/12 后主契约落这里
+        _REPO / "mcp_tool_dispatcher.py",
+    ]
+    sources = {p.name: p.read_text() for p in contract_files}
+
+    # 必须 try/except/rollback + 显式 except TaskLoopError 分支 (在 handlers 里)
+    assert "except TaskLoopError as e:" in sources["mcp_tool_handlers.py"], "mcp_tool_handlers.py missing TaskLoopError exception branch (RF16, 8/12 后搬到 handlers)"
+
+    # RF8 + RF8-review-pass: 整个 rollback / commit 事务包裹都在 handlers
+    assert "mem._conn.rollback()" in sources["mcp_tool_handlers.py"], "mcp_tool_handlers.py missing rollback on exception (RF8)"
+    assert "mem._conn.commit()" in sources["mcp_tool_handlers.py"], "mcp_tool_handlers.py missing commit on success"
+
     # RF16 错误契约: 领域错保 message + code
-    assert "e.message" in src and "e.code" in src, \
-        "mcp_server.py missing RF16 message+code preservation"
+    assert "e.message" in sources["mcp_tool_handlers.py"] and "e.code" in sources["mcp_tool_handlers.py"], "mcp_tool_handlers.py missing RF16 message+code preservation"
+
     # 底层错用 logger.exception (留 traceback 给运营)
-    assert "logger.exception" in src, \
-        "mcp_server.py missing logger.exception for low-level errors (RF16)"
+    assert "logger.exception" in sources["mcp_tool_handlers.py"], "mcp_tool_handlers.py missing logger.exception for low-level errors (RF16)"
 
 
 def _subprocess_mcp_call(setup_fn_name: str, call_spec: dict) -> str:
@@ -140,7 +153,10 @@ mem_inst.close()
     }
     p = subprocess.run(
         [sys.executable, "-c", runner_src],
-        capture_output=True, text=True, env=env, timeout=30,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
         cwd=str(_REPO),
     )
     if p.returncode != 0:
@@ -171,8 +187,7 @@ def test_rf15_double_spawn_rollback_no_orphan():
                 result[key] = val
 
     # 1. loop_create 成功
-    assert "loop_id" in result["memory_loop_create"], \
-        f"loop_create failed: {result['memory_loop_create']}"
+    assert "loop_id" in result["memory_loop_create"], f"loop_create failed: {result['memory_loop_create']}"
 
     # 2. task_create first 成功
     first = result["memory_task_create_first"]
@@ -180,16 +195,13 @@ def test_rf15_double_spawn_rollback_no_orphan():
 
     # 3. task_create second 失败 (LoopHasActiveTaskError code)
     second = result["memory_task_create_second"]
-    assert second.get("code") == "LoopHasActiveTaskError", \
-        f"expected LoopHasActiveTaskError, got {second}"
+    assert second.get("code") == "LoopHasActiveTaskError", f"expected LoopHasActiveTaskError, got {second}"
 
     # 4. DB: first entity 存在 (1), second entity 不存在 (0), second windows 0
     db_check = result["db_check"]
     assert db_check["n_first"] == 1, f"first task entity lost: {db_check}"
-    assert db_check["n_second"] == 0, \
-        f"orphan task entity leaked after RF8 rollback: {db_check}"
-    assert db_check["n_windows_second"] == 0, \
-        f"orphan state window leaked: {db_check}"
+    assert db_check["n_second"] == 0, f"orphan task entity leaked after RF8 rollback: {db_check}"
+    assert db_check["n_windows_second"] == 0, f"orphan state window leaked: {db_check}"
 
 
 def test_rf16_task_loop_error_preserves_message_and_code():
@@ -210,8 +222,7 @@ def test_rf16_task_loop_error_preserves_message_and_code():
     assert mcp_result.get("type") == "TaskNotFoundError", mcp_result
     assert mcp_result.get("code") == "TaskNotFoundError", mcp_result
     assert mcp_result.get("field") == "task_id", mcp_result
-    assert "nonexistent-rf16" in mcp_result.get("error", ""), \
-        f"TaskLoopError should preserve message: {mcp_result}"
+    assert "nonexistent-rf16" in mcp_result.get("error", ""), f"TaskLoopError should preserve message: {mcp_result}"
 
     # DB 无副作用
     n = int(result["db_entity_count"])
