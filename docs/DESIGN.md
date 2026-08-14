@@ -2,7 +2,8 @@
 
 > **定位**：本文件是 mnelo 的**演进蓝图**——描述目标架构、各层设计与演进路线。
 > **现状基线**：`ARCHITECTURE.md`（当前实现分析）、`SCHEMA.md`（SQL schema 参考）。
-> **版本**：v0.14 · 2026-08-14 · 8/12 mcp_server.py split (506d5bc) + 8/14 PEP 562 facade 设计定型 (db522b3/c9697f8/d3972e8/c71801b/c51c72d) + §6.6 新章节。
+> **版本**：v0.15 · 2026-08-15 · 写路径显式事务 (commit 8519089) + 召回质量分析 (99ae38d) + RRF methods 累加 (28c846c) + §6.7 / §7.1 同步落地。
+> **v0.15 变更**（8/15 实战 3 E 闭环）——§6.7 新增 v0.15 写路径 + 召回质量章节：3 大 E 改进的设计哲学（**mnelo 自身痛点驱动，非 Mem0 借鉴**）、落地架构表、用法变化、已知坑（usearch 索引独立于 SQLite 事务 / RRF lane 覆盖 / 标签数据污染 / numpy percentile linear interpolation）、CI 实战 3-commit chain 0 fail 验证。**关键 reflect**：v0.15 3 个 E 改进**不是 Mem0 借鉴**——是 mnelo 自身 §1.2 短板修复 + 实战数据驱动决策。真 Mem0 借鉴（scoping_ids / memory_correct / dedup_check）落地状态见 §6.7.4 "Mem0 借鉴落地对照表"。主人 8/9 SKILL "凡是不符合最新情况的, 都改, 全面 reflect, 不补丁式" → 纠正 v0.14 顶部含糊的 "Mem0 借鉴" 表述，老老实实分类每个改进的真驱动。§7.1 召回质量指标从"待设计"升级为"已落地"（E-3 `memory_recall_stats` 工具 + 17 个 Prometheus 指标升级到 19 个）。
 > **v0.14 变更**（8/14 mcp_server split 实战落地）——§6.6 新增 mcp_server.py 拆分 + PEP 562 facade 设计章节：6 个子模块职责表 + facade 代码 pattern + 4 条已知坑（PEP 562 setattr 不 work / from import value-binding / _load_from_repo separate instance / facade import 占 dict）+ Test contract 表 + CI 实战 aggregate 0 fail 验证。Subagent 8/14 通过隔离测试发现 PEP 562 setattr 限制，反向 commit c9697f8 修正 db522b3 错设计（**专家纪律价值示范**：subagent self-verify 救主）→ 主人 8/6 教训升级。
 > **v0.13 变更**（8/4 可逆压缩设计）——§4.5.2 新增**可逆压缩**（⟵ 借鉴 Headroom CCR）：摘要行带 `source_chunk_ids` provenance 指针 + `memory_get_digest(ref=...)` 按需展开；信息单源不破，截断可恢复。§5.7 工具清单同步 `memory_get_digest(ref=None)` 双模式。
 > **v0.12 变更**（hermes 实际数据评审 8/4 + 主人 deepseek-v4-flash 交叉验证 + bug 修复）——§1.1 **实际回灌**：实测召回量 1.1 次/日（人脑级）+ Phase 1 placeholder id 100% 命名错位 + Phase 2 30 天延迟清的"延期/清"两步半完成状态；**§3.8 §5.6 done bug 修**：`run_purge_worker()` 落地 (commit 4bd654d, 125 行) — 3 phase (clean_orphan_target_ids / 物理删 + set done=1 / vec0 orphan cleanup)；§1.1 标注 TASKS 未建 schema 前置 (`user_confirmed` / `processed_at` / `audit_log` 仍缺 — H0 真前置)；§3.0 memory_type 字段已落地但实际 0% non-fact (根因：写入方不分类 + 无 P1 提取器)；§8.3 P3 升级档触发条件实际 scale 评估 (4344 chunks 距 50 万差 115 倍，延迟 30ms 内 — 升级档面向未来备选)。
@@ -997,14 +998,234 @@ def __getattr__(name):
 
 ---
 
+### 6.7 v0.15 写路径 + 召回质量改进（[8/15] E-1 / E-3 / E-4 落地）
+
+**背景**：8/15 一天内连续落地 3 个 E 改进，每个 commit 单一意图、CI 5/5 全绿。**关键纠正**：v0.15 这 3 个 E 改进**不是 Mem0 借鉴**——是 mnelo 自身 §1.2 短板修复 + 实战数据驱动决策。设计哲学层面 mnelo 跟 Mem0 有根本差异（local-first 单文件 SQLite / standard MCP / amoral by design / boring & predictable / 不抢决策），不是 "Mem0 lite"。
+
+**落地架构**（8/15 commit chain: 8519089 → 99ae38d → 28c846c）：
+
+| E | commit | 文件改动 | 行数变化 | 改进点 |
+|---|---|---|---|---|
+| **E-1** | `8519089` | `memory.py` + `memory_core.py` | +33 / -7 (helper) + 130 (包裹) | 显式 `_txn()` 包裹 remember/update 写路径 |
+| **E-3** | `99ae38d` | `l2_maintenance.py` + 3 mcp_*.py | +189 / -3 + 27 (MCP 注册) | `Memory.recall_stats()` + `memory_recall_stats` MCP 工具 |
+| **E-4** | `28c846c` | `memory_core.py` + `l2_maintenance.py` | +24 / -3 (RRF 累加) + 19 (SQL 展开) | `_rrf_fuse` methods 列表累加 + E-3 按 methods 展开聚合 |
+
+#### 6.7.1 E-1: 显式事务包裹 (DESIGN §1.2 #7)
+
+**真痛点**（不是 Mem0 借鉴）：
+- 原 `remember()` / `update()` 写 chunk + entities + relations + vector 4 步，**依赖 sqlite3 隐式事务**（最后一行才 `commit()`）
+- 单例 conn 复用（mcp_server Memory 单例）+ 中途异常 → 隐式事务保持打开 → 下次 `commit()` 可能连同提交脏数据
+- 后果：**vec0 rowid 漂移的孤儿 chunk**（实体缺席但 chunk 占位）+ `update()` 静默吞 embed 异常（line 644-648 `try/except: logger.warning`）→ 老 chunk 被标 superseded 但新 chunk vector 缺席 → 召回断裂
+
+**修复模式**：
+```python
+@contextlib.contextmanager
+def _txn(conn):
+    """[8/15 E-1] 显式事务包裹 helper. 行为契约:
+    - 进入: BEGIN
+    - 正常: COMMIT
+    - 异常: ROLLBACK + raise (不吞)
+    """
+    conn.execute("BEGIN")
+    try:
+        yield conn
+    except BaseException:
+        try: conn.execute("ROLLBACK")
+        except Exception: pass
+        raise
+    else:
+        conn.execute("COMMIT")
+
+# remember() 内:
+with _txn(self._conn):
+    # 1. INSERT chunk
+    # 2. _upsert_entity (loop)
+    # 3. INSERT relations (loop)
+    # 4. self._index.add(...) ← 在事务内, 失败 → ROLLBACK
+    # 5. PII audit_log (loop)
+# 退出时 _txn 已 COMMIT
+```
+
+**关键设计决策**：
+- index.add 放在 **SQLite commit 前**（try 内）。失败 → SQLite ROLLBACK → chunk 不入库；index 也没 add（因为 add 失败抛异常前 chunk 还没 commit 也没意义）— **两边一致** ✓
+- 删除 `update()` 静默 `try/except`（line 644-648）— 异常正常上抛供调用方感知。主人 8/5 review iron law "tests-green ≠ sufficient" 应用：之前 `try/except: pass` 把 embed 失败吞掉，**CI 全绿但召回数据有 bug**
+
+**用法变化**（调用方感知）：
+- ✅ 公开 API 0 变化（`m.remember()` / `m.update()` 签名不变）
+- ⚠️ `update()` 失败现在正常 raise `RuntimeError`（之前静默吞）。如果老代码 `except: pass` 兜底 — **现在能感知失败**，是 8/5 review iron law 的目标
+- ✅ remember() 失败也正常 raise（之前 SQLite 隐式 commit 路径没显式 ROLLBACK）
+
+**已知坑**：
+1. **usearch/zvec 索引独立于 SQLite 事务**（search_index.py:78 主人自己写过）—— index 写文件 (.usearch.index) 不在 SQLite 事务内。本设计保证 "index 失败 → SQLite ROLLBACK" 这条路径（因为 index.add 失败抛异常前 SQLite 还没 commit）。**但 "index 成功 + SQLite COMMIT 失败" 的极低概率场景**：index 写了但 SQLite 没存 → 需 reverse `index.remove`。当前 threshold 接受，留 v0.16+ 处理。
+2. **8/8 P1 fix 与本改进兼容** — 之前 8/8 已加 entity validation dry-run（防 ValidationError 时 chunk 孤儿）。E-1 把所有异常路径都接住（不仅是 ValidationError），是 8/8 修复的超集。
+
+#### 6.7.2 E-3: 召回质量分析 (DESIGN §1.2 #6)
+
+**真痛点**：
+- `recall_log.recall_details_json` 7/18 起每条 recall 写满 `method / rank / distance / rrf_score / importance`（top-5）
+- **但无人消费做质量分析** — 17 个 Prometheus 指标全是运维视角（recall_total, recall_latency），**没有 method 分布 / latency p50/p95/p99 / 空窗率 / 按日序列**
+- 主人 1.1 次/日召回低频 + 30 天 116 次真实数据，但**没法看 "哪路召回实际贡献最高 / 召回质量是不是变好"**
+
+**修复模式**：
+```python
+def recall_stats(self, days: int = 30, group_by: str = "method") -> Dict:
+    """聚合 recall_log, 4 个子键:
+    - totals: {total_recalls, unique_queries, total_hits, empty_results, empty_rate}
+    - latency_ms: {p50, p95, p99, avg, min, max, n} (numpy percentile)
+    - methods: {method_name: {hit_count, avg_rank, avg_rrf_score, avg_distance}}
+    - by_day: [{day, count, empty}, ...]
+    """
+    # 1. WHERE 过滤 + totals
+    # 2. latency 聚合 (numpy / Python sorted fallback)
+    # 3. methods breakdown: json_each(je.value, '$.methods') 展开 (E-4 后)
+    # 4. by_day: substr(created_at, 1, 10) GROUP BY
+```
+
+**关键技术点**：
+- `json_each(je.value, '$.methods')` 展开 methods 列表（E-4 后才有，之前用 `$.method` 单字段）
+- `COALESCE(json_extract(je.value, '$.methods'), json_array(json_extract(je.value, '$.method')))` fallback 兼容 pre-E-4 老数据
+- `json_array_length(results_json)` 算总命中数（SQLite ≥ 3.38）
+- numpy percentile 默认 linear interpolation（7 值 p95 = idx 5.7 插值 ≈ 79，**不是 discrete index 取整**）
+
+**MCP 工具暴露**：
+```python
+{
+    "name": "memory_recall_stats",
+    "description": "[E-3] 召回质量分析 (DESIGN §1.2 #6): 各 method ...",
+    "inputSchema": {
+        "properties": {
+            "days": {"type": "integer", "default": 30},
+            "group_by": {"type": "string", "enum": ["method", "day"]}
+        }
+    }
+}
+```
+
+**用法变化**：
+- ✅ 公开 API additive 新增（`m.recall_stats()` + MCP 工具 `memory_recall_stats`）
+- ✅ 老 recall 调用 0 变化
+- 主人新能力：跑 `m.recall_stats(days=7)` 看真实召回分布，决定下一步优化方向
+
+#### 6.7.3 E-4: RRF methods 列表累加 (DESIGN §1.2 #4)
+
+**真痛点**（**关键 E-3 的数据纯度 bug**）：
+- `_rrf_fuse` line 1448 `rrf_hits[cid] = h` **直接覆盖**，不积累 methods
+- hit_lists 顺序固定 = `[vector, graph, meta, entity]`
+- **同 chunk 4 路都命中时**：recursion 最后遍历的 entity 永远覆盖前面 → `recall_details_json.method = "entity"`
+- **E-3 主人用 `memory_recall_stats` 查 "vector 实际命中率"** → **之前看到的全是错的**！
+
+**这是主人 8/5 review iron law "tests-green ≠ sufficient" 的反向印证**：8/14 push E-3 时 aggregate 0 fail，**但聚合方法分布其实错的**。如果不修 E-4，主人根据错误数据做优化决策（如 "vector 路死了所以要换 embedder"）→ 灾难。
+
+**修复模式**：
+```python
+# _rrf_fuse 新增 rrf_methods 累加器:
+rrf_methods: Dict[str, List[str]] = {}
+for hits in hit_lists:
+    for rank, h in enumerate(hits):
+        cid = h["chunk_id"]
+        # ... RRF score 计算 ...
+        if cid not in rrf_hits:  # 首次见 → set, 后续 → 保持第一路
+            rrf_hits[cid] = h
+        m = h.get("method")
+        if m and m not in rrf_methods.get(cid, []):  # accumulate + dedup
+            rrf_methods.setdefault(cid, []).append(m)
+# ...
+h["methods"] = rrf_methods.get(cid, [h.get("method")] if h.get("method") else [])
+# backward-compat: 'method' 单字段保留 = 第一路
+```
+
+**关键决策**：
+- **保持 hit 字典向后兼容**：`method` 单字段保留 = 第一路（`vector`），`methods` 列表是 additive 新字段
+- `_log_recall` 写入 recall_details_json 用 `methods` 列表（`method` 单字段也写，backward-compat）
+- E-3 `recall_stats` 聚合按 `methods` 列表展开（一条 hit 在每个参与的 method 都 +1）
+
+**用法变化**：
+- ✅ 公开 API 0 变化（`m.recall()` 返回 hit 字典）
+- ✅ `hit["method"]` 单字段保留（=第一路）
+- ➕ `hit["methods"]` 新字段（list[str] = 所有 RRF 命中 lane）
+- ➕ `recall_details_json` 每条含 `methods` 列表
+
+**已知坑**：
+1. **同 lane 内多次出现同 chunk**（upstream list 重复）→ methods dedup，**不重复**（看 `test_methods_dedup_within_same_lane`）
+2. **numpy percentile default linear interpolation** — 测试预期必须用 `idx = p/100 * (n-1)` 插值公式，不能用 discrete int index
+
+#### 6.7.4 Mem0 借鉴落地对照表（**老实分类**）
+
+| Mem0 借鉴点 | 状态 | 落地版本 | 真驱动 |
+|---|---|---|---|
+| **scoping IDs** (user/agent/run) | ✅ 已落地 | v0.14 P0 (8/11) | 借鉴 Mem0 + LangChain |
+| **会话级召回隔离** (session_id) | ⏳ 设计落地未做 | §4.7 设计 | 借鉴 Mem0 scoping |
+| **`memory_correct()`** self-editing | ⏳ 设计落地未做 | §3.7 设计 (8/4) | 借鉴 Mem0 |
+| **`dedup_check=True`** 写入 NOOP | ⏳ 设计落地未做 | §3.7.1 设计 | 借鉴 Mem0 |
+| **P1 提取器** (LLM-driven) | ⏳ 设计落地未做 | §5.2 设计 | 借鉴 Mem0 + Zep |
+| **写路径显式事务** (E-1) | ✅ v0.15 | **mnelo 自身 §1.2 #7** | ❌ **不是 Mem0** |
+| **召回质量分析工具** (E-3) | ✅ v0.15 | **mnelo 自身 §1.2 #6** | ❌ **不是 Mem0** |
+| **RRF 多路 method 累加** (E-4) | ✅ v0.15 | **mnelo 自身 §1.2 #4 + E-3 数据纯度 bug** | ❌ **不是 Mem0** |
+
+**与 Mem0 根本差异**（不是"缺"什么，是"选择不"）：
+
+| 维度 | Mem0 默认 | mnelo 选择 |
+|---|---|---|
+| **存储** | Qdrant + PG + Neo4j 多 store | 单文件 SQLite + usearch |
+| **图谱抽取** | LLM-driven 自动 | 显式 entities + relations（主人 6/29 不抢决策） |
+| **多用户隔离** | user_id 强制 | scoping_id 可选（主人多 agent 单机场景） |
+| **API** | REST + GraphQL | 标准 MCP |
+| **dedup 决策** | 自动 NOOP | 显式，dedup_check 手动开关 |
+| **Content moderation** | PII filter + content moderation | **amoral by design**（§12） |
+| **回滚** | 重 embed + 全量重建 | WORM (write once read many) + versioned |
+
+#### 6.7.5 v0.15 关键教训
+
+1. **8/5 review iron law "tests-green ≠ sufficient" 反向印证**：E-3 8/14 push 时 aggregate 0 fail，但聚合方法分布数据是错的（E-4 修）。如果只信 CI aggregate 不读测试逻辑，主人可能根据错数据做灾难性决策（"换 embedder 因为 vector 路死了"）。
+2. **不夸大"借鉴"是诚实 discipline**：第一次回答时把 v0.15 三个 E 都包装成"吸收 Mem0 优点" — **过度归功**。主人 push back `?` 后重新分类：真借鉴 (scoping_ids) vs 自身痛点驱动 (§1.2 短板)。**写文档比写代码更要老实**。
+3. **P1 #39 final gate 应用**：v0.15 三个 E 改进后必写 §6.7 章节，把"是什么 / 为什么 / 怎么用 / 已知坑 / 借鉴对照"老实记录。**不写文档 = 知识没沉淀**，下次同类问题重新踩坑。
+4. **8/9 SKILL "全面 reflect 不补丁式" 应用**：顶部 v0.15 changelog 一次说清楚（含纠正 v0.14 "Mem0 借鉴" 含糊表述），不在 §6.6 留补丁式批注。
+5. **Cognee / Zep / MemGPT / SuperMemory / Hindsight 等其他借鉴系统也按本表老实分类** — 避免再次出现"过度归功"。
+
+#### 6.7.6 v0.15 CI 实战
+
+**3 commit chain** (8519089 → 99ae38d → 28c846c)：
+- 起点：每个 commit 写完先跑 `ci_per_file_runner.py` 本地 mirror，aggregate 0 P1 才 push
+- 终点：3 个 GH Action run (#31845465651 / #31847149294 / #31850644450) 全部 5/5 jobs success
+- remaining 10 native crash（SIGSEGV exit -11）— 跑测环境 macos-26-arm64 usearch/sqlite_vec 已知 race，与本改进无关
+- 每个 commit 单一意图（mnelo-refactor-patterns P1 #28 v3）：E-1 写事务 / E-3 召回统计 / E-4 RRF 累加，独立 review / revert
+
+**TDD red→green 模式应用**（P1 #40 CI closure）：
+- E-1: 4 fail → 4 pass（暴露 index.add 失败 + 静默 except + relations FK violation 3 个真问题）
+- E-3: 7 fail → 7 pass（暴露 method 标签错 / percentile 插值 / json_each path 3 个细节）
+- E-4: 7 fail → 7 pass（暴露 RRF lane 覆盖 + 老数据 fallback 兼容问题）
+
+**未来延伸**：
+- 主人跑 `m.recall_stats(days=7)` 看真实数据 → 决定 E-2 (FTS5 meta 路) 是否值得做
+- §1.2 剩余 5 个短板（无记忆生命周期 / 单巨石 / 双时态不完整 / entity 路不匹配 id / 协议层 raw-SQL 旁路）按 mnelo 自身痛点驱动节奏，逐个 v0.16+ 修
+
+---
+
 ## 7. L4 可观测性
 
-### 7.1 补召回质量指标
-| 指标 | 含义 | 数据源 |
-|---|---|---|
-| `mnelo_recall_precision_at_k` | 召回质量（对已知标注集） | 评测 harness |
-| `mnelo_recall_lane_hits_total` | 每 lane 命中占比（已有 `method` label 的 recall_total 升级） | recall_log |
-| `mnelo_recall_empty_rate` | 空结果率（已部分有 `recall_hits_total`） | recall |
+### 7.1 召回质量指标（[8/15 v0.15 E-3] 部分落地）
+
+| 指标 | 含义 | 数据源 | 状态 |
+|---|---|---|---|
+| `mnelo_recall_precision_at_k` | 召回质量（对已知标注集） | 评测 harness | ⏳ 设计未做 |
+| `mnelo_recall_lane_hits_total` | 每 lane 命中占比（`method` label 的 recall_total 升级） | recall_log | ✅ **E-3 + E-4 落地**（`memory_recall_stats.methods`） |
+| `mnelo_recall_empty_rate` | 空结果率 | recall | ✅ **E-3 落地**（`memory_recall_stats.totals.empty_rate`） |
+| `mnelo_recall_latency_p50/p95/p99` | latency percentile | recall_log | ✅ **E-3 落地**（`memory_recall_stats.latency_ms`） |
+
+**E-3 落地的召回质量分析**（`memory_recall_stats` MCP 工具 + `Memory.recall_stats()` 方法，详见 §6.7.2）：
+
+```python
+# 4 子键聚合:
+{
+    "window_days": 30,
+    "totals": {total_recalls, unique_queries, total_hits, empty_results, empty_rate},
+    "latency_ms": {p50, p95, p99, avg, min, max, n},
+    "methods": {method_name: {hit_count, avg_rank, avg_rrf_score, avg_distance}},
+    "by_day": [{day, count, empty}, ...],
+}
+```
+
+**E-4 修正的关键 bug**（§6.7.3）：E-3 聚合方法分布数据**之前是错的**（RRF lane 覆盖问题），E-4 修后才准确。主人 8/5 review iron law "tests-green ≠ sufficient" 反向印证：**CI 全绿但数据是错的**。
 
 ### 7.2 反馈闭环
 - `health_check.py` 日报告消费质量数据：空窗 lane、asof 时态正确率、importance 分布
