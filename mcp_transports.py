@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+# [8/14 P1 fix] module-attribute lookup alias for PEP 562 facade contract
+import mcp_guard as _mg
 from auth import AuthError, load_auth_token, verify_bearer
 from config import config  # [Round 2] server host/port 配置
 from mcp_guard import (
@@ -49,7 +51,7 @@ async def run_stdio() -> None:
     """
     import sys
 
-    if not _MCP_AVAILABLE:
+    if not _mg._MCP_AVAILABLE:
         raise RuntimeError("MCP libraries not available")
     _stdio_server = sys.modules["mcp_server"].stdio_server
     async with _stdio_server() as (read_stream, write_stream):
@@ -436,7 +438,7 @@ def run_streamable_http(host: Optional[str] = None, port: Optional[int] = None, 
         host = host if host is not None else cfg_host
         port = port if port is not None else cfg_port
 
-    if not _MCP_AVAILABLE:
+    if not _mg._MCP_AVAILABLE:
         raise RuntimeError("MCP/Starlette not available")
 
     if auth_token is None:
@@ -581,7 +583,7 @@ def run_dual(host: Optional[str] = None, port: Optional[int] = None, auth_token:
         host = host if host is not None else cfg_host
         port = port if port is not None else cfg_port
 
-    if not _MCP_AVAILABLE:
+    if not _mg._MCP_AVAILABLE:
         raise RuntimeError("MCP/Starlette not available")
 
     if auth_token is None:
@@ -626,7 +628,7 @@ def run_sse(host: Optional[str] = None, port: Optional[int] = None, auth_token: 
         host = host if host is not None else cfg_host
         port = port if port is not None else cfg_port
 
-    if not _MCP_AVAILABLE:
+    if not _mg._MCP_AVAILABLE:
         raise RuntimeError("MCP/Starlette not available")
 
     # 2. Bearer token 加载 (fail-fast)
@@ -667,7 +669,7 @@ def main():
     )
     args = ap.parse_args()
 
-    if not _MCP_AVAILABLE:
+    if not _mg._MCP_AVAILABLE:
         logger.error("MCP libraries missing. Install: pip install mcp[cli] starlette uvicorn")
         sys.exit(1)
 

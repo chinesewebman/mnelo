@@ -10,6 +10,7 @@ Targets:
 - 538-555: run_sse AuthError handling + port pre-check
 - 586: main() stdio branch dispatch
 """
+
 import asyncio
 import json
 import os
@@ -28,9 +29,9 @@ _REPO = Path(__file__).resolve().parent.parent
 
 
 def _load_from_repo(mod_name: str):
-    target_path = str(_REPO / f'{mod_name}.py')
+    target_path = str(_REPO / f"{mod_name}.py")
     existing = sys.modules.get(mod_name)
-    if existing is not None and getattr(existing, '__file__', None) == target_path:
+    if existing is not None and getattr(existing, "__file__", None) == target_path:
         return existing
     spec = _ilu.spec_from_file_location(mod_name, target_path)
     mod = _ilu.module_from_spec(spec)
@@ -39,20 +40,20 @@ def _load_from_repo(mod_name: str):
     return mod
 
 
-_mcp_repo = _load_from_repo('mcp_server')
-_validation_repo = _load_from_repo('validation')
+_mcp_repo = _load_from_repo("mcp_server")
+_validation_repo = _load_from_repo("validation")
 
 
 @pytest.fixture
 def mem():
-    m = _load_from_repo('memory').Memory()
+    m = _load_from_repo("memory").Memory()
     yield m
     m.close()
 
 
 @pytest.fixture
 def clean_prefix():
-    return f'mcp11_{int(time.time() * 1_000_000)}'
+    return f"mcp11_{int(time.time() * 1_000_000)}"
 
 
 class TestCallToolUnknownName:
@@ -60,10 +61,10 @@ class TestCallToolUnknownName:
 
     def test_unknown_tool_returns_error_json(self, mem):
         """Tool name not in registry or custom handlers → JSON error."""
-        result = _mcp_repo._call_tool('totally_unknown_xyz', {})
+        result = _mcp_repo._call_tool("totally_unknown_xyz", {})
         data = json.loads(result)
-        assert 'error' in data
-        assert 'unknown tool' in data['error']
+        assert "error" in data
+        assert "unknown tool" in data["error"]
 
 
 class TestCallToolValidationErrorCaught:
@@ -73,32 +74,38 @@ class TestCallToolValidationErrorCaught:
         """Calling a tool with invalid args (raises ValidationError) → JSON with type='validation'."""
         # Use memory_forget with bad target_id format → ValidationError from validate_id
         try:
-            result = _mcp_repo._call_tool('memory_forget', {
-                'target_id': 'id_with_space_and_bad_chars!!!',  # invalid format
-                'target_kind': 'chunk',
-            })
+            result = _mcp_repo._call_tool(
+                "memory_forget",
+                {
+                    "target_id": "id_with_space_and_bad_chars!!!",  # invalid format
+                    "target_kind": "chunk",
+                },
+            )
         except Exception as e:
-            print(f'EXCEPTION_RAISED_DIRECTLY: type={type(e).__name__}, isinstance(mcp.ValidationError)={isinstance(e, _mcp_repo.ValidationError)}')
+            print(f"EXCEPTION_RAISED_DIRECTLY: type={type(e).__name__}, isinstance(mcp.ValidationError)={isinstance(e, _mcp_repo.ValidationError)}")
             raise
         # Debug
-        print(f'RESULT: {result[:200]}')
+        print(f"RESULT: {result[:200]}")
         data = json.loads(result)
         # Accept either validation (caught) or internal (escaped) — both indicate user error
-        assert 'error' in data
-        assert data.get('type') in ('validation', 'internal')
-        assert 'tool' in data
-        assert data['tool'] == 'memory_forget'
+        assert "error" in data
+        assert data.get("type") in ("validation", "internal")
+        assert "tool" in data
+        assert data["tool"] == "memory_forget"
 
     def test_validation_error_with_bad_chunk_id(self, mem):
         """memory_forget with invalid chunk_id format → ValidationError (caught)."""
-        result = _mcp_repo._call_tool('memory_forget', {
-            'target_id': 'bad@#$%chars',
-            'target_kind': 'chunk',
-        })
+        result = _mcp_repo._call_tool(
+            "memory_forget",
+            {
+                "target_id": "bad@#$%chars",
+                "target_kind": "chunk",
+            },
+        )
         data = json.loads(result)
         # Accept either validation or internal (cross-test pollution may shift class identity)
-        assert 'error' in data
-        assert data.get('type') in ('validation', 'internal')
+        assert "error" in data
+        assert data.get("type") in ("validation", "internal")
 
 
 class TestCallToolGenericExceptionCaught:
@@ -108,13 +115,16 @@ class TestCallToolGenericExceptionCaught:
         """Calling a tool with a non-validation exception → JSON with type='internal'."""
         # memory_recall with wrong type for query (dict instead of str)
         # This will cause some exception not caught as ValidationError
-        result = _mcp_repo._call_tool('memory_remember', {
-            'content': 12345,  # int, not str → validation error
-        })
+        result = _mcp_repo._call_tool(
+            "memory_remember",
+            {
+                "content": 12345,  # int, not str → validation error
+            },
+        )
         data = json.loads(result)
         # Either validation or internal — both indicate user error
-        assert 'error' in data
-        assert data.get('type') in ('validation', 'internal')
+        assert "error" in data
+        assert data.get("type") in ("validation", "internal")
 
 
 class TestListToolsDecorator:
@@ -123,7 +133,7 @@ class TestListToolsDecorator:
     def test_list_tools_returns_list(self):
         """list_tools() returns Tool objects (call directly via module attr)."""
         if not _mcp_repo._MCP_AVAILABLE:
-            pytest.skip('MCP not available')
+            pytest.skip("MCP not available")
         tools = asyncio.run(_mcp_repo.list_tools())
         assert isinstance(tools, list)
         assert len(tools) > 0
@@ -135,61 +145,100 @@ class TestCallToolDecorator:
     def test_call_tool_via_decorator(self, mem):
         """call_tool() async wrapper returns List[TextContent]."""
         if not _mcp_repo._MCP_AVAILABLE:
-            pytest.skip('MCP not available')
-        result = asyncio.run(_mcp_repo.call_tool('memory_stats', {}))
+            pytest.skip("MCP not available")
+        result = asyncio.run(_mcp_repo.call_tool("memory_stats", {}))
         # Should return List[TextContent]
         assert isinstance(result, list)
         assert len(result) >= 1
         # TextContent has 'text' attr
-        assert hasattr(result[0], 'text')
+        assert hasattr(result[0], "text")
 
 
 class TestRunStdio:
     """mcp_server.py:432-435 — run_stdio function."""
 
     def test_run_stdio_raises_when_mcp_unavailable(self, monkeypatch):
-        """run_stdio() with MCP_AVAILABLE=False → raises RuntimeError."""
-        # Try to break _MCP_AVAILABLE
-        original = _mcp_repo._MCP_AVAILABLE
+        """run_stdio() with MCP_AVAILABLE=False → raises RuntimeError.
+
+        [8/14 P1 fix v2] mcp_transports internal reads `_mg._MCP_AVAILABLE` (module
+        attribute lookup, not value-binding). Need to patch sys.modules['mcp_guard']
+        (singleton), NOT _load_from_repo('mcp_guard') (separate instance).
+        """
+        import sys as _sys_mod
+
+        guard_mod = _sys_mod.modules["mcp_guard"]
+        original_guard = guard_mod._MCP_AVAILABLE
         try:
-            _mcp_repo._MCP_AVAILABLE = False
-            with pytest.raises(RuntimeError, match='MCP libraries not available'):
+            guard_mod._MCP_AVAILABLE = False
+            with pytest.raises(RuntimeError, match="MCP libraries not available"):
                 # run_stdio is async, but the raise is before any await
                 asyncio.run(_mcp_repo.run_stdio())
         finally:
-            _mcp_repo._MCP_AVAILABLE = original
+            guard_mod._MCP_AVAILABLE = original_guard
 
 
 class TestRunSSEAuthError:
     """mcp_server.py:538-555 — run_sse AuthError handling."""
 
     def test_run_sse_auth_error_propagates(self, monkeypatch):
-        """AuthError in load_auth_token → propagated (not caught)."""
-        monkeypatch.setattr(_mcp_repo, '_MCP_AVAILABLE', True)  # Skip MCP check
-        auth_mod = _load_from_repo('auth')
-        AuthErr = auth_mod.AuthError
-        # Stub auth to raise AuthError
-        def fake_load_auth():
-            raise AuthErr('test auth fail')
+        """AuthError in load_auth_token → propagated (not caught).
 
-        monkeypatch.setattr(_mcp_repo, 'load_auth_token', fake_load_auth)
-        # run_sse with auth_token=None will call load_auth_token → AuthError
-        with pytest.raises(AuthErr):
-            _mcp_repo.run_sse(host='127.0.0.1', port=12345, auth_token=None)
+        [8/14 P1 fix] mcp_transports.run_sse() uses `from auth import load_auth_token`
+        (value-binding at import time). monkeypatch.setattr(_mcp_repo, 'load_auth_token',
+        ...) writes to facade dict but does NOT rebind mcp_transports' imported
+        copy. PEP 562 `__setattr__` on facade is not honored by Python module
+        attribute assignment. Patch the `auth` module's load_auth_token directly so
+        the function sees the fake.
+        """
+        auth_mod = _load_from_repo("auth")
+        transports_mod = _load_from_repo("mcp_transports")
+        guard_mod = _load_from_repo("mcp_guard")
+        # Make sure MCP_AVAILABLE is True in run_sse's view (defaults True, but be explicit)
+        original_guard = guard_mod._MCP_AVAILABLE
+        original_transports = transports_mod._MCP_AVAILABLE
+        guard_mod._MCP_AVAILABLE = True
+        transports_mod._MCP_AVAILABLE = True
+        AuthErr = auth_mod.AuthError
+
+        def fake_load_auth():
+            raise AuthErr("test auth fail")
+
+        monkeypatch.setattr(auth_mod, "load_auth_token", fake_load_auth)
+        try:
+            # run_sse with auth_token=None will call load_auth_token → AuthError
+            with pytest.raises(AuthErr):
+                _mcp_repo.run_sse(host="127.0.0.1", port=12345, auth_token=None)
+        finally:
+            guard_mod._MCP_AVAILABLE = original_guard
+            transports_mod._MCP_AVAILABLE = original_transports
 
     def test_run_sse_with_explicit_auth_token_skips_load(self, monkeypatch):
-        """Explicit auth_token passed → skip load_auth_token."""
-        monkeypatch.setattr(_mcp_repo, '_MCP_AVAILABLE', True)
+        """Explicit auth_token passed → skip load_auth_token.
+
+        [8/14 P1 fix] Same as above — patch the sub-modules directly so the
+        function-local bindings inside run_sse see the patched values.
+        """
+        auth_mod = _load_from_repo("auth")
+        transports_mod = _load_from_repo("mcp_transports")
+        guard_mod = _load_from_repo("mcp_guard")
+        original_guard = guard_mod._MCP_AVAILABLE
+        original_transports = transports_mod._MCP_AVAILABLE
+        guard_mod._MCP_AVAILABLE = True
+        transports_mod._MCP_AVAILABLE = True
         called = []
 
         def fake_load_auth():
             called.append(True)
-            raise AssertionError('should not be called')
+            raise AssertionError("should not be called")
 
-        monkeypatch.setattr(_mcp_repo, 'load_auth_token', fake_load_auth)
+        monkeypatch.setattr(auth_mod, "load_auth_token", fake_load_auth)
         # Patch _check_port_available to return False (port in use) → clean exit
-        monkeypatch.setattr(_mcp_repo, '_check_port_available', lambda h, p: False)
-        _mcp_repo.run_sse(host='127.0.0.1', port=12345, auth_token='explicit_token')
+        monkeypatch.setattr(transports_mod, "_check_port_available", lambda h, p: False)
+        try:
+            _mcp_repo.run_sse(host="127.0.0.1", port=12345, auth_token="explicit_token")
+        finally:
+            guard_mod._MCP_AVAILABLE = original_guard
+            transports_mod._MCP_AVAILABLE = original_transports
         # load_auth_token was NOT called
         assert called == []
 
@@ -198,14 +247,29 @@ class TestMainStdioBranch:
     """mcp_server.py:586 — main() stdio branch."""
 
     def test_main_stdio_branch_dispatches_to_run_stdio(self, monkeypatch):
-        """--transport stdio → run_stdio() called (verified by patching)."""
-        monkeypatch.setattr(sys, 'argv', ['mcp_server', '--transport', 'stdio'])
+        """--transport stdio → run_stdio() called (verified by patching).
+
+        [8/14 P1 fix] mcp_server.main() uses `mcp_transports.run_stdio` direct
+        module-level ref (not facade). monkeypatch.setattr(_mcp_repo, 'run_stdio',
+        ...) writes to facade dict only — main() reads from sub-module. Patch
+        `mcp_transports.run_stdio` directly. Also stub `_get_mem` to avoid real
+        Memory + Embedder warm-up (would load BGE model and blow the 15s timeout).
+        """
+        monkeypatch.setattr(sys, "argv", ["mcp_server", "--transport", "stdio"])
         called = []
 
         async def fake_run_stdio():
             called.append(True)
 
-        monkeypatch.setattr(_mcp_repo, 'run_stdio', fake_run_stdio)
+        transports_mod = _load_from_repo("mcp_transports")
+        dispatcher_mod = _load_from_repo("mcp_tool_dispatcher")
+        # [8/14 P1] main() reads `mcp_transports.run_stdio` — patch sub-module.
+        monkeypatch.setattr(transports_mod, "run_stdio", fake_run_stdio)
+        # [8/14 P1] main() calls `mcp_tool_dispatcher._get_mem()` for warm-up —
+        # stub it so we don't actually load the Embedder (BAAI/bge-small-zh-v1.5)
+        # which takes seconds and would blow the 15s test timeout.
+        monkeypatch.setattr(dispatcher_mod, "_get_mem", lambda: None)
+
         # asyncio.run blocks; replace it with a no-op that runs the coroutine synchronously
         def fake_asyncio_run(coro):
             # Run the coroutine to completion and capture any result
@@ -215,7 +279,7 @@ class TestMainStdioBranch:
             finally:
                 loop.close()
 
-        monkeypatch.setattr(asyncio, 'run', fake_asyncio_run)
+        monkeypatch.setattr(asyncio, "run", fake_asyncio_run)
         _mcp_repo.main()
         # run_stdio was called
         assert called == [True]
@@ -229,15 +293,15 @@ class TestMCPDecoratorBranches:
         tools = _mcp_repo.TOOLS
         assert isinstance(tools, list)
         assert len(tools) >= 7
-        names = [t.get('name') for t in tools]
-        assert 'memory_remember' in names
-        assert 'memory_recall' in names
-        assert 'memory_stats' in names
+        names = [t.get("name") for t in tools]
+        assert "memory_remember" in names
+        assert "memory_recall" in names
+        assert "memory_stats" in names
 
     def test_server_object_exists_when_mcp_available(self):
         """server object is created when _MCP_AVAILABLE=True."""
         if _mcp_repo._MCP_AVAILABLE:
-            assert hasattr(_mcp_repo, 'server')
+            assert hasattr(_mcp_repo, "server")
             assert _mcp_repo.server is not None
 
 
@@ -247,7 +311,7 @@ class TestSubprocessMainStdio:
     def test_mcp_server_stdio_help_via_subprocess(self):
         """Subprocess: python mcp_server.py --help works."""
         result = subprocess.run(
-            [sys.executable, str(_REPO / 'mcp_server.py'), '--help'],
+            [sys.executable, str(_REPO / "mcp_server.py"), "--help"],
             capture_output=True,
             text=True,
             timeout=15,
@@ -258,12 +322,12 @@ class TestSubprocessMainStdio:
     def test_mcp_server_stdio_exits_without_input(self):
         """Subprocess stdio mode without input → exits (no client to talk to)."""
         result = subprocess.run(
-            [sys.executable, str(_REPO / 'mcp_server.py'), '--transport', 'stdio'],
+            [sys.executable, str(_REPO / "mcp_server.py"), "--transport", "stdio"],
             capture_output=True,
             text=True,
             timeout=10,
             cwd=str(_REPO),
-            input='',  # empty input
+            input="",  # empty input
         )
         # May exit 0 or with error — just shouldn't hang
         assert result.returncode is not None
@@ -274,16 +338,16 @@ class TestUnknownToolHandling:
 
     def test_unknown_tool_empty_string(self, mem):
         """Empty tool name → unknown tool error."""
-        result = _mcp_repo._call_tool('', {})
+        result = _mcp_repo._call_tool("", {})
         data = json.loads(result)
-        assert 'error' in data
-        assert 'unknown tool' in data['error']
+        assert "error" in data
+        assert "unknown tool" in data["error"]
 
     def test_unknown_tool_with_special_chars(self, mem):
         """Tool name with special chars → unknown tool."""
-        result = _mcp_repo._call_tool('memory_/etc/passwd', {})
+        result = _mcp_repo._call_tool("memory_/etc/passwd", {})
         data = json.loads(result)
-        assert 'error' in data
+        assert "error" in data
 
 
 class TestCallToolDebugMode:
@@ -291,39 +355,48 @@ class TestCallToolDebugMode:
 
     def test_internal_error_detail_in_debug_mode(self, mem, monkeypatch):
         """MNELO_MEMORY_DEBUG=1 → 'detail' field included for internal errors."""
-        monkeypatch.setenv('MNELO_MEMORY_DEBUG', '1')
+        monkeypatch.setenv("MNELO_MEMORY_DEBUG", "1")
         # Trigger an internal error: memory_recall with query=12345 (int)
         # Memory.recall calls .strip() on it → AttributeError → generic Exception
-        result = _mcp_repo._call_tool('memory_recall', {'query': 12345})
+        result = _mcp_repo._call_tool("memory_recall", {"query": 12345})
         data = json.loads(result)
         # Should be internal error type with detail
-        assert data.get('type') == 'internal'
-        assert data.get('detail') is not None
+        assert data.get("type") == "internal"
+        assert data.get("detail") is not None
 
     def test_internal_error_no_detail_in_normal_mode(self, mem):
         """Without MNELO_MEMORY_DEBUG → 'detail' is None."""
         # Ensure env var is not set
-        os.environ.pop('MNELO_MEMORY_DEBUG', None)
-        result = _mcp_repo._call_tool('memory_recall', {'query': 12345})
+        os.environ.pop("MNELO_MEMORY_DEBUG", None)
+        result = _mcp_repo._call_tool("memory_recall", {"query": 12345})
         data = json.loads(result)
-        assert data.get('type') == 'internal'
-        assert data.get('detail') is None
+        assert data.get("type") == "internal"
+        assert data.get("detail") is None
 
 
 class TestRateLimitExceptionCleared:
     """mcp_server.py:386-388 — rate limit error response shape."""
 
     def test_rate_limit_response_structure(self, mem, clean_prefix):
-        """Rate limit JSON has error + tool + type fields."""
-        original_max = _mcp_repo.config.rate_limit_max_per_window
-        tool_name = f'_rate_struct_{clean_prefix}'
-        _mcp_repo._RATE_BUCKETS[tool_name] = [time.time(), _mcp_repo.config.rate_limit_max_per_window + 1]
+        """Rate limit JSON has error + tool + type fields.
+
+        [8/14 P1 fix] `_mcp_repo.config` resolves to the `config` MODULE itself,
+        not the singleton — because `import config` in mcp_server.py occupies
+        the `config` name in the facade's module dict, so PEP 562 `__getattr__`
+        never fires. Reach the singleton via `config.config`. _RATE_BUCKETS
+        lives in mcp_tool_dispatcher but the dict is shared (mutating via
+        facade reads-through to dispatcher, since `_RATE_BUCKETS` is not in
+        facade's own dict and `__getattr__` resolves to dispatcher).
+        """
+        original_max = _mcp_repo.config.config.rate_limit_max_per_window
+        tool_name = f"_rate_struct_{clean_prefix}"
+        _mcp_repo._RATE_BUCKETS[tool_name] = [time.time(), original_max + 1]
         try:
             result = _mcp_repo._call_tool(tool_name, {})
             data = json.loads(result)
-            assert data.get('type') == 'rate_limit'
-            assert data.get('tool') == tool_name
-            assert 'error' in data
+            assert data.get("type") == "rate_limit"
+            assert data.get("tool") == tool_name
+            assert "error" in data
         finally:
             _mcp_repo._RATE_BUCKETS.pop(tool_name, None)
-            _mcp_repo.config.rate_limit_max_per_window = original_max
+            _mcp_repo.config.config.rate_limit_max_per_window = original_max
