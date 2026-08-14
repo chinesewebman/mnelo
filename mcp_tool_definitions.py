@@ -172,6 +172,27 @@ TOOLS = [
         "description": "统计: entities/chunks/relations/vectors/recall_log 数量. [H-1 §6.5] 加 hygiene 子键 (decay/TTL/purge/audit 报告).",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    # === [8/15 E-3] Recall quality analytics ===
+    {
+        "name": "memory_recall_stats",
+        "description": "[E-3] 召回质量分析 (DESIGN §1.2 #6): 各 method (vector/graph/meta/entity) 命中率/avg rank/score, latency p50/p95/p99, 空窗率, 按日聚合. 让主人看清召回现状决定优化方向.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "description": "时间窗口 (近 N 天), 默认 30. None/0 = 全部.",
+                    "default": 30,
+                },
+                "group_by": {
+                    "type": "string",
+                    "enum": ["method", "day"],
+                    "description": "聚合维度 — method (各路召回分布) / day (按日序列). 当前实现 method=默认行为, day=返回 by_day 数组.",
+                    "default": "method",
+                },
+            },
+        },
+    },
     # === [v1.1] 新增 3 个工具 ===
     {
         "name": "memory_entity_resolve",

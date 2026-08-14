@@ -1135,6 +1135,195 @@ class L2MaintenanceMixin:
             self._conn.rollback()
             return False
 
+    # === [8/15 E-3] Recall quality analytics ===================
+
+    def recall_stats(self, days: int = 30, group_by: str = "method") -> Dict:
+        """[8/15 E-3] 召回质量分析 — 让主人看清召回现状, 决定优化方向.
+
+        主人 DESIGN §1.2 #6 短板修复: recall_log.recall_details_json 写满
+        method/rank/distance/rrf_score/importance, 但无人消费. 本方法聚合
+        recall_log, 输出:
+          - totals: 总召回次数 / 唯一 query 数 / 总命中数 / 空结果数 + 率
+          - latency_ms: p50 / p95 / p99 / avg
+          - methods: 按 method 分组的 hit_count / avg_rank / avg_score
+          - by_day: 按 created_at 聚合的日序列 (近 N 天)
+
+        Args:
+            days: 时间窗口 (近 N 天), 默认 30. None = 全部.
+            group_by: 'method' / 'day' / 'kind' (kind = recall_kind 字段, 未来用)
+
+        Returns:
+            Dict 含 totals / latency_ms / methods / by_day 四个子键.
+
+        Example:
+            >>> m.recall_stats(days=7)
+            {
+              "window_days": 7,
+              "totals": {"total_recalls": 116, "unique_queries": 87, ...},
+              "latency_ms": {"p50": 13.7, "p95": 30.9, ...},
+              "methods": {"vector": {"hit_count": 89, "avg_rank": 1.2, ...}, ...},
+              "by_day": [{"day": "2026-08-09", "count": 12, "empty": 0}, ...],
+            }
+        """
+        from datetime import datetime, timedelta
+
+        # [8/15 E-3] 时间窗口过滤 — 老 recall 不计入. 主人 1.1 次/日低频,
+        # 30 天窗口通常 30-40 条, 全量也无压力; days=None = 全部.
+        params: list = []
+        where = []
+        if days is not None:
+            cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+            where.append("created_at >= ?")
+            params.append(cutoff)
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+
+        # === 1. Totals ===
+        total_row = self._conn.execute(
+            f"SELECT COUNT(*) AS n, COUNT(DISTINCT query) AS uq FROM recall_log {where_sql}",
+            params,
+        ).fetchone()
+        total_recalls = total_row["n"]
+        unique_queries = total_row["uq"]
+
+        # 空结果数 (results_json = '[]' 或 NULL)
+        empty_row = self._conn.execute(
+            f"""SELECT COUNT(*) AS n FROM recall_log {where_sql}
+                {"AND" if where_sql else "WHERE"} results_json IN ('[]', '')""",
+            params,
+        ).fetchone()
+        empty_results = empty_row["n"]
+        empty_rate = (empty_results / total_recalls) if total_recalls else 0.0
+
+        # 总命中数 (sum of results_json array length — SQLite JSON 数组)
+        # 用 json_array_length 函数, 0 if null
+        try:
+            hits_row = self._conn.execute(
+                f"""SELECT COALESCE(SUM(json_array_length(results_json)), 0) AS h
+                    FROM recall_log {where_sql}""",
+                params,
+            ).fetchone()
+            total_hits = int(hits_row["h"])
+        except Exception:
+            # 老 SQLite < 3.38 没 json_array_length → 退回 0
+            total_hits = 0
+
+        # === 2. Latency aggregation ===
+        # 用 numpy 算 percentile (向量化); 也可不依赖 numpy 排序后取 idx.
+        # mnelo 已用 numpy (embedder 依赖), 直接用.
+        lat_rows = self._conn.execute(
+            f"SELECT latency_ms FROM recall_log {where_sql} ORDER BY latency_ms",
+            params,
+        ).fetchall()
+        if lat_rows:
+            try:
+                import numpy as _np
+
+                arr = _np.array([r["latency_ms"] for r in lat_rows], dtype=float)
+                latency = {
+                    "p50": float(_np.percentile(arr, 50)),
+                    "p95": float(_np.percentile(arr, 95)),
+                    "p99": float(_np.percentile(arr, 99)),
+                    "avg": float(arr.mean()),
+                    "min": float(arr.min()),
+                    "max": float(arr.max()),
+                    "n": int(arr.size),
+                }
+            except ImportError:
+                # numpy 不可用, 退化到 Python 排序 percentile
+                vals = sorted(r["latency_ms"] for r in lat_rows)
+                n = len(vals)
+
+                def _pct(p):
+                    idx = max(0, min(n - 1, int(p / 100.0 * n)))
+                    return float(vals[idx])
+
+                latency = {
+                    "p50": _pct(50),
+                    "p95": _pct(95),
+                    "p99": _pct(99),
+                    "avg": sum(vals) / n,
+                    "min": vals[0],
+                    "max": vals[-1],
+                    "n": n,
+                }
+        else:
+            latency = {"p50": 0.0, "p95": 0.0, "p99": 0.0, "avg": 0.0, "min": 0.0, "max": 0.0, "n": 0}
+
+        # === 3. Methods breakdown ===
+        # recall_details_json 是 JSON 数组, 每项含 method / rank / rrf_score / distance.
+        # SQLite 没原生 JSON iteration, 用 json_each() 展开.
+        # 注意: json_each() 已经是 cross-join, where 条件要加在 recall_log r 上.
+        methods: Dict[str, Dict] = {}
+        try:
+            # where_sql 可能是 '' 或 'WHERE X' 或 'WHERE X AND Y'
+            # json_each 后不能再用 WHERE (因为 from 子句没 r 了), 要用 AND
+            if where_sql:
+                # 把 WHERE 替换成 AND, 然后这个 AND 加在 json_each 之后
+                join_where = where_sql.replace("WHERE ", "AND ", 1)
+            else:
+                join_where = ""
+            method_rows = self._conn.execute(
+                f"""SELECT
+                        json_extract(je.value, '$.method') AS method_str,
+                        COUNT(*) AS hit_count,
+                        AVG(CAST(json_extract(je.value, '$.rank') AS REAL)) AS avg_rank,
+                        AVG(CAST(json_extract(je.value, '$.rrf_score') AS REAL)) AS avg_rrf,
+                        AVG(CAST(json_extract(je.value, '$.distance') AS REAL)) AS avg_dist
+                    FROM recall_log r, json_each(r.recall_details_json) je
+                    WHERE 1=1 {join_where}
+                    GROUP BY json_extract(je.value, '$.method')
+                    ORDER BY hit_count DESC""",
+                params,
+            ).fetchall()
+            for mr in method_rows:
+                m_name = mr["method_str"] or "unknown"
+                methods[m_name] = {
+                    "hit_count": int(mr["hit_count"] or 0),
+                    "avg_rank": float(mr["avg_rank"] or 0.0),
+                    "avg_rrf_score": float(mr["avg_rrf"] or 0.0),
+                    "avg_distance": float(mr["avg_dist"] or 0.0),
+                }
+        except Exception as e:  # noqa: BLE001 — 老 SQLite 没 json_each 兜底
+            logger.warning(f"[recall_stats] methods breakdown failed: {e}")
+
+        # === 4. By-day series (近 N 天) ===
+        by_day: List[Dict] = []
+        try:
+            day_rows = self._conn.execute(
+                f"""SELECT
+                        substr(created_at, 1, 10) AS day,
+                        COUNT(*) AS n,
+                        SUM(CASE WHEN results_json IN ('[]', '') THEN 1 ELSE 0 END) AS empty
+                    FROM recall_log {where_sql}
+                    GROUP BY substr(created_at, 1, 10)
+                    ORDER BY day""",
+                params,
+            ).fetchall()
+            for dr in day_rows:
+                by_day.append(
+                    {
+                        "day": dr["day"],
+                        "count": int(dr["n"]),
+                        "empty": int(dr["empty"] or 0),
+                    }
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[recall_stats] by_day failed: {e}")
+
+        return {
+            "window_days": days,
+            "totals": {
+                "total_recalls": int(total_recalls),
+                "unique_queries": int(unique_queries),
+                "total_hits": total_hits,
+                "empty_results": int(empty_results),
+                "empty_rate": round(empty_rate, 4),
+            },
+            "latency_ms": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in latency.items()},
+            "methods": methods,
+            "by_day": by_day,
+        }
+
     # Note: _AUDIT_GC_APPLIED_DAYS / _AUDIT_GC_SKIPPED_DAYS / _AUDIT_GC_PROPOSED_DAYS
     # 已在 audit_mixin.py AuditMixin 定义, 这里不重复 (避免 MRO 解析冲突).
 
