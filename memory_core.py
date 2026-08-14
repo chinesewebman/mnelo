@@ -368,7 +368,7 @@ class MemoryCore:
         [P0 2026-08-11] scoping IDs (agent_id / user_id / run_id) — 写入
             metadata_json (与现有 'tags' 键 merge). 召回时按这些字段过滤.
         """
-        from memory import _enforce_entity_namespace_guard, _temporal_class_for_validity, clamp01, generate_id, norm_memory_type, now  # lazy import — avoid circular at module load
+        from memory import _enforce_entity_namespace_guard, _temporal_class_for_validity, _txn, clamp01, generate_id, norm_memory_type, now  # lazy import — avoid circular at module load
 
         ts = timestamp or now()
         chunk_id = generate_id("chunk")
@@ -422,92 +422,96 @@ class MemoryCore:
             validate_entity_payload(_ent)
             _enforce_entity_namespace_guard(_ent)
 
-        # 1. 写 chunk
-        self._conn.execute(
-            """
-            INSERT INTO chunks (id, content, memory_type, source, session_id, timestamp, importance, metadata_json, valid_until)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
-        """,
-            (
-                chunk_id,
-                content,
-                memory_type,
-                source,
-                session_id,
-                ts,
-                clamp01(importance, "importance"),
-                json.dumps(meta_dict, ensure_ascii=False),
-            ),
-        )
-
-        # 2. 写 entities (insert or ignore — 实体可能已存在)
-        for ent in entities or []:
-            ent = dict(ent)
-            ent.setdefault("memory_type", memory_type)
-            self._upsert_entity(ent)
-
-        # 3. 写 relations
-        for rel in relations or []:
+        # [8/15 E-1] 显式事务包裹整个写入序列 (chunk + entities + relations +
+        # vector + PII audit). 任何步骤异常 → ROLLBACK → 数据一致.
+        # index.add 失败 → SQLite ROLLBACK → chunk 不入库, vector 也没污染 ✓
+        with _txn(self._conn):
+            # 1. 写 chunk
             self._conn.execute(
                 """
-                INSERT INTO relations (source_id, target_id, relation, weight, properties_json,
-                                       valid_from, valid_until, source, confidence, evidence_chunk_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO chunks (id, content, memory_type, source, session_id, timestamp, importance, metadata_json, valid_until)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
             """,
                 (
-                    rel["source_id"],
-                    rel["target_id"],
-                    rel["relation"],
-                    rel.get("weight", 1.0),
-                    json.dumps(rel.get("properties", {}), ensure_ascii=False),
-                    rel.get("valid_from", ts),
-                    rel.get("valid_until"),  # None = NULL
-                    rel.get("source", source),
-                    rel.get("confidence", 1.0),
-                    rel.get("evidence_chunk_id", chunk_id),
+                    chunk_id,
+                    content,
+                    memory_type,
+                    source,
+                    session_id,
+                    ts,
+                    clamp01(importance, "importance"),
+                    json.dumps(meta_dict, ensure_ascii=False),
                 ),
             )
 
-        # 4. 写向量索引 (SearchIndex 适配器, DESIGN §3.6)
-        # [7/21] 原 vec0 直接 INSERT + rowid 冲突 REPLACE 逻辑下沉到 SQLiteVecIndex.add
-        # (行为不变); backend=zvec 时走 zvec 后端.
-        v_bytes = embed_bytes(content)
-        self._index.add(chunk_id, v_bytes, conn=self._conn)
+            # 2. 写 entities (insert or ignore — 实体可能已存在)
+            for ent in entities or []:
+                ent = dict(ent)
+                ent.setdefault("memory_type", memory_type)
+                self._upsert_entity(ent)
 
-        # 4.5 [8/6 E 路线] PII advisory scan — 命中只写 audit_log, 不改 content 不 throw
-        # mnelo 不读内容、不加密、不主动 block; 调用方自决 ("最多提醒一下").
-        #
-        # [8/9 fix] PII audit_log 假 fail bug: audit_log UNIQUE constraint
-        # (run_id, pass_name, action_type, ref_id, status) 防同 run 重复 apply.
-        # run_id 必须 idempotent per (chunk_id, pii_category) — 同一 chunk 同类 PII
-        # retry 时, INSERT OR IGNORE 撞 UNIQUE 静默跳过, 既保留去重 audit trail
-        # 又不让 IntegrityError 把整个 remember 拉下水.
-        # (历史 issue: 8/9 VPS 迁移阶段观察到 23 个 IntegrityError 重复写入同一 content)
-        from validation import scan_pii_warnings as _scan_pii
-
-        for hit in _scan_pii(content):
-            _audit_run_id = f"pii_advisory_{chunk_id}_{hit['category']}"
-            try:
+            # 3. 写 relations
+            for rel in relations or []:
                 self._conn.execute(
-                    "INSERT OR IGNORE INTO audit_log (run_id, pass_name, action_type, ref_type, ref_id, after_json, llm_used, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, 'applied', ?)",
+                    """
+                    INSERT INTO relations (source_id, target_id, relation, weight, properties_json,
+                                           valid_from, valid_until, source, confidence, evidence_chunk_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
                     (
-                        _audit_run_id,
-                        "pii_audit",
-                        f"detected_{hit['category']}",
-                        "chunk",
-                        chunk_id,
-                        json.dumps(
-                            {"category": hit["category"], "offset": hit["offset"], "length": hit["length"]},
-                            ensure_ascii=False,
-                        ),
-                        ts,
+                        rel["source_id"],
+                        rel["target_id"],
+                        rel["relation"],
+                        rel.get("weight", 1.0),
+                        json.dumps(rel.get("properties", {}), ensure_ascii=False),
+                        rel.get("valid_from", ts),
+                        rel.get("valid_until"),  # None = NULL
+                        rel.get("source", source),
+                        rel.get("confidence", 1.0),
+                        rel.get("evidence_chunk_id", chunk_id),
                     ),
                 )
-            except sqlite3.IntegrityError as _e:
-                # INSERT OR IGNORE 通常已吸收; 兜底 catch 防御 schema 变化引入新 UNIQUE.
-                logger.warning(f"[pii_audit] audit_log skip for {chunk_id}/{hit['category']}: {_e}")
 
-        self._conn.commit()
+            # 4. 写向量索引 (SearchIndex 适配器, DESIGN §3.6)
+            # [7/21] 原 vec0 直接 INSERT + rowid 冲突 REPLACE 逻辑下沉到 SQLiteVecIndex.add
+            # (行为不变); backend=zvec 时走 zvec 后端.
+            # [8/15 E-1] index.add 在事务内, 失败 → SQLite ROLLBACK → vector 没污染
+            v_bytes = embed_bytes(content)
+            self._index.add(chunk_id, v_bytes, conn=self._conn)
+
+            # 4.5 [8/6 E 路线] PII advisory scan — 命中只写 audit_log, 不改 content 不 throw
+            # mnelo 不读内容、不加密、不主动 block; 调用方自决 ("最多提醒一下").
+            #
+            # [8/9 fix] PII audit_log 假 fail bug: audit_log UNIQUE constraint
+            # (run_id, pass_name, action_type, ref_id, status) 防同 run 重复 apply.
+            # run_id 必须 idempotent per (chunk_id, pii_category) — 同一 chunk 同类 PII
+            # retry 时, INSERT OR IGNORE 撞 UNIQUE 静默跳过, 既保留去重 audit trail
+            # 又不让 IntegrityError 把整个 remember 拉下水.
+            # (历史 issue: 8/9 VPS 迁移阶段观察到 23 个 IntegrityError 重复写入同一 content)
+            from validation import scan_pii_warnings as _scan_pii
+
+            for hit in _scan_pii(content):
+                _audit_run_id = f"pii_advisory_{chunk_id}_{hit['category']}"
+                try:
+                    self._conn.execute(
+                        "INSERT OR IGNORE INTO audit_log (run_id, pass_name, action_type, ref_type, ref_id, after_json, llm_used, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, 'applied', ?)",
+                        (
+                            _audit_run_id,
+                            "pii_audit",
+                            f"detected_{hit['category']}",
+                            "chunk",
+                            chunk_id,
+                            json.dumps(
+                                {"category": hit["category"], "offset": hit["offset"], "length": hit["length"]},
+                                ensure_ascii=False,
+                            ),
+                            ts,
+                        ),
+                    )
+                except sqlite3.IntegrityError as _e:
+                    # INSERT OR IGNORE 通常已吸收; 兜底 catch 防御 schema 变化引入新 UNIQUE.
+                    logger.warning(f"[pii_audit] audit_log skip for {chunk_id}/{hit['category']}: {_e}")
+        # _txn() 退出时已 COMMIT
         # Digest only depends on identity facts and high-importance decisions/episodes.
         if any(ent.get("kind") == "identity_fact" for ent in (entities or [])) or (memory_type in ("decision", "episode") and importance >= config.config.digest_importance_threshold):
             self._mark_digest_dirty()
@@ -581,7 +585,7 @@ class MemoryCore:
         Returns:
             新 chunk id (新版本 id)
         """
-        from memory import clamp01, generate_id, now  # lazy import — avoid circular at module load
+        from memory import _txn, clamp01, generate_id, now  # lazy import — avoid circular at module load
 
         # [7/19 P1-1] id 格式验证
         old_id = validate_id(old_id, "old_id")
@@ -600,54 +604,61 @@ class MemoryCore:
             importance_value = clamp01(new_importance, "new_importance")
         else:
             importance_value = old["importance"] if old["importance"] is not None else 0.5
-        self._conn.execute(
-            """
-            INSERT INTO chunks (id, content, source, session_id, timestamp, importance, metadata_json, valid_until)
-            VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-        """,
-            (
-                new_id,
-                new_content or old["content"],
-                "update:" + reason,
-                old["session_id"],
-                now(),
-                importance_value,
-                json.dumps({"supersedes": old_id, "reason": reason}, ensure_ascii=False),
-            ),
-        )
 
-        # 2. 老 chunk 标 superseded_by + valid_until (中 supersede 后不再召回)
-        self._conn.execute(
-            "UPDATE chunks SET superseded_by = ?, valid_until = ? WHERE id = ? AND valid_until IS NULL",
-            (new_id, now(), old_id),
-        )
-        # [P2 2026-08-11] write-time temporal signature — 老 chunk 已被 valid_until 设
-        # (= 历史), 标 metadata_json.temporal_class='historical' 供后续 read-time
-        # historical intent query 直接召回. 读旧 metadata_json (None 也 OK).
-        try:
-            old_meta_row = self._conn.execute("SELECT metadata_json FROM chunks WHERE id = ?", (old_id,)).fetchone()
-            if old_meta_row:
-                old_meta_raw = old_meta_row[0]
-                old_meta = json.loads(old_meta_raw) if old_meta_raw else {}
-                if "temporal_class" not in old_meta:
-                    old_meta["temporal_class"] = "historical"
-                    self._conn.execute(
-                        "UPDATE chunks SET metadata_json = ? WHERE id = ?",
-                        (json.dumps(old_meta, ensure_ascii=False), old_id),
-                    )
-        except Exception as e:  # noqa: BLE001 — 失败不阻塞 supersede 主流程
-            logger.warning(f"[P2] failed to mark historical on supersede {old_id}: {e}")
-        # [7/21] 向量索引变更下沉到 SearchIndex 适配器
-        # (原 v0.5.6: 删旧向量 + 重嵌新内容 — 行为不变)
-        self._index.remove(old_id, conn=self._conn)
-        new_content_for_embed = new_content if new_content is not None else old["content"]
-        try:
+        # [8/15 E-1] 显式事务包裹 update 全流程: 新 chunk + 老 chunk supersede +
+        # 老 chunk metadata.temporal_class=historical + index.remove(old) +
+        # index.add(new). 任何步骤异常 → ROLLBACK → 老 chunk valid_until
+        # 仍为 NULL, 新 chunk 不入库, 不留不一致状态.
+        #
+        # 之前 bug: line 644-648 `try/except` 静默吞 embed 异常, 导致 index.add
+        # 失败时老 chunk 已被 superseded, 新 chunk 已入库但 vector 缺席,
+        # 召回断裂. 修复: 改用 _txn() 让 SQLite 数据回滚, 异常正常上抛供
+        # 调用方感知.
+        with _txn(self._conn):
+            self._conn.execute(
+                """
+                INSERT INTO chunks (id, content, source, session_id, timestamp, importance, metadata_json, valid_until)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+            """,
+                (
+                    new_id,
+                    new_content or old["content"],
+                    "update:" + reason,
+                    old["session_id"],
+                    now(),
+                    importance_value,
+                    json.dumps({"supersedes": old_id, "reason": reason}, ensure_ascii=False),
+                ),
+            )
+
+            # 2. 老 chunk 标 superseded_by + valid_until (中 supersede 后不再召回)
+            self._conn.execute(
+                "UPDATE chunks SET superseded_by = ?, valid_until = ? WHERE id = ? AND valid_until IS NULL",
+                (new_id, now(), old_id),
+            )
+            # [P2 2026-08-11] write-time temporal signature — 老 chunk 已被 valid_until 设
+            # (= 历史), 标 metadata_json.temporal_class='historical' 供后续 read-time
+            # historical intent query 直接召回. 读旧 metadata_json (None 也 OK).
+            try:
+                old_meta_row = self._conn.execute("SELECT metadata_json FROM chunks WHERE id = ?", (old_id,)).fetchone()
+                if old_meta_row:
+                    old_meta_raw = old_meta_row[0]
+                    old_meta = json.loads(old_meta_raw) if old_meta_raw else {}
+                    if "temporal_class" not in old_meta:
+                        old_meta["temporal_class"] = "historical"
+                        self._conn.execute(
+                            "UPDATE chunks SET metadata_json = ? WHERE id = ?",
+                            (json.dumps(old_meta, ensure_ascii=False), old_id),
+                        )
+            except Exception as e:  # noqa: BLE001 — 失败不阻塞 supersede 主流程
+                logger.warning(f"[P2] failed to mark historical on supersede {old_id}: {e}")
+            # [7/21] 向量索引变更下沉到 SearchIndex 适配器
+            # (原 v0.5.6: 删旧向量 + 重嵌新内容 — 行为不变)
+            self._index.remove(old_id, conn=self._conn)
+            new_content_for_embed = new_content if new_content is not None else old["content"]
             v_bytes = embed_bytes(new_content_for_embed)
             self._index.add(new_id, v_bytes, conn=self._conn)
-        except Exception as e:
-            logger.warning(f"failed to embed new chunk {new_id} during update: {e}")
-
-        self._conn.commit()
+        # _txn() 退出时已 COMMIT
         self._mark_digest_dirty()
         # [7/19 v0.5.3] metrics
         _metrics_registry().update_total.inc()

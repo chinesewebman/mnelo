@@ -339,6 +339,39 @@ def _with_row_factory(conn, factory):
         conn.row_factory = old
 
 
+@contextlib.contextmanager
+def _txn(conn):
+    """[8/15 E-1] 显式事务包裹 helper. 用于 remember/update 写路径.
+
+    主人 DESIGN §1.2 #7 短板修复: 之前 chunk+entities+relations+vector
+    依赖 sqlite3 隐式事务, 中途异常 → 单例 conn 复用下次 commit 可能连同
+    提交, 留下 vec0 rowid 漂移的孤儿 chunk.
+
+    行为契约:
+      - 进入: 显式 BEGIN
+      - 正常退出: COMMIT
+      - 异常: ROLLBACK + 重新 raise (不吞)
+
+    注意事项 (usearch/zvec 索引独立于 SQLite 事务):
+      - index.add() 失败 → SQLite ROLLBACK → chunk 不入库, index 也未污染 ✓
+      - 顺序: SQLite 写完 → index.add → COMMIT. 如果 index.add 成功
+        但 COMMIT 失败 (极低概率) → index 写了但 SQLite 没存, 需
+        reverse index.remove. 这条留给 v0.16+ 处理 (主人确认当前
+        threshold 接受).
+    """
+    conn.execute("BEGIN")
+    try:
+        yield conn
+    except BaseException:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception as rb_err:  # noqa: BLE001
+            logging.getLogger("mnelo").warning(f"[txn] ROLLBACK failed: {rb_err}")
+        raise
+    else:
+        conn.execute("COMMIT")
+
+
 # [8/8 P1] Entity namespace guard.
 # 防御历史 importer 残留 (HonchoImporter anno:* NER mentions) + 随机 token
 # (TOKEN_C_*) + 整句当 entity name. 只允许显式 namespace 前缀 + 无冒号的
