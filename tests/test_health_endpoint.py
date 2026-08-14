@@ -30,6 +30,7 @@ def _make_fake_memory(hygiene_values: dict):
             import tempfile
             from pathlib import Path
             from memory import Memory
+
             tmpdir = tempfile.mkdtemp(prefix="health_fake_")
             self._real_mem = Memory(db_path=Path(tmpdir) / "memory.db")
             self._conn = self._real_mem._conn
@@ -64,7 +65,7 @@ def test_health_recommends_maintenance_when_degraded(monkeypatch):
     from starlette.testclient import TestClient
 
     fake = _make_fake_memory({"purge_backlog": 200, "decay_floor_chunks": 150, "freshness": 0.5})
-    monkeypatch.setattr(mcp_server, "_mem_instance", fake)
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_mem_instance", fake)
     monkeypatch.setattr(mcp_server.config, "health_purge_backlog_threshold", 100)
     monkeypatch.setattr(mcp_server.config, "health_floor_chunks_threshold", 100)
     body = TestClient(mcp_server._build_sse_app("test-token")).get("/health").json()
@@ -86,7 +87,7 @@ def test_health_recommendation_payload_contract(monkeypatch):
     from starlette.testclient import TestClient
 
     fake = _make_fake_memory({"purge_backlog": 0, "decay_floor_chunks": 0, "freshness": 1.0})
-    monkeypatch.setattr(mcp_server, "_mem_instance", fake)
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_mem_instance", fake)
     monkeypatch.setattr(mcp_server.config, "health_purge_backlog_threshold", 100)
     monkeypatch.setattr(mcp_server.config, "health_floor_chunks_threshold", 100)
     body = TestClient(mcp_server._build_sse_app("test-token")).get("/health").json()
@@ -99,7 +100,7 @@ def test_health_threshold_boundary_is_configurable(monkeypatch):
     from starlette.testclient import TestClient
 
     fake = _make_fake_memory({"purge_backlog": 10, "decay_floor_chunks": 20, "freshness": 0.5})
-    monkeypatch.setattr(mcp_server, "_mem_instance", fake)
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_mem_instance", fake)
     monkeypatch.setattr(mcp_server.config, "health_purge_backlog_threshold", 10)
     monkeypatch.setattr(mcp_server.config, "health_floor_chunks_threshold", 20)
     client = TestClient(mcp_server._build_sse_app("test-token"))
@@ -115,15 +116,19 @@ def test_health_threshold_boundary_is_configurable(monkeypatch):
 def test_health_endpoint_error_schema_is_stable(monkeypatch):
     from starlette.testclient import TestClient
 
-    monkeypatch.setattr(mcp_server, "_mem_instance", None)
-    monkeypatch.setattr(mcp_server, "_get_mem", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_mem_instance", None)
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_get_mem", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
     response = TestClient(mcp_server._build_sse_app("test-token")).get("/health")
     assert response.status_code == 503
-    assert response.json() == {"status": "degraded", "hygiene": {
-        "purge_backlog": None,
-        "importance_below_floor": None,
-        "freshness": None,
-    }, "recommendations": []}
+    assert response.json() == {
+        "status": "degraded",
+        "hygiene": {
+            "purge_backlog": None,
+            "importance_below_floor": None,
+            "freshness": None,
+        },
+        "recommendations": [],
+    }
 
 
 def test_health_endpoint_reuses_singleton(monkeypatch):
@@ -131,11 +136,10 @@ def test_health_endpoint_reuses_singleton(monkeypatch):
 
     fake = _make_fake_memory({"purge_backlog": 0, "decay_floor_chunks": 0, "freshness": 1.0})
     calls = []
-    monkeypatch.setattr(mcp_server, "_mem_instance", None)
-    monkeypatch.setattr(mcp_server, "_get_mem", lambda: calls.append(1) or fake)
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_mem_instance", None)
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_get_mem", lambda: calls.append(1) or fake)
     client = TestClient(mcp_server._build_sse_app("test-token"))
     assert client.get("/health").status_code == 200
-    monkeypatch.setattr(mcp_server, "_mem_instance", fake)
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_mem_instance", fake)
     assert client.get("/health").status_code == 200
     assert len(calls) == 1
-

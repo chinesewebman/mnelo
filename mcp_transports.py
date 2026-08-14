@@ -63,13 +63,20 @@ async def _mnelo_health_endpoint(request):
 
     [8/7] 提到模块级, 让 _build_sse_app 和 _build_streamable_app 共享
     (原 _build_sse_app 内 closure 依赖全部模块级, 无副作用).
+
+    [8/14 P1 fix] reads `_mem_instance` via module attribute (not value-binding)
+    so `monkeypatch.setattr(mcp_tool_dispatcher, '_mem_instance', fake)` 真的生效.
     """
     from starlette.responses import JSONResponse
 
-    target = _mem_instance
+    # [8/14 P1 fix] module attribute lookup, not value-binding
+    import mcp_tool_dispatcher as _disp_mod
+
+    target = _disp_mod._mem_instance
     try:
         if target is None:
-            target = _get_mem()
+            # [8/14 P1 fix] same — module attribute lookup so test mocks effective
+            target = _disp_mod._get_mem()
         stats = target.stats()
         hygiene = stats.get("hygiene", {})
         backlog = int(hygiene.get("purge_backlog", 0))

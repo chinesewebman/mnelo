@@ -380,15 +380,10 @@ class TestRateLimitExceptionCleared:
     def test_rate_limit_response_structure(self, mem, clean_prefix):
         """Rate limit JSON has error + tool + type fields.
 
-        [8/14 P1 fix] `_mcp_repo.config` resolves to the `config` MODULE itself,
-        not the singleton — because `import config` in mcp_server.py occupies
-        the `config` name in the facade's module dict, so PEP 562 `__getattr__`
-        never fires. Reach the singleton via `config.config`. _RATE_BUCKETS
-        lives in mcp_tool_dispatcher but the dict is shared (mutating via
-        facade reads-through to dispatcher, since `_RATE_BUCKETS` is not in
-        facade's own dict and `__getattr__` resolves to dispatcher).
+        [8/14 P1 fix v2] facade `config` now forwards (PEP 562) to `config.config`
+        (Config instance), so `_mcp_repo.config` IS the singleton — no `.config` suffix.
         """
-        original_max = _mcp_repo.config.config.rate_limit_max_per_window
+        original_max = _mcp_repo.config.rate_limit_max_per_window
         tool_name = f"_rate_struct_{clean_prefix}"
         _mcp_repo._RATE_BUCKETS[tool_name] = [time.time(), original_max + 1]
         try:
@@ -399,4 +394,4 @@ class TestRateLimitExceptionCleared:
             assert "error" in data
         finally:
             _mcp_repo._RATE_BUCKETS.pop(tool_name, None)
-            _mcp_repo.config.config.rate_limit_max_per_window = original_max
+            _mcp_repo.config.rate_limit_max_per_window = original_max

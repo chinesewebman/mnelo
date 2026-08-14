@@ -31,21 +31,21 @@ def _mem_with_digest(content: str, chunk_id: str = "chunk_test_digest"):
 
 def test_initialize_does_not_register_digest_resource_by_default(monkeypatch):
     monkeypatch.setattr(mcp_server.config, "digest_inject_on_initialize", False)
-    monkeypatch.setattr(mcp_server, "_mem_instance", _mem_with_digest("identity: 2077 Ling"))
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_mem_instance", _mem_with_digest("identity: 2077 Ling"))
     result = asyncio.run(_list_resources())
     assert "memory://session/digest" not in {str(r.uri) for r in result.root.resources}
 
 
 def test_initialize_registers_digest_resource_when_enabled(monkeypatch):
     monkeypatch.setattr(mcp_server.config, "digest_inject_on_initialize", True)
-    monkeypatch.setattr(mcp_server, "_mem_instance", _mem_with_digest("identity: 2077 Ling"))
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_mem_instance", _mem_with_digest("identity: 2077 Ling"))
     result = asyncio.run(_list_resources())
     assert any(str(r.uri) == "memory://session/digest" for r in result.root.resources)
 
 
 def test_digest_resource_text_returns_digest(monkeypatch):
     monkeypatch.setattr(mcp_server.config, "digest_inject_on_initialize", True)
-    monkeypatch.setattr(mcp_server, "_mem_instance", _mem_with_digest("identity: 2077 Ling"))
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_mem_instance", _mem_with_digest("identity: 2077 Ling"))
     contents = asyncio.run(_read_resource("memory://session/digest")).root.contents
     text = "\n".join(getattr(c, "text", "") or getattr(c, "blob", "") for c in contents)
     assert "2077 Ling" in text
@@ -53,15 +53,16 @@ def test_digest_resource_text_returns_digest(monkeypatch):
 
 def test_digest_resource_refuses_when_disabled(monkeypatch):
     monkeypatch.setattr(mcp_server.config, "digest_inject_on_initialize", False)
-    monkeypatch.setattr(mcp_server, "_mem_instance", _mem_with_digest("identity: 2077 Ling"))
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_mem_instance", _mem_with_digest("identity: 2077 Ling"))
     with pytest.raises(ValueError, match="disabled"):
         asyncio.run(_read_resource("memory://session/digest"))
 
 
 def test_digest_resource_typed_uri_accepted(monkeypatch):
     from pydantic import AnyUrl
+
     monkeypatch.setattr(mcp_server.config, "digest_inject_on_initialize", True)
-    monkeypatch.setattr(mcp_server, "_mem_instance", _mem_with_digest("identity: 2077 Ling"))
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_mem_instance", _mem_with_digest("identity: 2077 Ling"))
     contents = asyncio.run(_read_resource(AnyUrl("memory://session/digest"))).root.contents
     text = "\n".join(getattr(c, "text", "") or getattr(c, "blob", "") for c in contents)
     assert "2077 Ling" in text
@@ -74,8 +75,8 @@ def test_digest_resource_swallows_init_errors(monkeypatch, caplog):
         def get_digest(self, ref=None):
             raise RuntimeError("db down")
 
-    monkeypatch.setattr(mcp_server, "_mem_instance", None)
-    monkeypatch.setattr(mcp_server, "_get_mem", lambda: BoomMemory())
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_mem_instance", None)
+    monkeypatch.setattr(sys.modules["mcp_tool_dispatcher"], "_get_mem", lambda: BoomMemory())
     contents = asyncio.run(_read_resource("memory://session/digest")).root.contents
     text = "\n".join(getattr(c, "text", "") or getattr(c, "blob", "") for c in contents)
     assert text == ""

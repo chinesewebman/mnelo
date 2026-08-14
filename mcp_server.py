@@ -46,7 +46,15 @@ import sys
 import uvicorn  # noqa: F401  re-export (test_mcp_coverage_round4: test_sse_* flow)
 
 import auth
-import config  # noqa: F401  re-export (test_mcp_handlers_round9 contract)
+
+# [8/14 P1 fix v2] config 之前 top-level `import config` 占据 facade dict `config` key,
+# 让 PEP 562 __getattr__('config') 不触发 (dict-hit wins), 直接返回 module 'config'.
+# Tests 写 `_mcp_repo.config.rate_limit_max_per_window` 拿到 module 'config', 再 .X
+# 找 Config instance attribute — 不存在, AttributeError.
+#
+# Fix: 不 `import config` at top-level, 让 facade __getattr__('config') 走 _SUB_MODULES
+# lookup → 找到 `config.config` (Config instance, last in chain).
+import config as _config_mod  # noqa: E402
 import mcp_guard
 import mcp_tool_definitions
 import mcp_tool_dispatcher
@@ -54,7 +62,9 @@ import mcp_tool_handlers
 import mcp_transports
 
 # Ordered sub-modules for __getattr__/__setattr__ lookup chain
-# Most-specific first; guard last (it has _MCP_AVAILABLE flag overrides).
+# Most-specific first; config (singleton) last.
+# [8/14 P1 fix v3] config module imported lazily (not top-level) so PEP 562 forwards
+# 'config' to `config.config` (Config instance), not bare module.
 _SUB_MODULES = (
     mcp_tool_dispatcher,  # _call_tool, _get_mem, server, _RATE_BUCKETS, _mem_instance
     mcp_tool_handlers,  # _TOOL_REGISTRY, _TASK_TOOL_REGISTRY, _CUSTOM_HANDLERS
@@ -62,7 +72,7 @@ _SUB_MODULES = (
     mcp_transports,  # run_*, stdio_server, _check_port_available, _build_*_app
     mcp_guard,  # _MCP_AVAILABLE, uvicorn, stdio_server, Server, ...
     auth,  # AuthError, load_auth_token
-    config,  # config singleton
+    _config_mod,  # config module — PEP 562 forwards `_mcp_repo.config` → _config_mod.config
 )
 
 
