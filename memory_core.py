@@ -25,6 +25,11 @@ import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from memory import _with_row_factory  # [8/15 E-A] get_all 内部用
+
+# [8/15 E-A] 别名, 给 get_all 内部用 _sqlite.Row 避免 ruff I001 (跟文件顶部 import 冲突)
+_sqlite = sqlite3
+
 import config
 import config as _config_module
 from embedder import embed_bytes
@@ -559,6 +564,192 @@ class MemoryCore:
         # [7/19 v0.5.3] metrics
         _metrics_registry().relate_total.inc()
         return cur.lastrowid
+
+    def get_all(
+        self,
+        kind: str = None,
+        relation: str = None,
+        user_id: str = None,
+        limit: int = 1000,
+        offset: int = 0,
+        include_superseded: bool = False,
+    ) -> Dict:
+        """[8/15 E-A] 全量 dump: 返 entities + relations + chunks 列表 + 总数.
+
+        借鉴 Mem0 memory.get_all(user_id="alice"): 主人调试 / 看库 / 数据
+        迁移的便利工具. 与 Mem0 不同: 不做 LLM 自动抽取 (主人 6/29 iron law
+        "不抢决策"), 只补"主人主动看库"的入口.
+
+        Args:
+            kind: 只返指定 kind 的 entity (None = 全部).
+            relation: 只返指定 relation type (None = 全部).
+            user_id: scoping_ids 过滤 (P0 8/11 已落地). 不传 = 不按 user 过滤
+                (返所有 user 的 entities — 主人单机调试场景). 传了 = 只返该
+                user 拥有的 entity (通过 chunk 的 properties_json.agent_id 推).
+            limit: 单维度返回上限 (默认 1000, 避免一次拉 5000 卡死).
+            offset: 分页起点 (与 limit 配对).
+            include_superseded: 默认 False = 排除 valid_until 非 NULL (软删).
+
+        Returns:
+            Dict{
+                    "entities": [list of dict],
+                    "relations": [list of dict],
+                    "chunks": [list of dict],
+                    "totals": {entities, relations, chunks 总数 (含过滤+不含分页)},
+                    "limit": 1000,
+                    "offset": 0,
+                }
+
+        Example:
+            >>> all_data = m.get_all()
+            >>> companies = m.get_all(kind="company")
+            >>> located_in = m.get_all(relation="located_in")
+            >>> page2 = m.get_all(limit=500, offset=500)
+        """
+        # === 1. entities ===
+        e_where = []
+        e_params: list = []
+        if not include_superseded:
+            e_where.append("valid_until IS NULL")
+        if kind is not None:
+            e_where.append("kind = ?")
+            e_params.append(kind)
+        # [8/15 E-A] user_id 过滤 — entities 表无 user_id 列, 走"关联 chunks 的
+        # user_id 反推". SQL: entity 必须有 ≥1 chunk 的 session_id 匹配.
+        # (P0 8/11 scoping_ids 约定: chunks.session_id == user_id 简化版 — 完整
+        #  agent_id 走 metadata_json.agent_id). 失败时 (无 mentioned_entities
+        # 字段) → 0 entity. 这是"best effort", 不是 100% 严格 scoping.
+        if user_id is not None:
+            e_where.append("""id IN (
+                SELECT DISTINCT je.value
+                FROM chunks c, json_each(json_extract(c.metadata_json, '$.mentioned_entities')) je
+                WHERE c.valid_until IS NULL
+                  AND c.session_id = ?
+            )""")
+            e_params.append(user_id)
+        e_where_sql = ("WHERE " + " AND ".join(e_where)) if e_where else ""
+
+        # totals 用同样过滤 (不加 limit/offset)
+        total_entities = self._conn.execute(
+            f"SELECT COUNT(*) FROM entities {e_where_sql}",
+            e_params,
+        ).fetchone()[0]
+
+        # rows 用同样过滤 + limit/offset
+        with _with_row_factory(self._conn, _sqlite.Row):
+            e_rows = self._conn.execute(
+                f"""
+                SELECT id, kind, name, summary, importance, source, properties_json,
+                       valid_from, valid_until
+                FROM entities {e_where_sql}
+                ORDER BY kind, name
+                LIMIT ? OFFSET ?
+            """,
+                (*e_params, limit, offset),
+            ).fetchall()
+            entities = [
+                {
+                    "id": r["id"],
+                    "kind": r["kind"],
+                    "name": r["name"],
+                    "summary": r["summary"],
+                    "importance": float(r["importance"] or 0.5),
+                    "source": r["source"],
+                    "valid_from": r["valid_from"],
+                    "valid_until": r["valid_until"],
+                }
+                for r in e_rows
+            ]
+
+        # === 2. relations ===
+        r_where = []
+        r_params: list = []
+        if not include_superseded:
+            r_where.append("valid_until IS NULL")
+        if relation is not None:
+            r_where.append("relation = ?")
+            r_params.append(relation)
+        r_where_sql = ("WHERE " + " AND ".join(r_where)) if r_where else ""
+
+        total_relations = self._conn.execute(
+            f"SELECT COUNT(*) FROM relations {r_where_sql}",
+            r_params,
+        ).fetchone()[0]
+
+        with _with_row_factory(self._conn, _sqlite.Row):
+            r_rows = self._conn.execute(
+                f"""
+                SELECT id, source_id, target_id, relation, weight, confidence,
+                       valid_from, valid_until, source, evidence_chunk_id
+                FROM relations {r_where_sql}
+                ORDER BY relation, source_id
+                LIMIT ? OFFSET ?
+            """,
+                (*r_params, limit, offset),
+            ).fetchall()
+            relations = [
+                {
+                    "id": r["id"],
+                    "source_id": r["source_id"],
+                    "target_id": r["target_id"],
+                    "relation": r["relation"],
+                    "weight": float(r["weight"] or 1.0),
+                    "confidence": float(r["confidence"] or 1.0),
+                    "valid_from": r["valid_from"],
+                    "valid_until": r["valid_until"],
+                    "source": r["source"],
+                    "evidence_chunk_id": r["evidence_chunk_id"],
+                }
+                for r in r_rows
+            ]
+
+        # === 3. chunks ===
+        c_where = []
+        c_params: list = []
+        if not include_superseded:
+            c_where.append("valid_until IS NULL")
+        c_where_sql = ("WHERE " + " AND ".join(c_where)) if c_where else ""
+
+        total_chunks = self._conn.execute(
+            f"SELECT COUNT(*) FROM chunks {c_where_sql}",
+            c_params,
+        ).fetchone()[0]
+
+        with _with_row_factory(self._conn, _sqlite.Row):
+            c_rows = self._conn.execute(
+                f"""
+                SELECT id, content, source, timestamp, importance, created_at, valid_until
+                FROM chunks {c_where_sql}
+                ORDER BY timestamp DESC
+                LIMIT ? OFFSET ?
+            """,
+                (*c_params, limit, offset),
+            ).fetchall()
+            chunks = [
+                {
+                    "id": r["id"],
+                    "content": r["content"],
+                    "source": r["source"],
+                    "timestamp": r["timestamp"],
+                    "importance": float(r["importance"] or 0.5),
+                    "created_at": r["created_at"],
+                    "valid_until": r["valid_until"],
+                }
+                for r in c_rows
+            ]
+
+        return {
+            "entities": entities,
+            "relations": relations,
+            "chunks": chunks,
+            "totals": {
+                "entities": total_entities,
+                "relations": total_relations,
+                "chunks": total_chunks,
+            },
+            "limit": limit,
+            "offset": offset,
+        }
 
     def update(
         self,

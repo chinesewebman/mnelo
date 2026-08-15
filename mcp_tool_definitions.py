@@ -124,6 +124,48 @@ TOOLS = [
             "required": ["source_id", "target_id", "relation"],
         },
     },
+    # === [8/15 E-A] 借鉴 Mem0 get_all ===
+    {
+        "name": "memory_get_all",
+        "description": (
+            "[E-A] 全量 dump: 返 entities + relations + chunks 列表 + 总数. "
+            "借鉴 Mem0 memory.get_all(user_id=...), 但不做 LLM 自动抽取 "
+            "(主人 6/29 iron law '不抢决策'), 只补 '主人主动看库' 入口. "
+            "用于调试 / 数据迁移 / 库盘点."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "description": "只返指定 kind 的 entity (None = 全部). e.g. 'company' / 'stock' / 'person'.",
+                },
+                "relation": {
+                    "type": "string",
+                    "description": "只返指定 relation type (None = 全部). e.g. 'located_in' / 'works_at'.",
+                },
+                "user_id": {
+                    "type": "string",
+                    "description": "scoping_ids 过滤 (P0 8/11 已落地). 不传 = 不按 user 过滤 (返所有); 传了 = 只返该 user 的 chunks/entities.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "单维度返回上限 (默认 1000, 避免一次拉 5000+ 卡死).",
+                    "default": 1000,
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "分页起点 (与 limit 配对).",
+                    "default": 0,
+                },
+                "include_superseded": {
+                    "type": "boolean",
+                    "description": "默认 False = 排除软删 (valid_until 非 NULL). True = 含历史.",
+                    "default": false,
+                },
+            },
+        },
+    },
     {
         "name": "memory_forget",
         "description": "软删除 entity/chunk/relation (valid_until = now). 触发器自动级联.",

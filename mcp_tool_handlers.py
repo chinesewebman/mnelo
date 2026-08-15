@@ -167,6 +167,10 @@ _TOOL_REGISTRY = {
     "memory_remember": ("remember", "chunk_id"),
     "memory_recall": ("recall", None),
     "memory_relate": ("relate", "relation_id"),
+    # === [8/15 E-A] 借鉴 Mem0 get_all ===
+    # 走 _handle_simple: args={kind, relation, user_id, limit, offset, include_superseded}
+    # 走 **kwargs 透传, 方法签名有默认值兜底.
+    "memory_get_all": ("get_all", None),
     "memory_forget": ("forget", None),
     "memory_update": ("update", "new_chunk_id"),
     "memory_graph_query": ("graph_query", None),
