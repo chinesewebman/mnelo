@@ -14,7 +14,11 @@ sqlite-vec>=0.1.9,<0.2.0
 fastembed>=0.8.0,<0.9.0
 
 # MCP server (Model Context Protocol over SSE)
-mcp[cli]>=1.26.0,<2.0.0
+# [8/29 fix] pin 升 2.x — PR #13 (5b5f2f7) 改了 dispatcher 用 mcp 2.x API
+# (Server(name, on_list_tools=..., on_call_tool=...) constructor kwargs, Resource.uri=str,
+# mime_type, CallToolResult.is_error, streamable_http_client) 但忘了 bump 这个 pin.
+# CI 装 1.x → Server.__init__() got unexpected kwarg 'on_list_tools' → 18 ERROR + 20 FAILED.
+mcp[cli]>=2.1.1,<3.0.0
 
 # ASGI server for the SSE transport (transitive dep of mcp; pinned here for explicitness)
 uvicorn>=0.30.0

@@ -16,12 +16,12 @@
 | 内存 | 4 GB | 8 GB (bge-small-zh embedder ~200 MB RSS + Python + mcp + SQLite overhead，总进程 RSS 实测 ~270 MB) |
 | 网络 | 仅首次拉模型 | 同上 |
 
-### 已实测依赖版本 (本仓库写于 2026-07-18)
+### 已测试依赖版本 (本仓库写于 2026-07-18, 8/29 bump mcp)
 
 ```
 python        3.11.12
 sqlite-vec    0.1.9
-mcp           1.26.0
+mcp           2.1.1   # [8/29] PR #13 (5b5f2f7) + requirements.txt bump
 fastembed     0.8.0
 sqlite3       built-in (≥3.35)
 ```
