@@ -327,8 +327,12 @@ class RecallEngine:
         # [P1 2026-08-29] Memory decay — recency-aware scaling 在最终 results 上.
         # 只动排序权重 (rrf_score 缩放), 不删 chunk, 不改 content.
         # 共存: 与 agent_id filter 正交 — filter 已先一步筛过,
-        # decay 只对剩下的 chunk 应用排序权重. 旧数据 (无 last_recalled) → 用
-        # timestamp fallback, 行为与新数据一致.
+        # decay 只对剩下的 chunk 应用排序权重. 用 timestamp (写入时间) 算 idle,
+        # 不用 last_recalled — last_recalled 每次 recall 都刷新, 会让所有 chunk
+        # 看起来都是 idle=0 → 全部拿 1.5× ceiling, 失去新旧语义.
+        # [P1-bugfix 2026-08-30] 修 PR #24 设计偏差: 原 `last_recalled or timestamp`
+        # fallback 链让 last_recalled 优先, 等价于"看 recall 时间不看写入时间", 违反
+        # recency 语义. 现统一用 timestamp — 内容创建时间 = decay 唯一基准.
         # [cherry-pick 2026-08-29] 从 082a7f8 dirty 移植到 82ce284, call site
         # 从 MemoryCore.recall() 移到 RecallEngine.recall() 末尾 (4-lane RRF
         # 融合之后, metrics/_log_recall 之前 — 排序权重在 audit 落盘前确定).
@@ -1281,7 +1285,7 @@ class RecallEngine:
                     # chunk 已不存在 (RRF 残留) — 跳过衰减, factor=1.0
                     factor = 1.0
                 else:
-                    last_iso = row["last_recalled"] or row["timestamp"]
+                    last_iso = row["timestamp"]  # [P1-bugfix 2026-08-30] use timestamp (写入时间), not last_recalled — last_recalled 每次 recall 都刷新会 idempotent 全部变 idle=0
                     memory_type = row["memory_type"]
                     try:
                         last_dt = datetime.fromisoformat(last_iso)
