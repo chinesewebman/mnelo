@@ -298,6 +298,12 @@ class RecallEngine:
             vector_hits = self._vector_recall(query, top_k, filters, asof)
             graph_hits = self._graph_recall(vector_hits, graph_hops, asof)
             results = graph_hits[:top_k]
+            # [P1 2026-08-30] F1 fix: graph_only hits 没 rrf_score/distance →
+            # decay 拿不到 base → 排序失效. 显式注入 base_score=importance
+            # (entity hit 也走同一字段, 因为 _graph_recall 已 inline 含 importance).
+            for r in results:
+                if "rrf_score" not in r and "distance" not in r:
+                    r["base_score"] = float(r.get("importance", 0.5))
             lane_latencies = {
                 "vector": (time.time() - t0) * 1000,
                 "graph": 0.0,
@@ -305,10 +311,20 @@ class RecallEngine:
         elif strategy == "meta_only":
             t0 = time.time()
             results = self._meta_recall(query, top_k, filters, asof)
+            # [P1 2026-08-30] F1 fix: meta_only hits 没 rrf_score/distance →
+            # 注入 base_score=importance (跟 graph_only 同模式).
+            for r in results:
+                if "rrf_score" not in r and "distance" not in r:
+                    r["base_score"] = float(r.get("importance", 0.5))
             lane_latencies = {"meta": (time.time() - t0) * 1000}
         elif strategy == "entity_only":
             t0 = time.time()
             results = self._entity_recall(query, top_k, filters, asof)
+            # [P1 2026-08-30] F1 fix: entity_only hits 没 rrf_score/distance →
+            # 注入 base_score=importance (entity hit inline 已含 importance).
+            for r in results:
+                if "rrf_score" not in r and "distance" not in r:
+                    r["base_score"] = float(r.get("importance", 0.5))
             lane_latencies = {"entity": (time.time() - t0) * 1000}
         else:
             raise ValueError(f"unknown strategy: {strategy}")
@@ -1115,9 +1131,17 @@ class RecallEngine:
                 "distance": r.get("distance"),  # 0.0-2.0 越小越相似 (vector_only)
                 "rrf_score": r.get("rrf_score"),  # RRF 融合分数 (rrf strategy), P1 decay 后是 recency-scaled
                 "importance": r.get("importance"),
+                # [P1 2026-08-30] F2 fix: decay 缩放因子写入 audit log, 让 analytics
+                # 能分析 '老记忆被衰减多少'. 配合下方 pop, hit dict 出 recall 时干净.
+                "_decay_factor": r.get("_decay_factor"),
             }
             for i, r in enumerate(results[:5])  # top-5
         ]
+        # [P1 2026-08-30] F2 fix: pop 所有下划线前缀 debug 字段, 避免泄漏到
+        # MCP client / REST API 响应体. _decay_factor 是 _apply_decay_to_hits
+        # 注入的诊断字段, 仅 audit log 需要, hit dict 本身对外应干净.
+        for r in results:
+            r.pop("_decay_factor", None)
         self._conn.execute(
             """
             INSERT INTO recall_log (query, results_json, graph_hops, latency_ms, created_at, recall_details_json)
@@ -1264,11 +1288,21 @@ class RecallEngine:
                         idle_hours = 0.0
                     factor = self._recency_decay_factor(idle_hours, memory_type)
             # 缩放 rrf_score / raw 评分
-            base_score = r.get("rrf_score", r.get("distance", 0.0) or 0.0)
-            # vector_only 用 distance (越小越相似), 翻转成 score 后再乘
-            if "distance" in r and "rrf_score" not in r:
-                # distance ∈ [0, 2], 0 最好. 转成 score = 2 - distance, 然后缩放
-                base_score = max(0.0, 2.0 - r["distance"])
+            # [P1 2026-08-30] F1 fix: 优先级 base_score → rrf_score → distance.
+            # base_score 由 graph_only/meta_only/entity_only strategy 分支显式
+            # 注入 (值=importance, 范围 [0, 1]); rrf_score 由 _rrf_fuse 写入;
+            # distance 由 vector_recall 写入. 全部 ≥ 0 → decay 排序有效.
+            if "base_score" in r:
+                base_score = float(r["base_score"])
+            elif "rrf_score" in r:
+                base_score = float(r["rrf_score"])
+            elif "distance" in r:
+                # vector_only: distance ∈ [0, 2], 0 最好. 转成 score = 2 - distance, 然后缩放
+                base_score = max(0.0, 2.0 - float(r["distance"]))
+            else:
+                # 兜底: 理论上 recall() 入口已注入, 此处不应触发.
+                # 设 1.0 保持原序, 不让 sort 退化.
+                base_score = 1.0
             r["_decay_factor"] = factor
             r["rrf_score"] = base_score * factor
             scored.append(r)

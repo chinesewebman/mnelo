@@ -1,15 +1,23 @@
 # Changelog
 
-## Unreleased — 2026-08-29
+## v1.8.0 — 2026-08-29 (P1 minor: memory decay + F1/F2 fixes)
 
-feat(P1): Memory decay — recall-time recency scaling (cherry-pick from 082a7f8)
+feat(P1): Memory decay — recall-time recency scaling (PR #23 cherry-pick + F1/F2 fixes)
 
-[cherry-pick 2026-08-29] 把 dirty `memory.py` 上的 P1 memory-decay 4件套 + 调点搬到 5-mixin
-架构后的 `recall_engine.py`, 跟 main 82ce284 同步. 只动排序权重 (`rrf_score` 缩放),
-不改 chunk content / 不写 audit_log, 跟 `_apply_decay_importance` (L2 hygiene 真 UPDATE
-importance) 完全独立.
+PR #23 + 本 PR 配套 fix (F1+F2). PR #23 cherry-pick 自 dirty `082a7f8` 的 P1 memory-decay
+4件套到 5-mixin 架构后的 `recall_engine.py`; F1+F2 修 PR #23 ship 后主人 defer 的两个 bug.
 
-**核心改动:**
+**为什么挂 `RecallEngine` 而不是 `Memory`?** 跟 `_apply_decay_importance` 挂
+`L2MaintenanceMixin` 同理 — 跟该方法同一调用域 (recall pipeline) 的 mixin 拥有自己
+的 constants, 避免 `recall_engine.py` → `memory.py` 的循环 import, 也让 mixin 自包含.
+`_recency_decay_factor` 从 `Memory.xxx` 改为 `RecallEngine.xxx` (本次唯一非 verbatim
+移植).
+
+### PR #23 cherry-pick — 4 件套 + 调点
+
+只动排序权重 (`rrf_score` 缩放), 不改 chunk content / 不写 audit_log, 跟
+`_apply_decay_importance` (L2 hygiene 真 UPDATE importance) 完全独立.
+
 - `recall_engine.py` 顶部 import 加 `datetime, Optional`
 - `recall_engine.py:335` `RecallEngine.recall()` 末尾 (4-lane RRF 融合之后, `_log_recall`
   之前) 插入 `results = self._apply_decay_to_hits(results, now_iso=now())` — 在 audit 落盘
@@ -28,22 +36,34 @@ importance) 完全独立.
     chunk hit 走 decay; `last_recalled` NULL fallback 到 `timestamp`; vector_only 路
     `distance` 翻转成 score 再乘; timestamp 解析失败 → factor=1.5 (不抛)
 
-**为什么挂 `RecallEngine` 而不是 `Memory`?** 跟 `_apply_decay_importance` 挂
-`L2MaintenanceMixin` 同理 — 跟该方法同一调用域 (recall pipeline) 的 mixin 拥有自己
-的 constants, 避免 `recall_engine.py` → `memory.py` 的循环 import, 也让 mixin 自包含.
-`_recency_decay_factor` 从 `Memory.xxx` 改为 `RecallEngine.xxx` (本次唯一非 verbatim
-移植).
+### F1 fix — graph_only / meta_only / entity_only strategy decay 排序失效
 
-**测试:** `tests/test_p1_memory_decay.py` 16 个 case, 全过:
-- 7 个 `_recency_decay_factor` 公式 (idle=0 ceiling, procedure inf, idle→∞ baseline,
-  负 idle clamp, 未知 mtype fallback, ephemeral / preference 不同半衰期对比)
-- 7 个 `_apply_decay_to_hits` 集成 (空 results, 无效 now_iso, 实体 hit, chunk 找不到,
-  新老 chunk 重排, last_recalled→timestamp fallback, vector_only distance 翻转)
-- 2 个 `TestRecallIntegration` 静态 contract 验证 (decay 必须在 `_log_recall` 之前,
-  decay constants 挂在 `RecallEngine`)
+PR #23 cherry-pick 上 `graph_only` / `meta_only` / `entity_only` strategy 路径不
+走 `_rrf_fuse`, hit dict 既没 `rrf_score` 也没 `distance`. `_apply_decay_to_hits` 旧版
+`base_score = r.get('rrf_score', r.get('distance', 0.0) or 0.0)` 在这 3 个 strategy
+下取 `0.0` → sort 时所有分数一致 → 退化为原 SQL ORDER BY, decay 完全失效.
 
-**不在本 PR 范围内:** `pyproject.toml` + `README.md` 版本号 bump (按主人"bump 时三处一致"
-规范本应 v1.7.1 → v1.8.0, 但主人未拍板, 等独立 commit 决定).
+修法: 3 个 strategy 分支出口处显式注入 `base_score = float(r.get('importance', 0.5))`
+(只对没 `rrf_score` / `distance` 的 hit 注入, 防御性). decay 优先级改为
+`base_score > rrf_score > distance > 兜底 1.0`, 4 种 hit 形态排序都有效.
+
+### F2 fix — `_decay_factor` debug 字段泄漏到 MCP 客户端
+
+`_apply_decay_to_hits` 写入 `r["_decay_factor"] = factor` 供 audit 用, 但 `mcp_tool_handlers.
+_handle_simple` 把整个 results 列表 `json.dumps` 返给 MCP client → 下划线 debug 字段
+泄漏到外部 API 消费者.
+
+修法: `_log_recall` detail 字段注入 `_decay_factor` 写入 audit log (`recall_details_json`
+新增字段), 然后对 `results[:]` 调 `r.pop('_decay_factor', None)` 清理 hit dict. 出
+`recall()` 的 hits 干净, audit log 仍拿得到 decay 缩放因子让 analytics 分析 '老记忆被
+衰减多少'.
+
+### 测试
+
+- `tests/test_p1_memory_decay.py` 16 case (PR #23 cherry-pick 自 dirty 082a7f8, 全过)
+- `tests/test_p1_decay_fixes.py` 15 case (F1 5 + F1 sort 2 + F1 dispatch 3 + F2 3 + 整合 2, 全过)
+
+合计 31 case pass.
 
 ## v1.7.1 — 2026-08-29
 

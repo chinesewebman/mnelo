@@ -3,7 +3,7 @@
 # 跟 README hero 三行同源 (README hero = tagline + contrast vs Mem0 + 价格锚点).
 [project]
 name = "mnelo"
-version = "1.6.0"  # [P0 2026-08-15] v1.5.0 → v1.6.0 (MINOR bump): E-2 FTS5 重启 non-trigger 模式实战 (commit 3ca1502) + 1 新 P1 (user_id filter 实战暴露). 实战 P1 #66-#81 + #91 全应用. P1 #81 SIGSEGV 彻底解决. 跟 README badge + CHANGELOG 顶版本同步 tool visibility (memory_remember auto_relate 参数拓展 — @entity_id / #tag mention 解析 + 自动 relation 、规则化不调 LLM 、不抢决策）. 主人 6/29 不抢决策 iron law. 跟 README badge "Latest release" + CHANGELOG 顶版本同步; bump 时三处一致
+version = "1.8.0"  # [P1 2026-08-29] v1.7.1 → v1.8.0 (MINOR bump): P1 memory decay (PR #23 cherry-pick) + F1+F2 fixes (graph_only/meta_only/entity_only decay 排序失效 + _decay_factor MCP 客户端泄漏). 实战 P1 recall-time recency scaling. 跟 README badge "Latest release" + CHANGELOG 顶版本同步; bump 时三处一致
 description = "Local-first knowledge-graph memory layer for AI agents — 4-way RRF recall, optional L2 maintenance, bilingual zero-LLM classifier, all in one SQLite file. Runs on a $10/year VPS with usearch f16."
 readme = "README.md"
 requires-python = ">=3.10"
