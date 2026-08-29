@@ -70,11 +70,7 @@ def main() -> int:
 
         # [4] Verify v1 and v2 are soft-deleted (valid_until IS NOT NULL).
         print("\n[4] verify version history:")
-        rows = m._conn.execute(
-            "SELECT id, valid_until, content, source FROM chunks "
-            "WHERE source = 'example_04:versioned' OR source LIKE 'update:example_04_update%' "
-            "ORDER BY rowid"
-        ).fetchall()
+        rows = m._conn.execute("SELECT id, valid_until, content, source FROM chunks WHERE source = 'example_04:versioned' OR source LIKE 'update:example_04_update%' ORDER BY rowid").fetchall()
         for r in rows:
             status = "ACTIVE" if r["valid_until"] is None else "superseded"
             print(f"  {r[0]:50s} [{status}] (source={r[3]})")
@@ -105,14 +101,8 @@ def _print_vector_state(m: Memory, label: str) -> None:
     """Print current chunks / vectors count for this example."""
     # v0.5.6 update() sets source='update:<reason>' on the new chunk,
     # so we need to match both 'example_04:versioned' (v1) and 'update:example_04_update' (v2+).
-    chunks = m._conn.execute(
-        "SELECT count(*) FROM chunks WHERE source = 'example_04:versioned' OR source LIKE 'update:example_04_update%'"
-    ).fetchone()[0]
-    active_chunks = m._conn.execute(
-        "SELECT count(*) FROM chunks "
-        "WHERE (source = 'example_04:versioned' OR source LIKE 'update:example_04_update%') "
-        "  AND valid_until IS NULL"
-    ).fetchone()[0]
+    chunks = m._conn.execute("SELECT count(*) FROM chunks WHERE source = 'example_04:versioned' OR source LIKE 'update:example_04_update%'").fetchone()[0]
+    active_chunks = m._conn.execute("SELECT count(*) FROM chunks WHERE (source = 'example_04:versioned' OR source LIKE 'update:example_04_update%')   AND valid_until IS NULL").fetchone()[0]
     # [8/9 P1 follow-up] 8/5 起 vectors 走 usearch index (memory.py:1646-1651), sqlite_vec
     # vec0 表恒 0. 直接用 m._index.size() 拿 usearch 向量数.
     try:
@@ -128,9 +118,7 @@ def _print_vector_state(m: Memory, label: str) -> None:
 
 def _cleanup(m: Memory) -> None:
     """Hard-delete everything created by this example."""
-    chunk_rows = m._conn.execute(
-        "SELECT rowid FROM chunks WHERE source LIKE 'example_04:%' OR source LIKE 'update:example_04_update%'"
-    ).fetchall()
+    chunk_rows = m._conn.execute("SELECT rowid FROM chunks WHERE source LIKE 'example_04:%' OR source LIKE 'update:example_04_update%'").fetchall()
     if chunk_rows:
         rowids = [r["rowid"] for r in chunk_rows]
         placeholders = ",".join("?" * len(rowids))

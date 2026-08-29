@@ -98,7 +98,7 @@ def repair(backend: str, db_path: Path, dry_run: bool = False) -> dict:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         # 取所有活跃 chunk_id
-        alive = set(r[0] for r in conn.execute("SELECT id FROM chunks WHERE valid_until IS NULL"))
+        alive = {r[0] for r in conn.execute("SELECT id FROM chunks WHERE valid_until IS NULL")}
         if isinstance(idx, UsearchIndex):
             rowids = _iter_index_ids_usearch(idx)
             import numpy as _np

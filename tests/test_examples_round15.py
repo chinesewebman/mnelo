@@ -63,6 +63,7 @@ class TestExamples:
             # 运维监控而非 test 关键断言 — chunk 实际写入成功 (memory.remember 抛异常
             # 就不返回 cid). 改: 只校验 drift 行能 parse 出整数, 数值范围只记录不 fail.
             import re as _re
+
             drift_match = _re.search(r"drift \(vecs - active\):\s*(-?\d+)", line)
             assert drift_match, f"drift line unparseable: {line}"
 
@@ -111,9 +112,7 @@ class TestCleanup:
             assert not leftovers, f"cleanup left {len(leftovers)} example chunks: {leftovers[:3]}"
 
             ents = m._conn.execute(
-                "SELECT id FROM entities "
-                "WHERE id LIKE 'mnelo_project_demo' OR id LIKE 'example_stock_002' "
-                "OR id LIKE 'example_03_%' OR id LIKE 'identity:profession:example_05_%'"
+                "SELECT id FROM entities WHERE id LIKE 'mnelo_project_demo' OR id LIKE 'example_stock_002' OR id LIKE 'example_03_%' OR id LIKE 'identity:profession:example_05_%'"
             ).fetchall()
             assert not ents, f"cleanup left {len(ents)} example entities: {[e[0] for e in ents[:3]]}"
         finally:

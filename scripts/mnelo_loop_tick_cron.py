@@ -27,7 +27,6 @@ spawn (memory_task_create). 不直接调 task_create.
 import argparse
 import json
 import os
-import subprocess
 import sys
 import time
 from datetime import datetime
@@ -161,7 +160,7 @@ def _run(args) -> int:
 
     # 2. 过滤 threshold
     if args.threshold > 0:
-        loops = [l for l in loops if (l.get("interval_hours") or 24) >= args.threshold]
+        loops = [loop for loop in loops if (loop.get("interval_hours") or 24) >= args.threshold]
         _log(f"after threshold filter: {len(loops)} loops")
 
     # 3. 对每个 loop 跑 tick, 收集 due
@@ -252,8 +251,9 @@ def _write_audit_log(summary: dict) -> None:
     Proposal 模式 (DESIGN §4.4): pass_name='loop_tick_cron', status='due_found'.
     Agent / 用户 评估后用 memory_apply_proposal() 走 applied.
     """
-    import memory
     import uuid
+
+    import memory
 
     run_id = f"loop_tick_cron-{summary['ts']}-{uuid.uuid4().hex[:8]}"
     try:

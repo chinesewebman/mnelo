@@ -30,8 +30,7 @@ os.umask(0o077)
 import sqlite3
 import subprocess
 import sys
-import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # [7/18 patch F] i18n — import t() as _t for message resolution
@@ -195,8 +194,8 @@ def db_stats(db_path):
         # 注意: 不调 si.close() — usearch 的 close() 会 save() 写盘, 可能覆盖
         # 运行中 server 内存里未落盘的 add; 本进程是短命 CLI, 退出即释放.
         try:
-            from search_index import build_search_index as _bi
             from config import config as _cfg
+            from search_index import build_search_index as _bi
 
             si = _bi(_cfg.search_backend, db_path, _cfg.embedder_dim)
             v = si.size()
@@ -348,9 +347,8 @@ def main():
 
     # 3.5 Search backend (DESIGN §3.6/§8.3)
     try:
-        from search_index import usearch_available, zvec_available
-
         from config import config as _cfg
+        from search_index import usearch_available, zvec_available
 
         want = _cfg.search_backend
         # [8/6 plan §8] 向量库必选二选一; auto 走可用性链解析 active.
@@ -404,19 +402,19 @@ def main():
     active = sb.get("active")
     if configured == "auto":
         if active == "zvec":
-            lines.append(f"✅ Search backend — auto → zvec (HNSW + FTS, INT8)")
+            lines.append("✅ Search backend — auto → zvec (HNSW + FTS, INT8)")
         elif active == "usearch":
-            lines.append(f"✅ Search backend — auto → usearch (HNSW, f16)")
+            lines.append("✅ Search backend — auto → usearch (HNSW, f16)")
         else:
-            lines.append(f"❌ Search backend — auto 但 zvec/usearch 均不可用")
+            lines.append("❌ Search backend — auto 但 zvec/usearch 均不可用")
     elif configured == "zvec" and active == "zvec":
-        lines.append(f"✅ Search backend — zvec (HNSW + FTS, INT8)")
+        lines.append("✅ Search backend — zvec (HNSW + FTS, INT8)")
     elif configured == "zvec" and active == "unavailable":
-        lines.append(f"❌ Search backend — configured zvec, 不可用 (CPU 不支持)")
+        lines.append("❌ Search backend — configured zvec, 不可用 (CPU 不支持)")
     elif configured == "usearch" and active == "usearch":
-        lines.append(f"✅ Search backend — usearch (HNSW, f16)")
+        lines.append("✅ Search backend — usearch (HNSW, f16)")
     elif configured == "usearch" and active == "unavailable":
-        lines.append(f"❌ Search backend — configured usearch, 未安装")
+        lines.append("❌ Search backend — configured usearch, 未安装")
     else:
         lines.append(f"❌ Search backend — configured {configured}, active {active}")
     mcp = report["checks"]["mcp_server"]

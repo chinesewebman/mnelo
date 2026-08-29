@@ -15,18 +15,17 @@ import_holdings.py — 从 ~/.hermes/state/holdings_*.json 导入持仓快照到
 - valid_until: 不设 (快照是事实陈述, 不假设过期; 新快照 supersede)
 """
 
-import sys
-import json
 import glob
+import json
 import sqlite3
+import sys
 from pathlib import Path
 
 # [7/19 P1-5] import validation
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from validation import validate_holding_payload, ValidationError
-
 # [7/21 fix] 不再硬编码, 从 config/env 解析 (env > ~/.hermes/...)
 from config import resolve_db_path as _resolve_db_path
+from validation import ValidationError, validate_holding_payload
 
 DB_PATH = _resolve_db_path()
 STATE_DIR = Path(__import__("os").environ.get("MNELO_STATE_DIR", str(Path.home() / ".hermes" / "state")))
@@ -178,7 +177,7 @@ def main(dry_run: bool = False):
             stats["stock_entities_new" if stock_id else "stock_entities_existing"] += 0
             # 改: 上面没法判断"新建/已存在"; 先看是不是新建
             # 简化: 看 metadata
-            cur2 = con.execute("select properties_json from entities where id=? and valid_until IS NULL", (stock_id,))
+            con.execute("select properties_json from entities where id=? and valid_until IS NULL", (stock_id,))
             # 这里建实体后必在,简化: 不区分
 
             # 2. 持仓快照 entity

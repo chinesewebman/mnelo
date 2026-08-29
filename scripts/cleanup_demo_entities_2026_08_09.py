@@ -35,7 +35,6 @@ import argparse
 import sys
 from pathlib import Path
 
-
 DB_PATH = Path("~/.hermes/memory/memory.db").expanduser()
 DEMO_PREFIX = "main_block_demo_"
 
@@ -76,16 +75,16 @@ def main() -> int:
         for ent in demo_entities:
             by_kind[ent[1]] = by_kind.get(ent[1], 0) + 1
 
-        print(f"=== Demo entities cleanup ===")
+        print("=== Demo entities cleanup ===")
         print(f"db: {db_path}")
         print(f"total demo entities: {len(demo_entities)}")
-        print(f"by kind:")
+        print("by kind:")
         for kind, cnt in sorted(by_kind.items()):
             print(f"  {kind}: {cnt}")
         print()
 
         # 显示前 10 个样本
-        print(f"sample (first 10):")
+        print("sample (first 10):")
         for ent in demo_entities[:10]:
             print(f"  {ent[0]} | {ent[1]} | src={ent[2] or '-'} | imp={ent[3]} | confirmed={ent[4]}")
         if len(demo_entities) > 10:
@@ -95,11 +94,11 @@ def main() -> int:
         if not args.yes:
             print("=== DRY RUN (--yes to actually delete) ===")
             print(f"将软删 {len(demo_entities)} 条 entities (走 Memory.forget 接口)")
-            print(f"audit_log + purged_queue 自动写, 30 天内 memory_audit_undo 可恢复")
+            print("audit_log + purged_queue 自动写, 30 天内 memory_audit_undo 可恢复")
             return 0
 
         # 真删 — 走 Memory.forget, 自动 audit_log + purged_queue
-        print(f"=== DELETING (via Memory.forget interface) ===")
+        print("=== DELETING (via Memory.forget interface) ===")
         for i, ent in enumerate(demo_entities, 1):
             try:
                 m.forget(
@@ -114,7 +113,7 @@ def main() -> int:
                 print(f"  {i}/{len(demo_entities)} deleted")
         m._conn.commit()
         print(f"✓ {len(demo_entities)} entities soft-deleted (audit_log + purged_queue)")
-        print(f"30 天内可用 memory_audit_undo(<audit_id>) 恢复")
+        print("30 天内可用 memory_audit_undo(<audit_id>) 恢复")
         return 0
     finally:
         m._conn.close()

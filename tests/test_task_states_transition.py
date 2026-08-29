@@ -11,6 +11,7 @@ DESIGN §11 M2 — 行为 (transition CAS):
   small + idempotent: 4 tests, run under --noconftest with backend=usearch
   (zvec lock conflict).  fixture prefix 'task:tlm2-' avoided collision with M1.
 """
+
 import json
 import os
 import sys
@@ -21,12 +22,14 @@ sys.path.insert(0, str(_REPO))
 
 import importlib.util as _ilu
 
+
 def _load(name: str):
     spec = _ilu.spec_from_file_location(name, _REPO / f"{name}.py")
     mod = _ilu.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
+
 
 _load("config")
 _load("embedder")
@@ -55,8 +58,7 @@ def _mk_task(m, suffix: str, props: dict = None) -> str:
         (tid, "task", f"tlm2-{suffix}", json.dumps(props or {})),
     )
     m._conn.execute(
-        "INSERT INTO task_states (task_id, state, valid_from, created_at) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO task_states (task_id, state, valid_from, created_at) VALUES (?, ?, ?, ?)",
         (tid, "open", "2026-08-06T10:00", "2026-08-06T10:00"),
     )
     m._conn.commit()
@@ -71,7 +73,9 @@ def test_transition_ok_closes_old_opens_new():
         tid = _mk_task(m, "ok")
 
         result = ts_mod.transition(
-            m._conn, task_id=tid, to_state="in_progress",
+            m._conn,
+            task_id=tid,
+            to_state="in_progress",
             reason="agent A: handoff to B",
             now="2026-08-06T10:30",
         )
@@ -86,13 +90,12 @@ def test_transition_ok_closes_old_opens_new():
         windows = [
             tuple(r)
             for r in m._conn.execute(
-                "SELECT state, valid_from, valid_until FROM task_states "
-                "WHERE task_id=? ORDER BY id",
+                "SELECT state, valid_from, valid_until FROM task_states WHERE task_id=? ORDER BY id",
                 (tid,),
             )
         ]
         assert windows == [
-            ("open",        "2026-08-06T10:00", "2026-08-06T10:30"),
+            ("open", "2026-08-06T10:00", "2026-08-06T10:30"),
             ("in_progress", "2026-08-06T10:30", None),
         ]
     finally:
@@ -108,7 +111,9 @@ def test_transition_invalid_graph_rejected():
 
         try:
             ts_mod.transition(
-                m._conn, task_id=tid, to_state="waiting",
+                m._conn,
+                task_id=tid,
+                to_state="waiting",
                 reason="should fail",
                 now="2026-08-06T10:30",
             )
@@ -138,8 +143,12 @@ def test_transition_force_requires_reason():
         # 1. force=True + reason 为空 → 拒
         try:
             ts_mod.transition(
-                m._conn, task_id=tid, to_state="waiting",
-                reason="", force=True, now="2026-08-06T10:30",
+                m._conn,
+                task_id=tid,
+                to_state="waiting",
+                reason="",
+                force=True,
+                now="2026-08-06T10:30",
             )
         except ts_mod.ReasonRequiredError as e:
             assert e.field == "reason"
@@ -148,9 +157,12 @@ def test_transition_force_requires_reason():
 
         # 2. force=True + reason 有值 → 绕过允许图 (允许: open→waiting 是非标准)
         result = ts_mod.transition(
-            m._conn, task_id=tid, to_state="waiting",
+            m._conn,
+            task_id=tid,
+            to_state="waiting",
             reason="纠正: 跳级转移, 上游确认",
-            force=True, now="2026-08-06T10:30",
+            force=True,
+            now="2026-08-06T10:30",
         )
         assert result["to_state"] == "waiting"
     finally:
@@ -165,19 +177,28 @@ def test_transition_reopen_done_to_open():
         tid = _mk_task(m, "reopen")
         # 推到 done: open → in_progress → done
         ts_mod.transition(
-            m._conn, task_id=tid, to_state="in_progress",
-            reason="开始", now="2026-08-06T10:05",
+            m._conn,
+            task_id=tid,
+            to_state="in_progress",
+            reason="开始",
+            now="2026-08-06T10:05",
         )
         ts_mod.transition(
-            m._conn, task_id=tid, to_state="done",
-            reason="完成", now="2026-08-06T10:30",
+            m._conn,
+            task_id=tid,
+            to_state="done",
+            reason="完成",
+            now="2026-08-06T10:30",
         )
 
         # 此时 from_state=done. done→in_progress 应被 step 1.2 拦截 (terminal).
         try:
             ts_mod.transition(
-                m._conn, task_id=tid, to_state="in_progress",
-                reason="bad", now="2026-08-06T10:45",
+                m._conn,
+                task_id=tid,
+                to_state="in_progress",
+                reason="bad",
+                now="2026-08-06T10:45",
             )
         except ts_mod.InvalidTransitionError:
             pass
@@ -186,7 +207,9 @@ def test_transition_reopen_done_to_open():
 
         # done→open reopen 允许 (D8 逃生门)
         result = ts_mod.transition(
-            m._conn, task_id=tid, to_state="open",
+            m._conn,
+            task_id=tid,
+            to_state="open",
             reason="reopen 逃生门: 客户调整",
             now="2026-08-06T11:00",
         )

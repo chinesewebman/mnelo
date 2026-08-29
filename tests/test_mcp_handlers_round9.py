@@ -201,18 +201,24 @@ class TestHandleSearchRelationsFullPath:
         mem.relate(a_id, b_id, "r9_test_rel_2", weight=0.5)
         mem._conn.commit()
         # Future asof should still find it
-        result = _mcp_repo._call_tool("memory_search_relations", {
+        result = _mcp_repo._call_tool(
+            "memory_search_relations",
+            {
                 "relation": "r9_test_rel_2",
                 "asof": "2099-12-31T00:00:00",
-            })
+            },
+        )
         data = json.loads(result)
         assert isinstance(data, dict)
 
     def test_search_relations_no_results(self, mem, clean_prefix):
         """Nonexistent relation type → empty list."""
-        result = _mcp_repo._call_tool("memory_search_relations", {
+        result = _mcp_repo._call_tool(
+            "memory_search_relations",
+            {
                 "relation": "definitely_does_not_exist_xyz",
-            })
+            },
+        )
         data = json.loads(result)
         assert data["relations"] == []
         assert data["count"] == 0
@@ -233,10 +239,13 @@ class TestHandleSearchRelationsFullPath:
             )
             mem.relate(a_id, b_id, "r9_many_rels", weight=0.5)
         mem._conn.commit()
-        result = _mcp_repo._call_tool("memory_search_relations", {
+        result = _mcp_repo._call_tool(
+            "memory_search_relations",
+            {
                 "relation": "r9_many_rels",
                 "limit": 2,
-            })
+            },
+        )
         data = json.loads(result)
         assert data["count"] <= 2
 

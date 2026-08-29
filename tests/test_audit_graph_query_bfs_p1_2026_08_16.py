@@ -4,6 +4,7 @@ Owner fix priority #4 (perf hit, ~4.6s/day wasted on N+1).
 Original: per-hop × per-frontier-node SELECT (60 round-trip for 3-hop frontier=20).
 Fix: per-hop batch IN(...) (3 round-trip total).
 """
+
 import sys
 from pathlib import Path
 

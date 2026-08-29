@@ -10,6 +10,7 @@
 
 不依赖 LIVE DB, 纯函数测试。
 """
+
 import unittest
 
 from classify import (
@@ -89,8 +90,7 @@ class TestMarkersSchema(unittest.TestCase):
         """[8/4 fix] 交易动作 (建仓/买入/卖出/清仓/加仓/减仓) 在 episode cn_action"""
         action_markers = _MARKERS["episode"]["cn_action"]
         for required in ("建仓", "买入", "卖出", "清仓", "加仓", "减仓"):
-            self.assertIn(required, action_markers,
-                          f"episode.cn_action 缺交易动作 '{required}'")
+            self.assertIn(required, action_markers, f"episode.cn_action 缺交易动作 '{required}'")
 
 
 # ============================================================
@@ -187,8 +187,7 @@ class TestClassifyMatrix(unittest.TestCase):
         """[8/4 v0.2 fix] 记录一下做周报的步骤 → 期望 None (v0.2 弱化动词型; 强标记"步骤 1." 才标)"""
         # v0.1 标 procedure; v0.2 改 None (避免 system note 误伤)
         result = classify_memory_type("记录一下做周报的步骤")
-        self.assertIn(result, [None, "procedure"],
-            f"v0.2 期望 None (弱化动词型), 实际: {result}")
+        self.assertIn(result, [None, "procedure"], f"v0.2 期望 None (弱化动词型), 实际: {result}")
 
     def test_10b_procedure_strict_numbered(self):
         """[8/4 v0.2 新强标记] 步骤 1. 2. 3. 形式 → procedure (regex 匹配)"""
@@ -209,8 +208,7 @@ class TestClassifyMatrix(unittest.TestCase):
         实际: 这种表达在主人 chunk 里频繁出现 (system note / 总结), v0.2 改 None 避免误伤
         v0.1 spec §5.2 主人特意设计的演示 case, 实际极少出现这种"动词+周报" 模板"""
         result = classify_memory_type("記錄一下做週報的步驟")
-        self.assertIn(result, [None, "procedure"],
-            f"v0.2 期望 None (弱化动词型), 实际: {result}")
+        self.assertIn(result, [None, "procedure"], f"v0.2 期望 None (弱化动词型), 实际: {result}")
 
     def test_11b_procedure_real_first_person(self):
         """[8/4 v0.2] 真第一人称 procedure (我每周做周报的步骤) → procedure"""

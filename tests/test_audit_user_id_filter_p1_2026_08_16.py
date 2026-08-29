@@ -7,6 +7,7 @@ Owner fix痛点优先级 #1 (跨用户数据泄漏 = production 安全 P1).
 测试范围: user_id + run_id 在 vector_only / meta_only / rrf 策略下都生效.
 回归保护: 旧数据无 user_id 时不被误过滤 (跟 agent_id 同款 json_extract NULL 兼容).
 """
+
 import sys
 from pathlib import Path
 
@@ -51,6 +52,7 @@ def _seed_two_users(mem):
 
 # === fix痛点 #7: user_id filter recall ===
 
+
 def test_user_id_filter_isolates_users(mem):
     """fix痛点 #7: filter user_id='alice' 应该只返 alice, 不返 bob."""
     _seed_two_users(mem)
@@ -60,9 +62,7 @@ def test_user_id_filter_isolates_users(mem):
     contents = [r["content"] for r in results]
     # 必须不返 bob
     bob_leaked = [c for c in contents if "500 股" in c]
-    assert len(bob_leaked) == 0, (
-        f"fix痛点 #7 CONFIRMED: user_id='alice' filter 漏返 bob 内容: {bob_leaked}"
-    )
+    assert len(bob_leaked) == 0, f"fix痛点 #7 CONFIRMED: user_id='alice' filter 漏返 bob 内容: {bob_leaked}"
     # 必须返 alice
     assert any("1000 股" in c for c in contents), "filter 应该返 alice 内容"
 
@@ -75,9 +75,7 @@ def test_run_id_filter_isolates_runs(mem):
 
     contents = [r["content"] for r in results]
     bob_leaked = [c for c in contents if "1000 股" in c]
-    assert len(bob_leaked) == 0, (
-        f"fix痛点 #7 CONFIRMED: run_id='bob_run_1' filter 漏返 alice 内容: {bob_leaked}"
-    )
+    assert len(bob_leaked) == 0, f"fix痛点 #7 CONFIRMED: run_id='bob_run_1' filter 漏返 alice 内容: {bob_leaked}"
 
 
 def test_no_user_id_filter_returns_all(mem):
@@ -108,9 +106,7 @@ def test_legacy_chunks_without_user_id_excluded_when_filter_active(mem):
     contents = [r["content"] for r in results]
     # 严格隔离语义: 旧数据 (无 user_id tag) 不应该被 user_id filter 召回
     legacy_leaked = [c for c in contents if "2020 老数据" in c]
-    assert len(legacy_leaked) == 0, (
-        f"fix痛点 fix 后, 旧数据 (无 user_id tag) 不应被 user_id filter 召回: {legacy_leaked}"
-    )
+    assert len(legacy_leaked) == 0, f"fix痛点 fix 后, 旧数据 (无 user_id tag) 不应被 user_id filter 召回: {legacy_leaked}"
 
 
 def test_legacy_chunks_visible_without_filter(mem):
@@ -124,6 +120,4 @@ def test_legacy_chunks_visible_without_filter(mem):
     # 不传 filter — 应该召回所有 (含旧数据)
     results = mem.recall(query="茅台", filters={}, top_k=10)
     contents = [r["content"] for r in results]
-    assert any("2020 老数据" in c for c in contents), (
-        "不传 filter 时, 旧数据应该正常召回"
-    )
+    assert any("2020 老数据" in c for c in contents), "不传 filter 时, 旧数据应该正常召回"

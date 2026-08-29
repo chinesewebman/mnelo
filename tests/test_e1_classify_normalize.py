@@ -21,6 +21,7 @@
   - 这两个是已知的漏分类 / 误分类 case, 测试改文档化 + 期望值反映
     *当前* 行为, 等 P1a v0.3 一并修.
 """
+
 import importlib.util as _ilu
 import sys
 from pathlib import Path
@@ -48,9 +49,7 @@ _clf = _load_classify()
 def test_e1_normalize_t2s_converts_traditional_to_simplified():
     """[E1 §1.2] 繁体 → 简体: '我覺得這個方案不錯' → '我觉得这个方案不错'."""
     result = _clf._normalize("我覺得這個方案不錯")
-    assert result == "我觉得这个方案不错", (
-        f"_normalize 繁→简失败: got {result!r}"
-    )
+    assert result == "我觉得这个方案不错", f"_normalize 繁→简失败: got {result!r}"
 
 
 def test_e1_normalize_passes_through_simplified_chinese():
@@ -114,9 +113,7 @@ def test_e1_markers_each_has_cn_section():
 
 def test_e1_classify_module_exposes_classify_memory_type():
     """[E1] classify.py 应暴露 classify_memory_type() 函数."""
-    assert hasattr(_clf, "classify_memory_type"), (
-        "classify.py 必须含 classify_memory_type() 函数 (即便 stub)"
-    )
+    assert hasattr(_clf, "classify_memory_type"), "classify.py 必须含 classify_memory_type() 函数 (即便 stub)"
 
 
 # ===== [8/9 review B14] 行为断言补全 =====
@@ -232,9 +229,7 @@ def test_e1b_third_party_subject_does_not_misclassify():
         t = _clf.classify_memory_type(text)
         # decision 强标记 today/sale 不会因 "The assistant decided" 触发
         # (强制 "I decided to" 才触发)
-        assert t not in ("decision", "preference"), (
-            f"第三人称叙事防误伤失败: {text!r} → {t}"
-        )
+        assert t not in ("decision", "preference"), f"第三人称叙事防误伤失败: {text!r} → {t}"
 
 
 def test_e1b_known_limitations_documented():
@@ -247,11 +242,7 @@ def test_e1b_known_limitations_documented():
     """
     # 限制 1: 中文 decision + episode 同时命中, 走 episode (P1a v0.2 行为)
     t = _clf.classify_memory_type("我今天决定买入 sh600021")
-    assert t == "episode", (
-        f"P1a v0.2 已知限制 1: '我今天决定买入' 触发 episode (priority 不命中). got {t}"
-    )
+    assert t == "episode", f"P1a v0.2 已知限制 1: '我今天决定买入' 触发 episode (priority 不命中). got {t}"
     # 限制 2: 'Review the conversation: 我决定卖出' 触发 decision
     t = _clf.classify_memory_type("Review the conversation: 我决定卖出")
-    assert t == "decision", (
-        f"P1a v0.2 已知限制 2: 'Review the conversation' 引用块排除不命中. got {t}"
-    )
+    assert t == "decision", f"P1a v0.2 已知限制 2: 'Review the conversation' 引用块排除不命中. got {t}"

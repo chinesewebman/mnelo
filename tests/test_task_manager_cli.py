@@ -16,6 +16,7 @@
 [CLI-R4] main() 捕获 task_states 异常 — 测试用例覆盖故意失败 (unknown id) 校验
   返回非 0 exit code.
 """
+
 import json
 import os
 import sqlite3
@@ -32,6 +33,7 @@ def _live_db() -> Path:
     """Resolve live memory.db via repo config (不硬编码绝对路径)."""
     sys.path.insert(0, str(_REPO))
     from config import resolve_db_path
+
     return resolve_db_path()
 
 
@@ -43,18 +45,8 @@ def _setup_clean():
     conn = sqlite3.connect(str(db))
     try:
         conn.execute("PRAGMA foreign_keys = OFF")
-        conn.execute(
-            "DELETE FROM task_states WHERE task_id LIKE 'task:20260806-cli-%' "
-            "OR task_id LIKE 'loop:cli%' "
-            "OR task_id LIKE 'task:cli%' "
-            "OR task_id LIKE 'loop:%cli-%'"
-        )
-        conn.execute(
-            "DELETE FROM entities WHERE id LIKE 'task:20260806-cli-%' "
-            "OR id LIKE 'loop:cli%' "
-            "OR id LIKE 'task:cli%' "
-            "OR id LIKE 'loop:%cli-%'"
-        )
+        conn.execute("DELETE FROM task_states WHERE task_id LIKE 'task:20260806-cli-%' OR task_id LIKE 'loop:cli%' OR task_id LIKE 'task:cli%' OR task_id LIKE 'loop:%cli-%'")
+        conn.execute("DELETE FROM entities WHERE id LIKE 'task:20260806-cli-%' OR id LIKE 'loop:cli%' OR id LIKE 'task:cli%' OR id LIKE 'loop:%cli-%'")
         conn.execute("PRAGMA foreign_keys = ON")
         conn.commit()
     finally:
@@ -98,10 +90,17 @@ def _run(args: list) -> tuple:
 
 def test_cli_create_task():
     _setup_clean()
-    rc, out, err, _ = _run([
-        "create", "--kind", "task", "--name", "cli-a",
-        "--now", "2026-08-06T10:00",
-    ])
+    rc, out, err, _ = _run(
+        [
+            "create",
+            "--kind",
+            "task",
+            "--name",
+            "cli-a",
+            "--now",
+            "2026-08-06T10:00",
+        ]
+    )
     assert rc == 0, f"rc={rc}, stderr={err[:300]}"
     data = _extract_json(out)
     assert data["task_id"] == "task:20260806-cli-a"
@@ -110,11 +109,21 @@ def test_cli_create_task():
 
 def test_cli_create_loop():
     _setup_clean()
-    rc, out, err, _ = _run([
-        "create", "--kind", "loop", "--name", "cli-l",
-        "--trigger", "x", "--interval-hours", "12",
-        "--now", "2026-08-06T09:00",
-    ])
+    rc, out, err, _ = _run(
+        [
+            "create",
+            "--kind",
+            "loop",
+            "--name",
+            "cli-l",
+            "--trigger",
+            "x",
+            "--interval-hours",
+            "12",
+            "--now",
+            "2026-08-06T09:00",
+        ]
+    )
     assert rc == 0, f"rc={rc}, stderr={err[:300]}"
     data = _extract_json(out)
     assert data["loop_id"] == "loop:cli-l"
@@ -124,11 +133,20 @@ def test_cli_create_loop():
 
 def test_cli_create_loop_disabled():
     _setup_clean()
-    rc, out, err, _ = _run([
-        "create", "--kind", "loop", "--name", "cli-dormant",
-        "--trigger", "x", "--disabled",
-        "--now", "2026-08-06T09:00",
-    ])
+    rc, out, err, _ = _run(
+        [
+            "create",
+            "--kind",
+            "loop",
+            "--name",
+            "cli-dormant",
+            "--trigger",
+            "x",
+            "--disabled",
+            "--now",
+            "2026-08-06T09:00",
+        ]
+    )
     assert rc == 0, f"rc={rc}, stderr={err[:300]}"
     data = _extract_json(out)
     assert data["enabled"] is False
@@ -136,17 +154,31 @@ def test_cli_create_loop_disabled():
 
 def test_cli_move():
     _setup_clean()
-    rc, out, err, _ = _run([
-        "create", "--kind", "task", "--name", "cli-move",
-        "--now", "2026-08-06T10:00",
-    ])
+    rc, out, err, _ = _run(
+        [
+            "create",
+            "--kind",
+            "task",
+            "--name",
+            "cli-move",
+            "--now",
+            "2026-08-06T10:00",
+        ]
+    )
     tid = _extract_json(out)["task_id"]
 
-    rc, out, err, _ = _run([
-        "move", tid, "--to", "in_progress",
-        "--reason", "start",
-        "--now", "2026-08-06T10:05",
-    ])
+    rc, out, err, _ = _run(
+        [
+            "move",
+            tid,
+            "--to",
+            "in_progress",
+            "--reason",
+            "start",
+            "--now",
+            "2026-08-06T10:05",
+        ]
+    )
     assert rc == 0, f"rc={rc}, stderr={err[:300]}"
     data = _extract_json(out)
     assert data["from_state"] == "open"
@@ -155,10 +187,8 @@ def test_cli_move():
 
 def test_cli_list_tasks():
     _setup_clean()
-    _run(["create", "--kind", "task", "--name", "cli-list1",
-          "--now", "2026-08-06T10:00"])
-    _run(["create", "--kind", "task", "--name", "cli-list2",
-          "--now", "2026-08-06T10:01"])
+    _run(["create", "--kind", "task", "--name", "cli-list1", "--now", "2026-08-06T10:00"])
+    _run(["create", "--kind", "task", "--name", "cli-list2", "--now", "2026-08-06T10:01"])
     rc, out, err, _ = _run(["list", "--kind", "task", "--limit", "50"])
     assert rc == 0, f"rc={rc}, stderr={err[:300]}"
     data = _extract_json(out)
@@ -169,13 +199,19 @@ def test_cli_list_tasks():
 
 def test_cli_replay():
     _setup_clean()
-    rc, out, err, _ = _run([
-        "create", "--kind", "task", "--name", "cli-replay",
-        "--now", "2026-08-06T10:00",
-    ])
+    rc, out, err, _ = _run(
+        [
+            "create",
+            "--kind",
+            "task",
+            "--name",
+            "cli-replay",
+            "--now",
+            "2026-08-06T10:00",
+        ]
+    )
     tid = _extract_json(out)["task_id"]
-    _run(["move", tid, "--to", "in_progress",
-          "--reason", "start", "--now", "2026-08-06T10:05"])
+    _run(["move", tid, "--to", "in_progress", "--reason", "start", "--now", "2026-08-06T10:05"])
 
     rc, out, err, _ = _run(["replay", tid])
     assert rc == 0, f"rc={rc}, stderr={err[:300]}"
@@ -186,10 +222,19 @@ def test_cli_replay():
 
 def test_cli_tick_due():
     _setup_clean()
-    rc, out, err, _ = _run([
-        "create", "--kind", "loop", "--name", "cli-tick",
-        "--trigger", "x", "--now", "2026-08-06T09:00",
-    ])
+    rc, out, err, _ = _run(
+        [
+            "create",
+            "--kind",
+            "loop",
+            "--name",
+            "cli-tick",
+            "--trigger",
+            "x",
+            "--now",
+            "2026-08-06T09:00",
+        ]
+    )
     lid = _extract_json(out)["loop_id"]
 
     rc, out, err, _ = _run(["tick", lid, "--now", "2026-08-06T10:00"])
@@ -200,10 +245,8 @@ def test_cli_tick_due():
 
 def test_cli_loop_list_enabled_only():
     _setup_clean()
-    _run(["create", "--kind", "loop", "--name", "cli-on",
-          "--trigger", "x", "--now", "2026-08-06T09:00"])
-    _run(["create", "--kind", "loop", "--name", "cli-off",
-          "--trigger", "x", "--disabled", "--now", "2026-08-06T09:01"])
+    _run(["create", "--kind", "loop", "--name", "cli-on", "--trigger", "x", "--now", "2026-08-06T09:00"])
+    _run(["create", "--kind", "loop", "--name", "cli-off", "--trigger", "x", "--disabled", "--now", "2026-08-06T09:01"])
 
     rc, out, err, _ = _run(["list", "--kind", "loop", "--enabled-only"])
     assert rc == 0, f"rc={rc}, stderr={err[:300]}"
@@ -216,17 +259,23 @@ def test_cli_loop_list_enabled_only():
 def test_cli_priority_zero_passes_through():
     """[CLI-R3] --priority 0 不被 `or 3` 吞 — 实测 properties_json.priority == 0."""
     _setup_clean()
-    rc, out, err, db = _run([
-        "create", "--kind", "task", "--name", "cli-prio",
-        "--priority", "0",
-        "--now", "2026-08-06T10:00",
-    ])
+    rc, out, err, db = _run(
+        [
+            "create",
+            "--kind",
+            "task",
+            "--name",
+            "cli-prio",
+            "--priority",
+            "0",
+            "--now",
+            "2026-08-06T10:00",
+        ]
+    )
     assert rc == 0, f"rc={rc}, stderr={err[:300]}"
     conn = sqlite3.connect(str(db))
     try:
-        row = conn.execute(
-            "SELECT properties_json FROM entities WHERE kind='task' AND name='cli-prio'"
-        ).fetchone()
+        row = conn.execute("SELECT properties_json FROM entities WHERE kind='task' AND name='cli-prio'").fetchone()
         assert row is not None, "cli-prio task entity not found"
         cfg = json.loads(row[0])
         assert cfg.get("priority") == 0, f"priority 0 was swallowed: {cfg}"
@@ -237,13 +286,18 @@ def test_cli_priority_zero_passes_through():
 def test_cli_move_unknown_id_returns_nonzero():
     """[CLI-R4] move 未知 task_id — main 应捕获 + 友好错 (非裸 Traceback)."""
     _setup_clean()
-    rc, out, err, _ = _run([
-        "move", "task:nonexistent", "--to", "done",
-        "--reason", "test",
-    ])
+    rc, out, err, _ = _run(
+        [
+            "move",
+            "task:nonexistent",
+            "--to",
+            "done",
+            "--reason",
+            "test",
+        ]
+    )
     assert rc != 0, f"expected non-zero exit, got {rc}, stderr={err[:300]}"
     # 期望 stderr 或 stdout 含 TaskNotFound code (无 Traceback)
     has_err = "TaskNotFound" in err or "TaskNotFound" in out
     has_traceback = "Traceback (most recent call last)" in err
-    assert has_err or not has_traceback, \
-        f"expected friendly error, got stderr={err[:300]}"
+    assert has_err or not has_traceback, f"expected friendly error, got stderr={err[:300]}"

@@ -37,8 +37,7 @@ def main() -> int:
         # Use unique ids with example prefix so they don't collide with real data
         # (real stock codes like sh600089 already exist in LIVE DB).
         chunk_id = m.remember(
-            content="example_02_graph_demo example_02_graph_unique_xyz456 — "
-            "mnelo_project_demo 项目为 host:example_stock_002 提供 AI 记忆支持 demo。",
+            content="example_02_graph_demo example_02_graph_unique_xyz456 — mnelo_project_demo 项目为 host:example_stock_002 提供 AI 记忆支持 demo。",
             source="example_02:graph",
             importance=0.7,
             entities=[
@@ -70,18 +69,12 @@ def main() -> int:
 
         # [3] Inspect the entities + relations.
         print("[db] entities created by this example:")
-        rows = m._conn.execute(
-            "SELECT id, kind, name FROM entities "
-            "WHERE id IN ('mnelo_project_demo', 'host:example_stock_002') AND valid_until IS NULL"
-        ).fetchall()
+        rows = m._conn.execute("SELECT id, kind, name FROM entities WHERE id IN ('mnelo_project_demo', 'host:example_stock_002') AND valid_until IS NULL").fetchall()
         for r in rows:
             print(f"  {r[0]:30s} kind={r[1]:10s} name={r[2]}")
 
         print("\n[db] relations created by this example:")
-        rows = m._conn.execute(
-            "SELECT source_id, relation, weight, target_id FROM relations "
-            "WHERE source_id = 'mnelo_project_demo' OR target_id = 'mnelo_project_demo'"
-        ).fetchall()
+        rows = m._conn.execute("SELECT source_id, relation, weight, target_id FROM relations WHERE source_id = 'mnelo_project_demo' OR target_id = 'mnelo_project_demo'").fetchall()
         for r in rows:
             print(f"  {r[0]} --[{r[1]} (w={r[2]})]--> {r[3]}")
         print()

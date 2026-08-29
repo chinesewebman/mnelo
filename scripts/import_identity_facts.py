@@ -17,9 +17,9 @@ import_identity_facts.py — 从 mnelo chunks 中抽取身份陈述类 fact
 - 不用 LLM 抽取 (怕 token 成本 + 不一致), 用严格正则 + 白名单
 """
 
-import sys
 import re
 import sqlite3
+import sys
 from pathlib import Path
 
 # [7/21 fix] 不再硬编码, 从 config 解析

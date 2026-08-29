@@ -8,6 +8,7 @@
 
 用 subprocess 跑脚本 (真实部署形态), 隔离环境。
 """
+
 import builtins
 import importlib.util
 import os
@@ -27,7 +28,10 @@ def _run_script(env_extra=None):
         env.update(env_extra)
     r = subprocess.run(
         [sys.executable, str(SCRIPT)],
-        capture_output=True, text=True, timeout=20, env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env=env,
     )
     return r
 

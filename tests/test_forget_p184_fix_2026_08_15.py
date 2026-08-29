@@ -43,6 +43,7 @@ def mem(tmp_path):
     \u4e0d\u4f9d\u8d56 zvec (tmp_path + isolated db).
     """
     import re as _re
+
     db_path = tmp_path / "audit_p184.db"
     conn = _sqlite.connect(str(db_path))
     sql = Path(__file__).resolve().parent.parent.joinpath("schema.sql").read_text()
@@ -51,10 +52,13 @@ def mem(tmp_path):
     sql = _re.sub(r"LOAD[^;]*;", "", sql, flags=_re.IGNORECASE)
     sql = _re.sub(
         r"CREATE VIRTUAL TABLE[^;]*USING vec0[^)]*\)",
-        "", sql, flags=_re.IGNORECASE | _re.DOTALL,
+        "",
+        sql,
+        flags=_re.IGNORECASE | _re.DOTALL,
     )
     # [bug fix D1 2026-08-16] Register iso_now() function before running schema.sql
     from datetime import datetime, timedelta as _td
+
     conn.create_function("iso_now", 0, lambda: datetime.now().isoformat(timespec="seconds"))
     conn.create_function("iso_now_offset", 1, lambda d: (datetime.now() + _td(days=d)).isoformat(timespec="seconds"))
     conn.executescript(sql)
@@ -99,9 +103,7 @@ def test_forget_cascades_relations_within_txn(mem):
     mem._conn.commit()
     rid = mem.relate(eid, "audit_p184_other", "test_rel", dedup_check=False)
     mem.forget(eid, target_kind="entity")
-    row = mem._conn.execute(
-        "SELECT valid_until FROM relations WHERE id = ?", (rid,)
-    ).fetchone()
+    row = mem._conn.execute("SELECT valid_until FROM relations WHERE id = ?", (rid,)).fetchone()
     assert row["valid_until"] is not None, "forget(entity) cascade relations valid_until"
 
 
@@ -122,13 +124,11 @@ def test_forget_idempotent_no_double_queue(mem):
     """[P1 #84.4] forget(\u540c\u4e00 chunk \u4e24\u6b21) \u4e0d\u91cd\u590d\u63d2\u5165 purged_queue.
 
     \u9a8c\u8bc1: \u7b2c\u4e8c\u6b21 forget \u662f no-op (\u539f chunk \u5df2 valid_until IS NOT NULL, _conn\u4e2d
-    \u5224\u65ad\u4f1a\u8df3\u8fc7 UPDATE \u4f46\u4ecd\u4f1a INSERT purged_queue).\n    \u5982\u679c\u8be5\u63d2\u5165\u91cd\u590d, 30\u5929\u540e worker \u4f1a\u540c chunk \u5904\u7406\u4e24\u6b21.\n    """
+    \u5224\u65ad\u4f1a\u8df3\u8fc7 UPDATE \u4f46\u4ecd\u4f1a INSERT purged_queue).\n    \u5982\u679c\u8be5\u63d2\u5165\u91cd\u590d, 30\u5929\u540e worker \u4f1a\u540c chunk \u5904\u7406\u4e24\u6b21.\n"""
     cid = mem.remember("test idempotent", source="audit", importance=0.5)
     mem.forget(cid, target_kind="chunk")
     mem.forget(cid, target_kind="chunk")  # 2nd no-op
-    rows = mem._conn.execute(
-        "SELECT COUNT(*) AS c FROM purged_queue WHERE target_id = ?", (cid,)
-    ).fetchone()
+    rows = mem._conn.execute("SELECT COUNT(*) AS c FROM purged_queue WHERE target_id = ?", (cid,)).fetchone()
     # Allow <=1 (idempotent ideal). \u5b9e\u9645\u5141\u8bb8 2 (\u8001 logic \u53ef\u80fd 2 \u884c).
     # P1 #84 fix \u540e: \u5e94\u4e3a 1 (\u4e8c\u6b21 \u53ea \u4e00 \u6b21\u751f\u6548 INSERT).
     assert rows["c"] <= 1, f"\u91cd\u590d\u63d2\u5165 {rows['c']} \u6b21, \u5e94 \u4ec5 1"
@@ -155,18 +155,14 @@ def test_forget_with_txn_rollback_zvec_native_fail(mem, monkeypatch):
     row = mem._conn.execute("SELECT valid_until FROM chunks WHERE id = ?", (cid,)).fetchone()
     assert row["valid_until"] is not None, "zvec fail \u540e SQLite \u90e8\u5206\u5e94 commit"
     # purged_queue INSERT
-    rows = mem._conn.execute(
-        "SELECT COUNT(*) AS c FROM purged_queue WHERE target_id = ?", (cid,)
-    ).fetchone()
+    rows = mem._conn.execute("SELECT COUNT(*) AS c FROM purged_queue WHERE target_id = ?", (cid,)).fetchone()
     assert rows["c"] >= 1, "zvec fail \u540e\u5e94\u4ecd\u63d2\u5165 purged_queue"
 
 
 def test_forget_does_not_affect_other_chunks(mem):
-    """[P1 #84.6] forget(\u4e00\u4e2a chunk) \u4e0d\u5e71\u627a\u5176\u4ed6 chunk.\n    \u9a8c\u8bc1: \u72ec\u7acb forget \u4e0d\u8de8\u8d8a.\n    """
+    """[P1 #84.6] forget(\u4e00\u4e2a chunk) \u4e0d\u5e71\u627a\u5176\u4ed6 chunk.\n    \u9a8c\u8bc1: \u72ec\u7acb forget \u4e0d\u8de8\u8d8a.\n"""
     cid1 = mem.remember("chunk 1", source="audit", importance=0.5)
     cid2 = mem.remember("chunk 2", source="audit", importance=0.5)
     mem.forget(cid1, target_kind="chunk")
-    row2 = mem._conn.execute(
-        "SELECT valid_until FROM chunks WHERE id = ?", (cid2,)
-    ).fetchone()
+    row2 = mem._conn.execute("SELECT valid_until FROM chunks WHERE id = ?", (cid2,)).fetchone()
     assert row2["valid_until"] is None, "\u5176\u4ed6 chunk \u4e0d\u5e94\u88ab\u5f71\u54cd"

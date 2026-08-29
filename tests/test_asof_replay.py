@@ -12,6 +12,7 @@ asof 参数被忽略。导致 "问 2026-06-01 时点 X" 的历史回放对 meta/
 本测试用 meta_only 路验证历史回放 (vector 路在 update()/forget() 时会物理删除
 旧版本向量, 无法回放 — 这是已知限制, 见 ARCHITECTURE.md)。
 """
+
 import time
 import unittest
 

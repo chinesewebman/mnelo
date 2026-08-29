@@ -7,6 +7,7 @@ DESIGN §4.2 幂等/并发: 重复提交同一 to_state → 第 2 次 CAS 关旧
 测试用 sqlite3 顺序模拟 (单线程 conn.execute), 没有真并发,
 但通过 '_conn.execute' 顺序求证 CAS 语义.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -16,12 +17,14 @@ sys.path.insert(0, str(_REPO))
 
 import importlib.util as _ilu
 
+
 def _load(name: str):
     spec = _ilu.spec_from_file_location(name, _REPO / f"{name}.py")
     mod = _ilu.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
+
 
 _load("config")
 _load("embedder")
@@ -48,8 +51,7 @@ def _mk_task(m, suffix: str) -> str:
         (tid, "task", f"tlm2-{suffix}"),
     )
     m._conn.execute(
-        "INSERT INTO task_states (task_id, state, valid_from, created_at) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO task_states (task_id, state, valid_from, created_at) VALUES (?, ?, ?, ?)",
         (tid, "open", "2026-08-06T10:00", "2026-08-06T10:00"),
     )
     m._conn.commit()
@@ -65,8 +67,11 @@ def test_concurrent_double_submit_second_fails():
 
         # Agent A: open → in_progress (应成功)
         r1 = ts_mod.transition(
-            m._conn, task_id=tid, to_state="in_progress",
-            reason="agent A: handoff", now="2026-08-06T10:05",
+            m._conn,
+            task_id=tid,
+            to_state="in_progress",
+            reason="agent A: handoff",
+            now="2026-08-06T10:05",
         )
         assert r1["to_state"] == "in_progress"
 
@@ -84,8 +89,7 @@ def test_concurrent_double_submit_second_fails():
         assert cur_old is not None
         # 现在 id 已被 A 关窗 (valid_until = 10:05), 直接 UPDATE WHERE id=? AND valid_until IS NULL = 0 行
         affected = m._conn.execute(
-            "UPDATE task_states SET valid_until=? "
-            "WHERE id=? AND task_id=? AND valid_until IS NULL",
+            "UPDATE task_states SET valid_until=? WHERE id=? AND task_id=? AND valid_until IS NULL",
             ("2026-08-06T10:10", cur_old[0], tid),
         ).rowcount
         assert affected == 0, "CAS 0 行表示并发冲突 — 模拟成功"
@@ -94,8 +98,11 @@ def test_concurrent_double_submit_second_fails():
         # 若目标状态跟 in_progress 不在 allowed graph → InvalidTransitionError
         try:
             ts_mod.transition(
-                m._conn, task_id=tid, to_state="open",
-                reason="agent B: stale view", now="2026-08-06T10:10",
+                m._conn,
+                task_id=tid,
+                to_state="open",
+                reason="agent B: stale view",
+                now="2026-08-06T10:10",
             )
         except ts_mod.InvalidTransitionError as e:
             # in_progress→open 不在默认 allowed graph
@@ -107,13 +114,12 @@ def test_concurrent_double_submit_second_fails():
         windows = [
             tuple(r)
             for r in m._conn.execute(
-                "SELECT state, valid_from, valid_until FROM task_states "
-                "WHERE task_id=? ORDER BY id",
+                "SELECT state, valid_from, valid_until FROM task_states WHERE task_id=? ORDER BY id",
                 (tid,),
             )
         ]
         assert windows == [
-            ("open",        "2026-08-06T10:00", "2026-08-06T10:05"),
+            ("open", "2026-08-06T10:00", "2026-08-06T10:05"),
             ("in_progress", "2026-08-06T10:05", None),
         ]
     finally:
@@ -129,8 +135,11 @@ def test_idempotent_repeated_transition_forces_not_current_state():
 
         # 调用 1: open → in_progress
         r1 = ts_mod.transition(
-            m._conn, task_id=tid, to_state="in_progress",
-            reason="agent A: 第一次", now="2026-08-06T10:05",
+            m._conn,
+            task_id=tid,
+            to_state="in_progress",
+            reason="agent A: 第一次",
+            now="2026-08-06T10:05",
         )
         assert r1["to_state"] == "in_progress"
 
@@ -139,7 +148,9 @@ def test_idempotent_repeated_transition_forces_not_current_state():
         # 走 'as if 重复' 模拟: 走同 to_state 试
         try:
             ts_mod.transition(
-                m._conn, task_id=tid, to_state="in_progress",
+                m._conn,
+                task_id=tid,
+                to_state="in_progress",
                 reason="agent A: 重复 (应拒)",
                 now="2026-08-06T10:10",
             )

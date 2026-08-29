@@ -5,6 +5,7 @@ Original _txn uses BEGIN, so nested _txn(_txn) crashes with
 OperationalError "within a transaction" / "no transaction is active".
 Need: detect outer active txn → SAVEPOINT, else BEGIN.
 """
+
 import sys
 from pathlib import Path
 
@@ -52,9 +53,7 @@ def test_nested_txn_outer_failure_rolls_back_everything(mem):
     cid = m.remember("test nested rollback")
     m._conn.commit()
 
-    initial_count = m._conn.execute(
-        "SELECT COUNT(*) FROM chunks WHERE id = ?", (cid,)
-    ).fetchone()[0]
+    initial_count = m._conn.execute("SELECT COUNT(*) FROM chunks WHERE id = ?", (cid,)).fetchone()[0]
     assert initial_count == 1
 
     # outer raises after inner commits → outer rollback reverts outer writes only
@@ -67,9 +66,7 @@ def test_nested_txn_outer_failure_rolls_back_everything(mem):
             raise RuntimeError("outer boom")
 
     # chunk from prior call (outside _txn) should still be there
-    final_count = m._conn.execute(
-        "SELECT COUNT(*) FROM chunks WHERE id = ?", (cid,)
-    ).fetchone()[0]
+    final_count = m._conn.execute("SELECT COUNT(*) FROM chunks WHERE id = ?", (cid,)).fetchone()[0]
     assert final_count == 1, "outer rollback should not affect out-of-_txn writes"
 
 
@@ -81,11 +78,7 @@ def test_txn_no_active_outer_uses_begin(mem):
 
     # top-level txn: write succeeds and persists
     with _txn(m._conn):
-        m._conn.execute(
-            "UPDATE chunks SET importance = 0.99 WHERE id = ?", (cid,)
-        )
+        m._conn.execute("UPDATE chunks SET importance = 0.99 WHERE id = ?", (cid,))
 
-    val = m._conn.execute(
-        "SELECT importance FROM chunks WHERE id = ?", (cid,)
-    ).fetchone()[0]
+    val = m._conn.execute("SELECT importance FROM chunks WHERE id = ?", (cid,)).fetchone()[0]
     assert val == 0.99

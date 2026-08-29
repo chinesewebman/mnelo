@@ -6,6 +6,7 @@
   M28.2 [中] propose_stale_tasks apply 后再提议 — 不应被旧 pending 永久跳过
   M28.3 [低] memory.forget(task/loop) 死代码 + docstring 实际行为对齐 — 静态契约
 """
+
 import inspect as _inspect
 import sqlite3
 import sys
@@ -14,6 +15,7 @@ from pathlib import Path
 REPO = Path("/Users/apple/.hermes/memory")
 sys.path.insert(0, str(REPO))
 import os
+
 os.environ.setdefault("MNELO_MEMORY_SEARCH_BACKEND", "usearch")
 
 import memory
@@ -25,6 +27,7 @@ from datetime import timedelta as _td
 # [8/9 P1 follow-up] hard-coded "2026-08-06T..." 边界 fail (8/9 跑 age=7d < threshold 7d).
 # 改 NOW_REF = now+1s (未来), 跟 _create_*_task(days_ago=10) 配对 → age=10d+1s > threshold 7d.
 NOW_REF = (_dt.now() + _td(seconds=1)).isoformat(timespec="milliseconds")
+
 
 def _setup():
     c = sqlite3.connect(str(memory.DB_PATH))
@@ -60,6 +63,7 @@ def _create_loop(name: str, now: str = NOW_REF) -> str:
 
 
 # ===== M28.1 forget_task 重复 forget =====
+
 
 def test_m28_1_forget_task_repeat_rejected():
     """[M28.1] 第二次 forget_task 抛 TaskAlreadyForgotten (不写 audit_log 假绿)."""
@@ -104,6 +108,7 @@ def test_m28_1b_forget_loop_repeat_rejected():
 
 # ===== M28.2 propose apply 后再提议 =====
 
+
 def test_m28_2_propose_after_apply_re_proposes():
     """[M28.2] 同一 task 被 propose → apply → 仍 stale 时, 第二次 propose 应提议.
 
@@ -132,7 +137,9 @@ def test_m28_2_propose_after_apply_re_proposes():
         ).fetchone()
         pid = row[0]
         task_states.apply_stale_proposal(
-            m._conn, pid, applied_action="ignored_will_revisit_later",
+            m._conn,
+            pid,
+            applied_action="ignored_will_revisit_later",
         )
 
         # 第二次 propose — 旧逻辑会跳, 新逻辑应再提议 (因为 apply 后 task 仍 stale)
@@ -146,6 +153,7 @@ def test_m28_2_propose_after_apply_re_proposes():
 
 
 # ===== M28.3 memory.forget 死代码 + docstring 静态契约 =====
+
 
 def test_m28_3_memory_forget_no_confirm_placeholder():
     """[M28.3] memory.forget() 不应有 confirm_forget 占位变量, docstring 应跟实现对齐."""

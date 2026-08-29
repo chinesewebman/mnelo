@@ -11,6 +11,7 @@
 
 零误伤 (§5.1.4): 6 核心接口行为不变, 不破坏现有测试。
 """
+
 import unittest
 
 from memory import Memory, norm_memory_type
@@ -29,15 +30,14 @@ class TestRememberClassification(unittest.TestCase):
     def tearDownClass(cls):
         # [8/6 plan §10] 后端感知清理 (helper 先 _index.remove 再 DELETE chunks)
         from helpers import cleanup_chunks
+
         cleanup_chunks(cls.mem, source=cls.src)
         cls.mem._conn.commit()
         cls.mem.close()
 
     def _read_chunk_type(self, chunk_id: str) -> str:
         """读回 chunk 的 memory_type"""
-        row = self.mem._conn.execute(
-            "SELECT memory_type FROM chunks WHERE id = ?", (chunk_id,)
-        ).fetchone()
+        row = self.mem._conn.execute("SELECT memory_type FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
         # row 不会是 None (cid 是新生成的); Pyright 期望 str
         assert row is not None
         result: str = row[0]
@@ -50,8 +50,7 @@ class TestRememberClassification(unittest.TestCase):
             source=self.src,
         )
         mtype = self._read_chunk_type(cid)
-        self.assertEqual(mtype, "preference",
-            f"应自动分类 preference, 实际: {mtype}")
+        self.assertEqual(mtype, "preference", f"应自动分类 preference, 实际: {mtype}")
 
     def test_02_default_none_triggers_episode(self):
         """[§5.4.2 主人 spec] remember("我今天建仓了 sh600089") (默认 None) → episode (我+时间+动作复合)"""
@@ -60,8 +59,7 @@ class TestRememberClassification(unittest.TestCase):
             source=self.src,
         )
         mtype = self._read_chunk_type(cid)
-        self.assertEqual(mtype, "episode",
-            f"应自动分类 episode (我+时间+动作), 实际: {mtype}")
+        self.assertEqual(mtype, "episode", f"应自动分类 episode (我+时间+动作), 实际: {mtype}")
 
     def test_03_explicit_fact_respected(self):
         """[§5.4.3] 显式传 memory_type='fact' (即使是 preference 内容) → 仍 fact"""
@@ -71,8 +69,7 @@ class TestRememberClassification(unittest.TestCase):
             memory_type="fact",
         )
         mtype = self._read_chunk_type(cid)
-        self.assertEqual(mtype, "fact",
-            f"显式传 fact 必须尊重, 实际: {mtype}")
+        self.assertEqual(mtype, "fact", f"显式传 fact 必须尊重, 实际: {mtype}")
 
     def test_04_explicit_preference_respected(self):
         """显式传 memory_type='preference' → preference (即使内容弱)"""
@@ -82,8 +79,7 @@ class TestRememberClassification(unittest.TestCase):
             memory_type="preference",
         )
         mtype = self._read_chunk_type(cid)
-        self.assertEqual(mtype, "preference",
-            f"显式传 preference 必须尊重, 实际: {mtype}")
+        self.assertEqual(mtype, "preference", f"显式传 preference 必须尊重, 实际: {mtype}")
 
     def test_05_no_strong_marker_falls_back_to_fact(self):
         """[§5.5] 无强标记内容 + 默认 None → fact (调用方默认)"""
@@ -92,8 +88,7 @@ class TestRememberClassification(unittest.TestCase):
             source=self.src,
         )
         mtype = self._read_chunk_type(cid)
-        self.assertEqual(mtype, "fact",
-            f"无强标记应默认 fact, 实际: {mtype}")
+        self.assertEqual(mtype, "fact", f"无强标记应默认 fact, 实际: {mtype}")
 
     def test_06_third_person_preference_falls_back_to_fact(self):
         """[§5.4] 第三人称偏好 (无'我'主语) + 默认 None → fact (P1a 弱标记)"""
@@ -102,8 +97,7 @@ class TestRememberClassification(unittest.TestCase):
             source=self.src,
         )
         mtype = self._read_chunk_type(cid)
-        self.assertEqual(mtype, "fact",
-            f"第三人称偏好应默认 fact, 实际: {mtype}")
+        self.assertEqual(mtype, "fact", f"第三人称偏好应默认 fact, 实际: {mtype}")
 
     def test_07_traditional_chinese_classified_correctly(self):
         """[E4 双语] 繁体中文 "我偏好簡潔日報" (默认 None) → preference (繁→简后命中)"""
@@ -112,8 +106,7 @@ class TestRememberClassification(unittest.TestCase):
             source=self.src,
         )
         mtype = self._read_chunk_type(cid)
-        self.assertEqual(mtype, "preference",
-            f"繁体应分类 preference, 实际: {mtype}")
+        self.assertEqual(mtype, "preference", f"繁体应分类 preference, 实际: {mtype}")
 
     def test_08_english_classified_correctly(self):
         """[E4 双语] 英文 "I prefer the concise report" (默认 None) → preference"""
@@ -122,8 +115,7 @@ class TestRememberClassification(unittest.TestCase):
             source=self.src,
         )
         mtype = self._read_chunk_type(cid)
-        self.assertEqual(mtype, "preference",
-            f"英文应分类 preference, 实际: {mtype}")
+        self.assertEqual(mtype, "preference", f"英文应分类 preference, 实际: {mtype}")
 
     def test_09_all_5_types_classifiable(self):
         """[E4 全面性] 5 类型 P1a 全可分类 (v0.2 严格化: episode/preference/decision 用第一人称)"""
@@ -138,8 +130,7 @@ class TestRememberClassification(unittest.TestCase):
             with self.subTest(content=content[:20]):
                 cid = self.mem.remember(content=content, source=self.src)
                 mtype = self._read_chunk_type(cid)
-                self.assertEqual(mtype, expected,
-                    f"内容 '{content[:20]}' 应分类 {expected}, 实际: {mtype}")
+                self.assertEqual(mtype, expected, f"内容 '{content[:20]}' 应分类 {expected}, 实际: {mtype}")
 
     def test_10_explicit_invalid_type_raises(self):
         """[安全] 显式传非法 memory_type → ValidationError (不变行为)"""

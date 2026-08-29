@@ -224,13 +224,6 @@ def _call_tool(name: str, args: Dict) -> str:
 
 # === MCP server ===
 
-from mcp_guard import (
-    _MCP_AVAILABLE,
-    Resource,
-    Server,
-    TextContent,
-    Tool,
-)
 # mcp 2.x 新 SDK types — 不在 mcp_guard re-export 里, 直接 import
 from mcp.types import (
     CallToolRequestParams,
@@ -241,6 +234,14 @@ from mcp.types import (
     ReadResourceRequestParams,
     ReadResourceResult,
     TextResourceContents,
+)
+
+from mcp_guard import (
+    _MCP_AVAILABLE,
+    Resource,
+    Server,
+    TextContent,
+    Tool,
 )
 
 # [refactor 2026-08-12] cross-module: handlers + definitions
@@ -278,14 +279,16 @@ if _MCP_AVAILABLE:
     async def _list_resources_handler(ctx, params: PaginatedRequestParams | None) -> ListResourcesResult:
         if not config.digest_inject_on_initialize:
             return ListResourcesResult(resources=[])
-        return ListResourcesResult(resources=[
-            Resource(
-                uri=_DIGEST_URI,  # str (mcp 2.x Resource.uri 是 str, 不再 AnyUrl)
-                name="Session digest",
-                description="Currently cached 常驻摘要 (memory_get_digest, ref=None).",
-                mime_type="text/plain",
-            )
-        ])
+        return ListResourcesResult(
+            resources=[
+                Resource(
+                    uri=_DIGEST_URI,  # str (mcp 2.x Resource.uri 是 str, 不再 AnyUrl)
+                    name="Session digest",
+                    description="Currently cached 常驻摘要 (memory_get_digest, ref=None).",
+                    mime_type="text/plain",
+                )
+            ]
+        )
 
     async def _read_resource_handler(ctx, params: ReadResourceRequestParams) -> ReadResourceResult:
         uri_str = str(params.uri)
@@ -304,9 +307,7 @@ if _MCP_AVAILABLE:
                 text = ""
             else:
                 text = digest.get("content", "") or ""
-        return ReadResourceResult(contents=[
-            TextResourceContents(uri=str(params.uri), text=text, mime_type="text/plain")
-        ])
+        return ReadResourceResult(contents=[TextResourceContents(uri=str(params.uri), text=text, mime_type="text/plain")])
 
     async def _call_tool_handler(ctx, params: CallToolRequestParams) -> CallToolResult:
         name = params.name

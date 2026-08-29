@@ -15,6 +15,7 @@ chars are safely escaped (or stripped to plain word tokens).
 
 Test verifies: query with FTS5 special chars does NOT raise FTS5 syntax error.
 """
+
 import os
 import sys
 import tempfile
@@ -28,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 def test_fts_escape_strips_asterisk_prefix():
     """`*` triggers FTS5 prefix match syntax. Should be safely handled."""
     from memory import _fts_escape_query
+
     result = _fts_escape_query("file*.py")
     # Either: stripped/safe, or properly quoted
     assert isinstance(result, str)
@@ -39,6 +41,7 @@ def test_fts_escape_strips_asterisk_prefix():
 def test_fts_escape_strips_parentheses():
     """`(...)` is FTS5 grouping syntax. Should be safely handled."""
     from memory import _fts_escape_query
+
     result = _fts_escape_query("Python (async)")
     assert isinstance(result, str)
     # Should not have bare ( ) triggering grouping
@@ -47,6 +50,7 @@ def test_fts_escape_strips_parentheses():
 def test_fts_escape_strips_colon():
     """`:` is FTS5 column filter syntax (e.g., `content:python`). Should be safely handled."""
     from memory import _fts_escape_query
+
     result = _fts_escape_query("title:Python")
     assert isinstance(result, str)
 
@@ -54,6 +58,7 @@ def test_fts_escape_strips_colon():
 def test_fts_escape_strips_caret():
     """`^` is FTS5 first-position boost."""
     from memory import _fts_escape_query
+
     result = _fts_escape_query("^important")
     assert isinstance(result, str)
 
@@ -61,6 +66,7 @@ def test_fts_escape_strips_caret():
 def test_fts_escape_does_not_raise_on_chinese():
     """Chinese chars work natively in FTS5 unicode61 tokenizer — should pass through."""
     from memory import _fts_escape_query
+
     result = _fts_escape_query("中文查询")
     assert result == "中文查询"
 
@@ -68,10 +74,11 @@ def test_fts_escape_does_not_raise_on_chinese():
 def test_fts_escape_preserves_double_quote_handling():
     """Post C1-fix: `"` is stripped (not escaped as `""`). Result should be safe."""
     from memory import _fts_escape_query
+
     result = _fts_escape_query('hello "world"')
     # Post-fix: " is stripped, result is "hello world" (no `""` needed)
-    assert '"' not in result, f'double-quote should be stripped, got: {result!r}'
-    assert 'hello' in result and 'world' in result
+    assert '"' not in result, f"double-quote should be stripped, got: {result!r}"
+    assert "hello" in result and "world" in result
 
 
 def test_fts_recall_with_special_chars_does_not_trigger_like_fallback(caplog):
@@ -99,9 +106,7 @@ def test_fts_recall_with_special_chars_does_not_trigger_like_fallback(caplog):
             # "Python async file" chunk
             chunk_contents = [h.get("content", "") for h in result]
             # Should match the file chunk via LIKE fallback at minimum
-            assert any("file" in c for c in chunk_contents), (
-                f"FTS5 special char '*' in query caused silent miss: {chunk_contents}"
-            )
+            assert any("file" in c for c in chunk_contents), f"FTS5 special char '*' in query caused silent miss: {chunk_contents}"
         finally:
             m.close()
 
@@ -120,9 +125,7 @@ def test_fts_recall_with_parentheses_does_not_silently_fail():
             assert isinstance(result, result.__class__)  # no exception
             # Should match the Python async chunk
             chunk_contents = [h.get("content", "") for h in result]
-            assert any("Python" in c for c in chunk_contents), (
-                f"Parens caused silent miss: {chunk_contents}"
-            )
+            assert any("Python" in c for c in chunk_contents), f"Parens caused silent miss: {chunk_contents}"
         finally:
             m.close()
 
@@ -130,9 +133,9 @@ def test_fts_recall_with_parentheses_does_not_silently_fail():
 def test_fts_escape_empty_query():
     """Empty query → empty result (don't raise)."""
     from memory import _fts_escape_query
+
     assert _fts_escape_query("") == ""
     assert _fts_escape_query(None) == ""  # defensive
-
 
 
 def test_fts_query_with_special_chars_does_not_raise_FTS5_syntax_error(caplog):
@@ -158,11 +161,11 @@ def test_fts_query_with_special_chars_does_not_raise_FTS5_syntax_error(caplog):
             with caplog.at_level(logging.WARNING, logger="mnelo"):
                 # Various FTS5 special chars
                 for special_query in [
-                    "file*",          # asterisk (prefix)
-                    "Python (async)", # parens (grouping)
-                    "title:Python",   # colon (column)
-                    "^important",     # caret (boost)
-                    "a +b -c",        # plus/minus (required/excluded)
+                    "file*",  # asterisk (prefix)
+                    "Python (async)",  # parens (grouping)
+                    "title:Python",  # colon (column)
+                    "^important",  # caret (boost)
+                    "a +b -c",  # plus/minus (required/excluded)
                 ]:
                     escaped = _fts_escape_query(special_query)
                     result = m.recall(escaped, top_k=3)
@@ -174,12 +177,9 @@ def test_fts_query_with_special_chars_does_not_raise_FTS5_syntax_error(caplog):
             # succeeded, no "FTS5 syntax" warning should appear.
             fts5_errors = [r for r in caplog.records if "fts5" in r.message.lower() and "syntax" in r.message.lower()]
             # After fix: 0 fts5 syntax errors. Pre-fix: 5 (one per query above).
-            assert len(fts5_errors) == 0, (
-                f"FTS5 syntax error still happening: {[r.message for r in fts5_errors]}"
-            )
+            assert len(fts5_errors) == 0, f"FTS5 syntax error still happening: {[r.message for r in fts5_errors]}"
         finally:
             m.close()
-
 
 
 def test_fts5_escaped_query_is_well_formed_for_MATCH():
@@ -208,7 +208,7 @@ def test_fts5_escaped_query_is_well_formed_for_MATCH():
         "title:Python",
         "^important",
         "a +b -c",
-        "hello \"world\"",
+        'hello "world"',
         "中文查询",
     ]:
         escaped = _fts_escape_query(special_query)
@@ -220,8 +220,6 @@ def test_fts5_escaped_query_is_well_formed_for_MATCH():
             ).fetchall()
         except sqlite3.OperationalError as e:
             if "fts5" in str(e).lower() and "syntax" in str(e).lower():
-                pytest.fail(
-                    f"FTS5 syntax error on {special_query!r} → escaped {escaped!r}: {e}"
-                )
+                pytest.fail(f"FTS5 syntax error on {special_query!r} → escaped {escaped!r}: {e}")
             raise  # other OperationalError
     conn.close()

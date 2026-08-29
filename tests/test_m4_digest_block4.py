@@ -7,6 +7,7 @@
   task_states.render_digest_block4 — 渲染成 digest 行.
   memory.py _build_digest — 走完路径, 校验 block4 出现在 content + line_refs.
 """
+
 import json
 import os
 import sys
@@ -24,6 +25,7 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
 import importlib.util as _ilu
+
 
 def _load(name: str):
     spec = _ilu.spec_from_file_location(name, _REPO / f"{name}.py")
@@ -108,29 +110,44 @@ def test_list_active_tasks_and_loops_basic():
         r2 = ts_mod.task_create(m._conn, name="m4-active-2", now="2026-08-06T09:05")
         tid2 = r2["task_id"]
         ts_mod.transition(
-            m._conn, task_id=tid2, to_state="in_progress",
-            reason="start", now="2026-08-06T10:00",
+            m._conn,
+            task_id=tid2,
+            to_state="in_progress",
+            reason="start",
+            now="2026-08-06T10:00",
         )
         # done task (排除)
         r3 = ts_mod.task_create(m._conn, name="m4-done", now="2026-08-06T09:10")
         tid3 = r3["task_id"]
         ts_mod.transition(
-            m._conn, task_id=tid3, to_state="in_progress",
-            reason="work", now="2026-08-06T10:00",
+            m._conn,
+            task_id=tid3,
+            to_state="in_progress",
+            reason="work",
+            now="2026-08-06T10:00",
         )
         ts_mod.transition(
-            m._conn, task_id=tid3, to_state="done",
-            reason="finish", now="2026-08-06T11:00",
+            m._conn,
+            task_id=tid3,
+            to_state="done",
+            reason="finish",
+            now="2026-08-06T11:00",
         )
         # dormant loop
         ts_mod.loop_create(
-            m._conn, name="m4-dormant", trigger="x",
-            enabled=False, now="2026-08-06T09:00",
+            m._conn,
+            name="m4-dormant",
+            trigger="x",
+            enabled=False,
+            now="2026-08-06T09:00",
         )
         # enabled loop (排除)
         ts_mod.loop_create(
-            m._conn, name="m4-running", trigger="y",
-            enabled=True, now="2026-08-06T09:00",
+            m._conn,
+            name="m4-running",
+            trigger="y",
+            enabled=True,
+            now="2026-08-06T09:00",
         )
         m._conn.commit()
 
@@ -175,13 +192,11 @@ def test_list_active_excludes_done_cancelled():
     try:
         r1 = ts_mod.task_create(m._conn, name="m4-done-x", now="2026-08-06T09:00")
         tid1 = r1["task_id"]
-        ts_mod.transition(m._conn, task_id=tid1, to_state="done", reason="x",
-                          now="2026-08-06T10:00")
+        ts_mod.transition(m._conn, task_id=tid1, to_state="done", reason="x", now="2026-08-06T10:00")
 
         r2 = ts_mod.task_create(m._conn, name="m4-cancel", now="2026-08-06T09:01")
         tid2 = r2["task_id"]
-        ts_mod.transition(m._conn, task_id=tid2, to_state="cancelled",
-                          reason="y", now="2026-08-06T10:00")
+        ts_mod.transition(m._conn, task_id=tid2, to_state="cancelled", reason="y", now="2026-08-06T10:00")
         m._conn.commit()
 
         result = ts_mod.list_active_tasks_and_loops(m._conn, now="2026-08-06T11:00")
@@ -200,13 +215,17 @@ def test_render_digest_block4_basic():
     try:
         ts_mod.task_create(m._conn, name="m4-render", now="2026-08-06T09:00")
         ts_mod.loop_create(
-            m._conn, name="m4-render-loop", trigger="x",
-            enabled=False, now="2026-08-06T09:00",
+            m._conn,
+            name="m4-render-loop",
+            trigger="x",
+            enabled=False,
+            now="2026-08-06T09:00",
         )
         m._conn.commit()
 
         active_block = ts_mod.list_active_tasks_and_loops(
-            m._conn, now="2026-08-06T10:00",
+            m._conn,
+            now="2026-08-06T10:00",
         )
         text_lines, refs = ts_mod.render_digest_block4(active_block)
 
@@ -231,8 +250,11 @@ def test_build_digest_includes_block4():
     try:
         ts_mod.task_create(m._conn, name="m4-digest-active", now="2026-08-06T09:00")
         ts_mod.loop_create(
-            m._conn, name="m4-digest-dormant", trigger="x",
-            enabled=False, now="2026-08-06T09:00",
+            m._conn,
+            name="m4-digest-dormant",
+            trigger="x",
+            enabled=False,
+            now="2026-08-06T09:00",
         )
         m._conn.commit()
 
@@ -258,8 +280,11 @@ def test_list_active_excludes_soft_deleted_loop():
     try:
         # 建 enabled=True loop, 然后 transition 终端 cancel 模拟软删
         r = ts_mod.loop_create(
-            m._conn, name="m4-soft", trigger="x",
-            enabled=True, now="2026-08-06T09:00",
+            m._conn,
+            name="m4-soft",
+            trigger="x",
+            enabled=True,
+            now="2026-08-06T09:00",
         )
         lid = r["loop_id"]
         ts_mod.loop_update(m._conn, loop_id=lid, enabled=False, now="2026-08-06T10:00")

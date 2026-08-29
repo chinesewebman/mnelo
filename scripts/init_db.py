@@ -9,15 +9,17 @@ init_db.py — 初始化 ~/.hermes/memory/memory.db
 
 import re
 import sqlite3
-import sqlite_vec
 import sys
 from pathlib import Path
+
+import sqlite_vec
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # [7/21 fix] DB 路径从 config 解析 (env MNELO_MEMORY_DIR/MNELO_MEMORY_DB_PATH > ~/.hermes/memory)。
 # SCHEMA_PATH: 优先 live 目录下的 schema.sql (旧部署), 回落 repo 自带 schema.sql。
-from config import config as _config, resolve_db_path as _resolve_db_path
+from config import config as _config
+from config import resolve_db_path as _resolve_db_path
 
 DB_PATH = _resolve_db_path()
 _LIVE_DIR = DB_PATH.parent
@@ -44,18 +46,18 @@ def init():
 
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"=== 1. 创建 memory.db ===")
+    print("=== 1. 创建 memory.db ===")
     conn = sqlite3.connect(str(DB_PATH))
     conn.enable_load_extension(True)
     sqlite_vec.load(conn)
     conn.enable_load_extension(False)
 
-    print(f"=== 2. 启用 WAL + busy_timeout ===")
+    print("=== 2. 启用 WAL + busy_timeout ===")
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute("PRAGMA foreign_keys = ON")
 
-    print(f"=== 3. 执行 schema.sql (含 dim 占位符替换) ===")
+    print("=== 3. 执行 schema.sql (含 dim 占位符替换) ===")
     with open(SCHEMA_PATH) as f:
         sql = f.read()
 
@@ -79,15 +81,15 @@ def init():
     conn.executescript(sql)
     conn.commit()
 
-    print(f"=== 4. 验证表 ===")
+    print("=== 4. 验证表 ===")
     tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()]
     print(f"  表 (含虚拟): {tables}")
 
-    print(f"=== 5. 验证触发器 ===")
+    print("=== 5. 验证触发器 ===")
     triggers = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name").fetchall()]
     print(f"  触发器: {triggers}")
 
-    print(f"=== 6. 验证 meta ===")
+    print("=== 6. 验证 meta ===")
     for k, v in conn.execute("SELECT key, value FROM meta").fetchall():
         print(f"  {k} = {v}")
 

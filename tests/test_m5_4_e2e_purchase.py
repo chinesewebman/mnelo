@@ -14,6 +14,7 @@
   9. replay task:20260806-restock-1 → 完整生命周期 6 行状态窗
   10. digest block4 → 上次 cycle 完成, 待 next tick
 """
+
 import sqlite3
 import sys
 from pathlib import Path
@@ -27,6 +28,7 @@ NOW_REF = (_dt.now() + _td(seconds=1)).isoformat(timespec="milliseconds")
 REPO = Path(__file__).resolve().parent.parent  # [M29 fix] 不再硬编码作者本机路径
 sys.path.insert(0, str(REPO))
 import os
+
 os.environ.setdefault("MNELO_MEMORY_SEARCH_BACKEND", "usearch")
 
 import memory
@@ -58,6 +60,7 @@ def _setup():
 def _remember_chunk(m: memory.Memory, content: str, source: str) -> str:
     """Helper: 记 chunk via raw SQL (避开 embedder SIGSEGV)."""
     import uuid as _uuid
+
     cid = f"chunk:e2e-{_uuid.uuid4().hex[:8]}"
     m._conn.execute(
         """INSERT INTO chunks (id, content, source, memory_type, importance, valid_until, created_at, processed_at)
@@ -76,8 +79,10 @@ def test_e2e_purchase_consumables_full_cycle():
     try:
         # Step 1: 建 loop
         loop_result = task_states.loop_create(
-            m._conn, name="e2e-consumables",
-            trigger="low_stock", interval_hours=24,
+            m._conn,
+            name="e2e-consumables",
+            trigger="low_stock",
+            interval_hours=24,
             now=NOW_REF,
         )
         lid = loop_result["loop_id"]
@@ -89,13 +94,17 @@ def test_e2e_purchase_consumables_full_cycle():
 
         # Step 3: loop tick → due
         tick = task_states.loop_tick(
-            m._conn, loop_id=lid, now=NOW_REF,
+            m._conn,
+            loop_id=lid,
+            now=NOW_REF,
         )
         assert tick["verdict"] == "due", f"first tick should be due, got {tick}"
 
         # Step 4: task_create (采购耗材)
         task_result = task_states.task_create(
-            m._conn, name="e2e-restock-1", loop_id=lid,
+            m._conn,
+            name="e2e-restock-1",
+            loop_id=lid,
             evidence_chunk_id=chunk_low_stock,
             now=NOW_REF,
         )
@@ -106,7 +115,9 @@ def test_e2e_purchase_consumables_full_cycle():
         # Step 5: transition(open → in_progress, 已下单)
         chunk_order = _remember_chunk(m, "已下单 — order #12345", "test:e2e_order")
         trans1 = task_states.transition(
-            m._conn, task_id=tid, to_state="in_progress",
+            m._conn,
+            task_id=tid,
+            to_state="in_progress",
             reason="已下单 order #12345",
             evidence_chunk_id=chunk_order,
             now=NOW_REF,
@@ -117,7 +128,9 @@ def test_e2e_purchase_consumables_full_cycle():
         # Step 6: transition(in_progress → waiting, 等物流)
         chunk_logistics = _remember_chunk(m, "等发货 SF#67890", "test:e2e_logistics")
         trans2 = task_states.transition(
-            m._conn, task_id=tid, to_state="waiting",
+            m._conn,
+            task_id=tid,
+            to_state="waiting",
             reason="等发货 SF#67890",
             evidence_chunk_id=chunk_logistics,
             now=NOW_REF,
@@ -128,7 +141,9 @@ def test_e2e_purchase_consumables_full_cycle():
         # Step 7: transition(waiting → done, 已收货)
         chunk_received = _remember_chunk(m, "已收货 验收通过", "test:e2e_received")
         trans3 = task_states.transition(
-            m._conn, task_id=tid, to_state="done",
+            m._conn,
+            task_id=tid,
+            to_state="done",
             reason="已收货 验收通过",
             evidence_chunk_id=chunk_received,
             now=NOW_REF,
@@ -138,7 +153,8 @@ def test_e2e_purchase_consumables_full_cycle():
 
         # Step 8: list_active_tasks_and_loops → 该 task 已 done, 不在 active
         listing = task_states.list_active_tasks_and_loops(
-            m._conn, now=NOW_REF,
+            m._conn,
+            now=NOW_REF,
         )
         active_ids = {t["task_id"] for t in listing["active_tasks"]}
         assert tid not in active_ids, f"done task 不应在 active, got {active_ids}"
@@ -181,8 +197,11 @@ def test_e2e_d11_forget_task_after_done():
         r = task_states.task_create(m._conn, name="e2e-d11-restock", now=NOW_REF)
         tid = r["task_id"]
         task_states.transition(
-            m._conn, task_id=tid, to_state="done",
-            reason="manual_done", now=NOW_REF,
+            m._conn,
+            task_id=tid,
+            to_state="done",
+            reason="manual_done",
+            now=NOW_REF,
         )
         m._conn.commit()
 
@@ -195,7 +214,9 @@ def test_e2e_d11_forget_task_after_done():
 
         # 显式 forget_task 路径
         result = task_states.forget_task(
-            m._conn, tid, reason="user_explicit_forget",
+            m._conn,
+            tid,
+            reason="user_explicit_forget",
         )
         assert result["task_id"] == tid
         assert result["rows_invalidated"] >= 1
@@ -238,7 +259,9 @@ def test_e2e_proposal_then_apply_resolves():
         assert row is not None
         pid = row[0]
         applied = task_states.apply_stale_proposal(
-            m._conn, pid, applied_action="transitioned_to_done_by_user",
+            m._conn,
+            pid,
+            applied_action="transitioned_to_done_by_user",
         )
         assert applied["status"] == "applied"
 
@@ -248,5 +271,5 @@ def test_e2e_proposal_then_apply_resolves():
     finally:
         m.close()
         _setup()  # [M31 fix] teardown 清理残留 (proposal 测试是文件最后一个,
-                  # 无下一个 _setup 兜底. 残留幽灵 open task + audit_log 行
-                  # 对 propose_stale_tasks / digest 可见, 跨文件测试污染)
+        # 无下一个 _setup 兜底. 残留幽灵 open task + audit_log 行
+        # 对 propose_stale_tasks / digest 可见, 跨文件测试污染)

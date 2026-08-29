@@ -5,6 +5,7 @@ Step 9: memory_task_list / memory_task_replay
 Step 10: memory_loop_create
 Step 11: memory_loop_tick
 """
+
 import json
 import sys
 from pathlib import Path
@@ -13,6 +14,7 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
 import importlib.util as _ilu
+
 
 def _load(name: str):
     spec = _ilu.spec_from_file_location(name, _REPO / f"{name}.py")
@@ -35,12 +37,10 @@ mcp_disp = sys.modules["mcp_tool_dispatcher"]
 mcp_disp._TOOL_VIS_FLAGS = {"audit_tools": True, "l2_tools": True, "all_tools": True}
 
 
-
-
-
 def _setup():
     """Clean fixtures using a fresh Memory instance."""
     from memory import Memory
+
     mem = Memory()
     mem._conn.execute("PRAGMA foreign_keys = OFF")
     try:
@@ -94,14 +94,24 @@ def test_task_list_active_only():
     tid2 = json.loads(r2)["task_id"]
 
     # 把 tid2 推到 done, 不应出现在默认 list
-    mcp._call_tool("memory_task_transition", {
-        "task_id": tid2, "to_state": "in_progress",
-        "reason": "A", "now": "2026-08-06T10:02",
-    })
-    mcp._call_tool("memory_task_transition", {
-        "task_id": tid2, "to_state": "done",
-        "reason": "B", "now": "2026-08-06T10:03",
-    })
+    mcp._call_tool(
+        "memory_task_transition",
+        {
+            "task_id": tid2,
+            "to_state": "in_progress",
+            "reason": "A",
+            "now": "2026-08-06T10:02",
+        },
+    )
+    mcp._call_tool(
+        "memory_task_transition",
+        {
+            "task_id": tid2,
+            "to_state": "done",
+            "reason": "B",
+            "now": "2026-08-06T10:03",
+        },
+    )
 
     r = mcp._call_tool("memory_task_list", {})
     data = json.loads(r)
@@ -115,14 +125,24 @@ def test_task_replay_full_history():
     _setup()
     r = mcp._call_tool("memory_task_create", {"name": "replay", "now": "2026-08-06T10:00"})
     tid = json.loads(r)["task_id"]
-    mcp._call_tool("memory_task_transition", {
-        "task_id": tid, "to_state": "in_progress",
-        "reason": "start", "now": "2026-08-06T10:05",
-    })
-    mcp._call_tool("memory_task_transition", {
-        "task_id": tid, "to_state": "waiting",
-        "reason": "wait", "now": "2026-08-06T10:30",
-    })
+    mcp._call_tool(
+        "memory_task_transition",
+        {
+            "task_id": tid,
+            "to_state": "in_progress",
+            "reason": "start",
+            "now": "2026-08-06T10:05",
+        },
+    )
+    mcp._call_tool(
+        "memory_task_transition",
+        {
+            "task_id": tid,
+            "to_state": "waiting",
+            "reason": "wait",
+            "now": "2026-08-06T10:30",
+        },
+    )
 
     r = mcp._call_tool("memory_task_replay", {"task_id": tid})
     data = json.loads(r)
@@ -143,10 +163,15 @@ def test_loop_create_schema():
 def test_loop_create_and_tick():
     """建 loop → tick 走完整路径."""
     _setup()
-    r = mcp._call_tool("memory_loop_create", {
-        "name": "消耗品", "trigger": "库存低",
-        "interval_hours": 24, "now": "2026-08-06T09:00",
-    })
+    r = mcp._call_tool(
+        "memory_loop_create",
+        {
+            "name": "消耗品",
+            "trigger": "库存低",
+            "interval_hours": 24,
+            "now": "2026-08-06T09:00",
+        },
+    )
     data = json.loads(r)
     lid = data["loop_id"]
     assert "loop_id" in data
@@ -162,10 +187,15 @@ def test_loop_create_and_tick():
 def test_loop_tick_disabled_dormant():
     """loop enabled=False → tick verdict=dormant."""
     _setup()
-    r = mcp._call_tool("memory_loop_create", {
-        "name": "暂挂", "trigger": "x", "enabled": False,
-        "now": "2026-08-06T09:00",
-    })
+    r = mcp._call_tool(
+        "memory_loop_create",
+        {
+            "name": "暂挂",
+            "trigger": "x",
+            "enabled": False,
+            "now": "2026-08-06T09:00",
+        },
+    )
     lid = json.loads(r)["loop_id"]
     r2 = mcp._call_tool("memory_loop_tick", {"loop_id": lid})
     data = json.loads(r2)

@@ -4,6 +4,7 @@
 覆盖: schema 列存在、默认值、写入、按类型过滤 (meta/vector/entity 路)、
 非法类型拦截、存量库自动迁移。source 统一 'test_memory_type' 便于 session 清理。
 """
+
 import unittest
 
 from memory import Memory, norm_memory_type
@@ -20,10 +21,9 @@ class TestMemoryTypeBase(unittest.TestCase):
     def tearDownClass(cls):
         # [8/6 plan §10] 后端感知清理
         from helpers import cleanup_chunks
+
         cleanup_chunks(cls.mem, source=cls.src)
-        cls.mem._conn.execute(
-            "DELETE FROM entities WHERE id LIKE 'mt_test_%'"
-        )
+        cls.mem._conn.execute("DELETE FROM entities WHERE id LIKE 'mt_test_%'")
         cls.mem._conn.commit()
         cls.mem.close()
 
@@ -45,9 +45,7 @@ class TestSchemaAndDefaults(TestMemoryTypeBase):
     def test_03_default_is_fact(self):
         """不传 memory_type 时默认 'fact'。"""
         cid = self.mem.remember("mt_test default type", source=self.src)
-        row = self.mem._conn.execute(
-            "SELECT memory_type FROM chunks WHERE id = ?", (cid,)
-        ).fetchone()
+        row = self.mem._conn.execute("SELECT memory_type FROM chunks WHERE id = ?", (cid,)).fetchone()
         self.assertEqual(row["memory_type"], "fact")
 
     def test_04_norm_normalizes_and_rejects(self):
@@ -67,13 +65,9 @@ class TestRememberStoresType(TestMemoryTypeBase):
             memory_type="decision",
             entities=[{"id": "mt_test_ent1", "kind": "concept", "name": "mt entity"}],
         )
-        chunk_row = self.mem._conn.execute(
-            "SELECT memory_type FROM chunks WHERE id = ?", (cid,)
-        ).fetchone()
+        chunk_row = self.mem._conn.execute("SELECT memory_type FROM chunks WHERE id = ?", (cid,)).fetchone()
         self.assertEqual(chunk_row["memory_type"], "decision")
-        ent_row = self.mem._conn.execute(
-            "SELECT memory_type FROM entities WHERE id = 'mt_test_ent1'"
-        ).fetchone()
+        ent_row = self.mem._conn.execute("SELECT memory_type FROM entities WHERE id = 'mt_test_ent1'").fetchone()
         self.assertEqual(ent_row["memory_type"], "decision")
 
     def test_06_entity_explicit_type_overrides_chunk_default(self):
@@ -82,12 +76,9 @@ class TestRememberStoresType(TestMemoryTypeBase):
             "mt_test fact chunk but preference entity",
             source=self.src,
             memory_type="fact",
-            entities=[{"id": "mt_test_ent2", "kind": "concept", "name": "mt ent2",
-                       "memory_type": "preference"}],
+            entities=[{"id": "mt_test_ent2", "kind": "concept", "name": "mt ent2", "memory_type": "preference"}],
         )
-        ent_row = self.mem._conn.execute(
-            "SELECT memory_type FROM entities WHERE id = 'mt_test_ent2'"
-        ).fetchone()
+        ent_row = self.mem._conn.execute("SELECT memory_type FROM entities WHERE id = 'mt_test_ent2'").fetchone()
         self.assertEqual(ent_row["memory_type"], "preference")
 
     def test_07_invalid_type_rejected(self):
@@ -98,8 +89,7 @@ class TestRememberStoresType(TestMemoryTypeBase):
             self.mem.remember(
                 "mt_test bogus ent",
                 source=self.src,
-                entities=[{"id": "mt_test_ent3", "kind": "concept", "name": "x",
-                           "memory_type": "nope"}],
+                entities=[{"id": "mt_test_ent3", "kind": "concept", "name": "x", "memory_type": "nope"}],
             )
 
 
@@ -108,11 +98,15 @@ class TestRecallTypeFilter(TestMemoryTypeBase):
     def setUpClass(cls):
         super().setUpClass()
         cls.cid_d = cls.mem.remember(
-            "mt_filter 决策标记 token_DECISION", source=cls.src, memory_type="decision",
+            "mt_filter 决策标记 token_DECISION",
+            source=cls.src,
+            memory_type="decision",
             importance=0.9,
         )
         cls.cid_p = cls.mem.remember(
-            "mt_filter 偏好标记 token_PREFERENCE", source=cls.src, memory_type="preference",
+            "mt_filter 偏好标记 token_PREFERENCE",
+            source=cls.src,
+            memory_type="preference",
             importance=0.9,
         )
 

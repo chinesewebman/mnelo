@@ -49,9 +49,6 @@ mcp_disp = sys.modules["mcp_tool_dispatcher"]
 mcp_disp._TOOL_VIS_FLAGS = {"audit_tools": True, "l2_tools": True, "all_tools": True}
 
 
-
-
-
 def _isolated_db(tmp_path):
     """[8/9 B13] 用 tmp_path 隔离 DB, 不污染 live. 临时建 memory instance.
 

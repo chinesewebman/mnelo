@@ -218,7 +218,8 @@ def mem_repo():
     def cleanup():
         """[8/6 plan §10] 后端感知清理 (helper 先 _index.remove 再 DELETE chunks)."""
         from helpers import cleanup_chunks
-        cleanup_chunks(m, source_pattern='metrics_round15:%')
+
+        cleanup_chunks(m, source_pattern="metrics_round15:%")
         m._conn.commit()
 
     cleanup()

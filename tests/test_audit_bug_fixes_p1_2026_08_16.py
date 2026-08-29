@@ -6,6 +6,7 @@ B3: ipfilter middleware ignores X-Forwarded-For (proxy bypass)
 B4: getattr(config, "server_ipfilter_cidrs", []) returns [] because config is
     the module, not the singleton — ipfilter NEVER enforced even when configured
 """
+
 import os
 import sys
 import tempfile
@@ -20,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # B4: getattr(config, ...) bug — ipfilter silently inactive
 # ============================================================
 
+
 def test_b4_config_singleton_access_returns_cidrs():
     """B4 fix: mcp_transports should read config.config.server_ipfilter_cidrs
     (singleton instance), NOT getattr(config, ...) which checks the module.
@@ -27,6 +29,7 @@ def test_b4_config_singleton_access_returns_cidrs():
     os.environ["MNELO_MEMORY_SERVER_IPFILTER"] = "100.64.0.0/10,127.0.0.0/8"
     import importlib
     import config
+
     importlib.reload(config)
     try:
         # Use the same access pattern mcp_transports uses for uvicorn.run wrappers
@@ -44,6 +47,7 @@ def test_b4_mcp_transports_reads_singleton_not_module(monkeypatch):
     """
     import importlib
     import config
+
     importlib.reload(config)
 
     # Set CIDRs via env
@@ -53,10 +57,9 @@ def test_b4_mcp_transports_reads_singleton_not_module(monkeypatch):
     try:
         # The function mcp_transports should now use
         from mcp_transports import _resolve_ipfilter_from_config
+
         cidrs, trust_xff = _resolve_ipfilter_from_config()
-        assert cidrs == ["192.168.0.0/16"], (
-            f"ipfilter not reading from singleton: got {cidrs!r}"
-        )
+        assert cidrs == ["192.168.0.0/16"], f"ipfilter not reading from singleton: got {cidrs!r}"
         assert trust_xff is False, "trust_xff should default False"
     except ImportError:
         pytest.fail("B4 fix missing: _resolve_ipfilter_from_config() not exported")
@@ -68,6 +71,7 @@ def test_b4_mcp_transports_reads_singleton_not_module(monkeypatch):
 # ============================================================
 # B1: _txn depth counter leaks on exception path
 # ============================================================
+
 
 def test_b1_depth_counter_does_not_leak_on_exception():
     """B1 fix: After exception in nested _txn, depth counter must decrement.
@@ -109,14 +113,13 @@ def test_b1_close_purges_depth_dict():
         assert _txn_depth_by_id.get(conn_id) == 0 or conn_id not in _txn_depth_by_id
         m.close()
         # After close, conn_id should be purged
-        assert conn_id not in _txn_depth_by_id, (
-            f"close() didn't purge depth dict: {_txn_depth_by_id.get(conn_id)}"
-        )
+        assert conn_id not in _txn_depth_by_id, f"close() didn't purge depth dict: {_txn_depth_by_id.get(conn_id)}"
 
 
 # ============================================================
 # B2: Memory.close() leaks sqlite connection if index close raises
 # ============================================================
+
 
 def test_b2_close_runs_conn_close_even_if_index_raises():
     """B2 fix: If self._index.close() raises, self._conn.close() must still run.
@@ -132,9 +135,10 @@ def test_b2_close_runs_conn_close_even_if_index_raises():
     m = Memory(db_path=Path(tempfile.gettempdir()) / "b2_test.db")
     m._index = BrokenIndex()
     m.close()
-    # Verify conn was actually closed (any subsequent op should fail)
-    with pytest.raises(Exception):
-        # sqlite3 raises ProgrammingError on closed conn
+    # Verify conn was actually closed (sqlite3 raises ProgrammingError on closed conn)
+    import sqlite3
+
+    with pytest.raises(sqlite3.ProgrammingError):
         m._conn.execute("SELECT 1").fetchone()
     # Cleanup leftover file
     Path(tempfile.gettempdir(), "b2_test.db").unlink(missing_ok=True)
@@ -165,6 +169,7 @@ def test_b2_close_swallows_conn_close_exception():
 # ============================================================
 # B3: ipfilter X-Forwarded-For bypass
 # ============================================================
+
 
 def test_b3_ipfilter_parses_xff_header():
     """B3 fix: When X-Forwarded-For header is present and trusted, use first IP.
@@ -198,7 +203,11 @@ def test_b3_ipfilter_parses_xff_header():
     }
     asyncio.run(
         _ipfilter_middleware(
-            scope, receive, send, app, cidrs,
+            scope,
+            receive,
+            send,
+            app,
+            cidrs,
             trust_xff=True,  # B3 fix: new param
         )
     )
@@ -236,7 +245,11 @@ def test_b3_ipfilter_trust_xff_disabled_uses_tcp_peer():
     }
     asyncio.run(
         _ipfilter_middleware(
-            scope, receive, send, app, cidrs,
+            scope,
+            receive,
+            send,
+            app,
+            cidrs,
             trust_xff=False,  # B3 fix: default safe
         )
     )
@@ -245,10 +258,10 @@ def test_b3_ipfilter_trust_xff_disabled_uses_tcp_peer():
 
 
 def test_b3_xff_takes_leftmost_ip():
-    """B3 fix: X-Forwarded-For chain = "client, proxy1, proxy2" — take leftmost.
-    """
+    """B3 fix: X-Forwarded-For chain = "client, proxy1, proxy2" — take leftmost."""
     # Just test the parser function
     from mcp_transports import _parse_xff_first_ip
+
     assert _parse_xff_first_ip(b"8.8.8.8") == "8.8.8.8"
     assert _parse_xff_first_ip(b"8.8.8.8, 10.0.0.1, 192.168.1.1") == "8.8.8.8"
     # Edge cases

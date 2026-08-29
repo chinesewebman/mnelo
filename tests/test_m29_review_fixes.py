@@ -5,6 +5,7 @@
   M29.1 [中] _setup() 清理前缀跟 task_create 实际 id 匹配 (含日期前缀), 跑后无残留污染
   M29.2 [低] REPO 路径用 Path(__file__).resolve().parent.parent, 不硬编码作者本机路径
 """
+
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 import os
+
 os.environ.setdefault("MNELO_MEMORY_SEARCH_BACKEND", "usearch")
 
 import sqlite3
@@ -33,16 +35,17 @@ def test_m29_1_setup_prefix_matches_actual_ids():
         # 旧 e2e fixture 只删 'task:e2e%' (没日期前缀) 漏删, 本 test 走 e2e prefix
         # 让 fixture 能命中.
         import task_states as ts
+
         r = ts.task_create(m._conn, name="e2e-test-m29", now="2026-08-06T15:00")
         tid = r["task_id"]
         m._conn.commit()
         # 校验 id 含日期前缀
         import re as _re
+
         assert _re.match(r"^task:\d{8}-e2e-", tid), f"expected task:YYYYMMDD-e2e-* id, got {tid}"
         # 插入 e2e chunk
         c = m._conn.execute(
-            "INSERT OR IGNORE INTO chunks (id, content, source, memory_type, importance, valid_until, created_at, processed_at) "
-            "VALUES (?, ?, ?, ?, ?, NULL, ?, NULL)",
+            "INSERT OR IGNORE INTO chunks (id, content, source, memory_type, importance, valid_until, created_at, processed_at) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL)",
             ("chunk:e2e-test-m29", "test content", "test:e2e_m29_test", "episodic", 0.5, "2026-08-06T15:00"),
         )
         m._conn.commit()
@@ -51,20 +54,15 @@ def test_m29_1_setup_prefix_matches_actual_ids():
 
     # 2. 跑 test_m5_4 的 _setup (复用其 fixture)
     from tests.test_m5_4_e2e_purchase import _setup as e2e_setup
+
     e2e_setup()
 
     # 3. 校验残留: 本 task + 本 chunk 应被清掉
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
-        n_task = c.execute(
-            "SELECT COUNT(*) FROM task_states WHERE task_id LIKE 'task:%e2e-%' AND valid_until IS NULL"
-        ).fetchone()[0]
-        n_entity = c.execute(
-            "SELECT COUNT(*) FROM entities WHERE id LIKE 'task:%e2e-%' AND valid_until IS NULL"
-        ).fetchone()[0]
-        n_chunk = c.execute(
-            "SELECT COUNT(*) FROM chunks WHERE id LIKE 'chunk:e2e-%' OR source LIKE '%e2e-%'"
-        ).fetchone()[0]
+        n_task = c.execute("SELECT COUNT(*) FROM task_states WHERE task_id LIKE 'task:%e2e-%' AND valid_until IS NULL").fetchone()[0]
+        n_entity = c.execute("SELECT COUNT(*) FROM entities WHERE id LIKE 'task:%e2e-%' AND valid_until IS NULL").fetchone()[0]
+        n_chunk = c.execute("SELECT COUNT(*) FROM chunks WHERE id LIKE 'chunk:e2e-%' OR source LIKE '%e2e-%'").fetchone()[0]
         # 同时校验 m5-stale-* 也清掉 (e2e setup 跨 test 不该受影响, 但本 test 不创建 m5-stale)
         # 我们自己刚创建的 m29 应该被清
         assert n_task == 0, f"e2e _setup 没清掉本 task (id 含日期前缀), found {n_task}"
@@ -78,9 +76,9 @@ def test_m29_1_setup_prefix_matches_actual_ids():
 def test_m29_2_no_hardcoded_path():
     """[M29.2] REPO 路径走 __file__ 派生, 不硬编码绝对路径."""
     src = Path(__file__).read_text()
-    assert "REPO = Path(__file__).resolve().parent.parent" in src, \
-        "REPO 应从 __file__ 派生, 不应硬编码绝对路径"
+    assert "REPO = Path(__file__).resolve().parent.parent" in src, "REPO 应从 __file__ 派生, 不应硬编码绝对路径"
     import re as _re
+
     hardcoded = _re.search(r'REPO\s*=\s*Path\(["\']/', src)
     assert not hardcoded, f"REPO 硬编码绝对路径: {hardcoded.group() if hardcoded else None}"
 
@@ -91,8 +89,7 @@ def test_m29_1b_setup_cleans_chunks_not_just_entities():
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
         c.execute(
-            "INSERT OR IGNORE INTO chunks (id, content, source, memory_type, importance, valid_until, created_at, processed_at) "
-            "VALUES (?, ?, ?, ?, ?, NULL, ?, NULL)",
+            "INSERT OR IGNORE INTO chunks (id, content, source, memory_type, importance, valid_until, created_at, processed_at) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL)",
             ("chunk:e2e-m29-chunks", "leak test", "test:e2e_m29_chunks", "episodic", 0.5, "2026-08-06T15:00"),
         )
         c.commit()
@@ -101,14 +98,13 @@ def test_m29_1b_setup_cleans_chunks_not_just_entities():
 
     # 跑 e2e setup
     from tests.test_m5_4_e2e_purchase import _setup as e2e_setup
+
     e2e_setup()
 
     # 校验 chunk 被清
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
-        n = c.execute(
-            "SELECT COUNT(*) FROM chunks WHERE id='chunk:e2e-m29-chunks'"
-        ).fetchone()[0]
+        n = c.execute("SELECT COUNT(*) FROM chunks WHERE id='chunk:e2e-m29-chunks'").fetchone()[0]
         assert n == 0, f"e2e _setup 应清掉 chunk:e2e-m29-chunks, found {n}"
     finally:
         c.close()

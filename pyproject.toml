@@ -85,6 +85,11 @@ ignore = [
 # "false"/"true"/"null" 是 JSON boolean/null (不是 Python) → ruff F821 误报
 # description 文本常含中文 + URL 会超 200 字符 → E501 误报 (同 docs/DESIGN.md)
 "mcp_tool_definitions.py" = ["F821", "E501"]
+# [8/29 P4] api/mnelo_client.py uses `if x: dict['key'] = x` one-liner idiom
+# for concise args-builder pattern. The PEP8 violation (E701 multi-statement
+# on one line) is the intentional idiom throughout — refactoring to multi-line
+# would harm readability. Allow E701 file-wide.
+"api/mnelo_client.py" = ["E701"]
 
 [tool.ruff.format]
 # Match Black defaults so ruff format == black format (for back-compat)

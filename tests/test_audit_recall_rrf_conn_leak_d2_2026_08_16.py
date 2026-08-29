@@ -8,6 +8,7 @@ handling concurrent failing recalls), fd exhaustion is real.
 
 Post-fix: try/finally ensures all 4 conns close even on worker exception.
 """
+
 import os
 import sys
 import tempfile

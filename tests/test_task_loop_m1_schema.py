@@ -9,6 +9,7 @@ DESIGN §11 测试计划 M1 — schema:
 
 实际: stop MCP first (单写锁) — zvec 跟 test 抢锁会失败.
 """
+
 import os
 import sys
 import sqlite3
@@ -57,25 +58,14 @@ def test_task_states_table_created():
 
         # 不变量索引 — sqlite_master 索引有 name (col 0) + sql (col 1).
         # partial UNIQUE 索引 'ux_task_current_state' 也走这条路.
-        indexes = {
-            row[0]
-            for row in m._conn.execute(
-                "SELECT name, sql FROM sqlite_master WHERE type='index'"
-            )
-        }
-        assert "ux_task_current_state" in indexes, (
-            f"ux_task_current_state partial UNIQUE missing. Got indexes: {sorted(indexes)}"
-        )
+        indexes = {row[0] for row in m._conn.execute("SELECT name, sql FROM sqlite_master WHERE type='index'")}
+        assert "ux_task_current_state" in indexes, f"ux_task_current_state partial UNIQUE missing. Got indexes: {sorted(indexes)}"
         assert "idx_task_states_open" in indexes, "idx_task_states_open partial index missing"
         assert "idx_task_states_task_valid" in indexes, "idx_task_states_task_valid missing"
 
         # schema_version 已 bump
-        version = m._conn.execute(
-            "SELECT value FROM meta WHERE key='schema_version'"
-        ).fetchone()
-        assert version is not None and version[0] == "1.1", (
-            f"schema_version should be '1.1', got {version}"
-        )
+        version = m._conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        assert version is not None and version[0] == "1.1", f"schema_version should be '1.1', got {version}"
     finally:
         m.close()
 
@@ -95,11 +85,7 @@ def _setup_task_test_fixture(m):
     # for the whole fixture cleanup (other tests may have left dangling relations).
     m._conn.execute("PRAGMA foreign_keys = OFF")
     m._conn.execute("DELETE FROM task_states WHERE task_id LIKE 'task:test-%' OR task_id LIKE 'loop:test-%'")
-    m._conn.execute(
-        "DELETE FROM task_states WHERE task_id IN ("
-        "'task:20260806-restock-1', 'loop:consumables-stock'"
-        ")"
-    )
+    m._conn.execute("DELETE FROM task_states WHERE task_id IN ('task:20260806-restock-1', 'loop:consumables-stock')")
     m._conn.execute("DELETE FROM task_states WHERE task_id LIKE 'task:tlm2-%'")
     m._conn.execute("DELETE FROM task_states WHERE task_id LIKE 'task:tlm3-%'")
     m._conn.execute("DELETE FROM task_states WHERE task_id LIKE 'task:tlm7-%'")
@@ -192,25 +178,19 @@ def test_ux_task_current_state_rejects_double_open():
         )
         # 第一个当前窗: ok
         m._conn.execute(
-            "INSERT INTO task_states (task_id, state, valid_from, created_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO task_states (task_id, state, valid_from, created_at) VALUES (?, ?, ?, ?)",
             ("task:test-1", "open", "2026-08-06T10:00", "2026-08-06T10:00"),
         )
         # 第二个当前窗 (同 task, valid_until IS NULL): 应该被 ux_task_current_state 拒
         try:
             m._conn.execute(
-                "INSERT INTO task_states (task_id, state, valid_from, created_at) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO task_states (task_id, state, valid_from, created_at) VALUES (?, ?, ?, ?)",
                 ("task:test-1", "in_progress", "2026-08-06T10:01", "2026-08-06T10:01"),
             )
         except sqlite3.IntegrityError as e:
-            assert "ux_task_current_state" in str(e) or "UNIQUE" in str(e), (
-                f"IntegrityError message should reference the constraint, got: {e}"
-            )
+            assert "ux_task_current_state" in str(e) or "UNIQUE" in str(e), f"IntegrityError message should reference the constraint, got: {e}"
         else:
-            raise AssertionError(
-                "Second open window for same task should be rejected by partial UNIQUE"
-            )
+            raise AssertionError("Second open window for same task should be rejected by partial UNIQUE")
     finally:
         m.close()
 
@@ -220,41 +200,33 @@ def test_state_transitions_seeded_defaults():
     m = mem_mod.Memory()
     try:
         _setup_task_test_fixture(m)
-        rows = m._conn.execute(
-            "SELECT scope, from_state, to_state FROM state_transitions "
-            "WHERE scope='default' ORDER BY from_state, to_state"
-        ).fetchall()
+        rows = m._conn.execute("SELECT scope, from_state, to_state FROM state_transitions WHERE scope='default' ORDER BY from_state, to_state").fetchall()
         seen = {(r[0], r[1], r[2]) for r in rows}
 
         # 15 条默认 (DESIGN §3.2):
         expected = {
-            ("default", "open",        "in_progress"),
-            ("default", "open",        "done"),
-            ("default", "open",        "cancelled"),
+            ("default", "open", "in_progress"),
+            ("default", "open", "done"),
+            ("default", "open", "cancelled"),
             ("default", "in_progress", "waiting"),
             ("default", "in_progress", "blocked"),
             ("default", "in_progress", "done"),
             ("default", "in_progress", "cancelled"),
-            ("default", "waiting",     "in_progress"),
-            ("default", "waiting",     "done"),
-            ("default", "waiting",     "cancelled"),
-            ("default", "blocked",     "in_progress"),
-            ("default", "blocked",     "waiting"),
-            ("default", "blocked",     "done"),
-            ("default", "blocked",     "cancelled"),
-            ("default", "done",        "open"),  # reopen 逃生门
+            ("default", "waiting", "in_progress"),
+            ("default", "waiting", "done"),
+            ("default", "waiting", "cancelled"),
+            ("default", "blocked", "in_progress"),
+            ("default", "blocked", "waiting"),
+            ("default", "blocked", "done"),
+            ("default", "blocked", "cancelled"),
+            ("default", "done", "open"),  # reopen 逃生门
         }
         missing = expected - seen
         assert not missing, f"Missing default transitions: {missing}"
 
         # cancelled 是 terminal — 不应出现在 from_state 列
-        cancelled_transitions = [
-            r for r in rows if r[1] == "cancelled"
-        ]
-        assert cancelled_transitions == [], (
-            f"cancelled is terminal; should not be a from_state. "
-            f"Got: {cancelled_transitions}"
-        )
+        cancelled_transitions = [r for r in rows if r[1] == "cancelled"]
+        assert cancelled_transitions == [], f"cancelled is terminal; should not be a from_state. Got: {cancelled_transitions}"
     finally:
         m.close()
 
@@ -271,8 +243,7 @@ def test_task_loop_kind_in_entities():
         )
         # loop kind (命名: loop:<slug>)
         m._conn.execute(
-            "INSERT INTO entities (id, kind, name, properties_json) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO entities (id, kind, name, properties_json) VALUES (?, ?, ?, ?)",
             (
                 "loop:consumables-stock",
                 "loop",
@@ -282,25 +253,18 @@ def test_task_loop_kind_in_entities():
         )
         # task_states 接受 task_id 引用这两个 entity (evidence_chunk_id 实际创建可空)
         m._conn.execute(
-            "INSERT INTO task_states (task_id, state, valid_from, created_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO task_states (task_id, state, valid_from, created_at) VALUES (?, ?, ?, ?)",
             ("task:20260806-restock-1", "open", "2026-08-06T10:00", "2026-08-06T10:00"),
         )
         m._conn.execute(
-            "INSERT INTO task_states (task_id, state, valid_from, created_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO task_states (task_id, state, valid_from, created_at) VALUES (?, ?, ?, ?)",
             ("loop:consumables-stock", "running", "2026-08-06T10:00", "2026-08-06T10:00"),
         )
         # 校验回读 — 使用 sqlite3.Row 兼容, 转 tuple
-        rows = [
-            tuple(r)
-            for r in m._conn.execute(
-                "SELECT task_id, state FROM task_states ORDER BY id"
-            )
-        ]
+        rows = [tuple(r) for r in m._conn.execute("SELECT task_id, state FROM task_states ORDER BY id")]
         assert rows == [
             ("task:20260806-restock-1", "open"),
-            ("loop:consumables-stock",  "running"),
+            ("loop:consumables-stock", "running"),
         ]
     finally:
         m.close()
@@ -317,14 +281,11 @@ def test_check_constraint_rejects_unknown_state():
         )
         try:
             m._conn.execute(
-                "INSERT INTO task_states (task_id, state, valid_from, created_at) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO task_states (task_id, state, valid_from, created_at) VALUES (?, ?, ?, ?)",
                 ("task:test-2", "flying", "2026-08-06T10:00", "2026-08-06T10:00"),
             )
         except sqlite3.IntegrityError as e:
-            assert "CHECK" in str(e), (
-                f"IntegrityError should reference CHECK constraint, got: {e}"
-            )
+            assert "CHECK" in str(e), f"IntegrityError should reference CHECK constraint, got: {e}"
         else:
             raise AssertionError("Unknown state 'flying' should be rejected by CHECK")
     finally:
@@ -342,38 +303,30 @@ def test_asof_replay_query_returns_windows():
         )
         # 3 个状态窗: open → in_progress → waiting (evidence_chunk_id 为 NULL — 实际创建可空, §3.1)
         windows = [
-            ("open",        "2026-08-06T10:00", "2026-08-06T10:30", None),
+            ("open", "2026-08-06T10:00", "2026-08-06T10:30", None),
             ("in_progress", "2026-08-06T10:30", "2026-08-06T11:00", None),
-            ("waiting",     "2026-08-06T11:00", None,                None),
+            ("waiting", "2026-08-06T11:00", None, None),
         ]
         for state, vf, vu, ev in windows:
             m._conn.execute(
-                "INSERT INTO task_states (task_id, state, valid_from, valid_until, "
-                "evidence_chunk_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO task_states (task_id, state, valid_from, valid_until, evidence_chunk_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                 ("task:test-3", state, vf, vu, ev, vf),
             )
 
         # 当前状态 (valid_until IS NULL)
-        cur = m._conn.execute(
-            "SELECT state FROM task_states WHERE task_id='task:test-3' "
-            "AND valid_until IS NULL"
-        ).fetchone()
+        cur = m._conn.execute("SELECT state FROM task_states WHERE task_id='task:test-3' AND valid_until IS NULL").fetchone()
         assert cur[0] == "waiting"
 
         # asof 10:15 时点: 应该是 in_progress
         asof = m._conn.execute(
-            "SELECT state FROM task_states WHERE task_id='task:test-3' "
-            "AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?) "
-            "ORDER BY valid_from DESC LIMIT 1",
+            "SELECT state FROM task_states WHERE task_id='task:test-3' AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?) ORDER BY valid_from DESC LIMIT 1",
             ("2026-08-06T10:15", "2026-08-06T10:15"),
         ).fetchone()
         assert asof[0] == "open", f"at 10:15 task should be in 'open', got {asof[0]}"
 
         # asof 11:30: waiting (valid_from 11:00, valid_until NULL)
         asof2 = m._conn.execute(
-            "SELECT state FROM task_states WHERE task_id='task:test-3' "
-            "AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?) "
-            "ORDER BY valid_from DESC LIMIT 1",
+            "SELECT state FROM task_states WHERE task_id='task:test-3' AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?) ORDER BY valid_from DESC LIMIT 1",
             ("2026-08-06T11:30", "2026-08-06T11:30"),
         ).fetchone()
         assert asof2[0] == "waiting"

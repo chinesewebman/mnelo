@@ -6,6 +6,7 @@
 对 memory.py 的策略一致 (避免其它测试对 sys.modules['api.mnelo_client']
 引用错位导致 'has no attribute get_digest').
 """
+
 import importlib.util as _ilu
 import sys
 from pathlib import Path
@@ -44,8 +45,12 @@ def _make_client(_call_return):
 def test_s2_get_digest_no_ref_passes_through():
     """[S2 验收] client.get_digest() 无 ref → 调 memory_get_digest tool, 无参透传."""
     digest_dict = {
-        "enabled": True, "content": "...", "chunk_id": "c1",
-        "line_refs": {}, "truncated": False, "built_at": "2026-08-05",
+        "enabled": True,
+        "content": "...",
+        "chunk_id": "c1",
+        "line_refs": {},
+        "truncated": False,
+        "built_at": "2026-08-05",
     }
     client = _make_client(digest_dict)
     result = client.get_digest()

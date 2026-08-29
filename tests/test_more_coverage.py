@@ -144,6 +144,7 @@ class TestMCPServerHandlers:
         facade (from mcp_server import _call_tool → 转发到 mcp_tool_dispatcher._call_tool).
         """
         from mcp_server import _call_tool
+
         for i in range(3):
             mem._conn.execute(
                 "INSERT INTO entities (id, kind, name, summary, importance, source, valid_from, valid_until) VALUES (?, 'test_kind', ?, 'summary', ?, 'test_cov', ?, NULL)",
@@ -158,6 +159,7 @@ class TestMCPServerHandlers:
     def test_handle_list_entities_with_min_importance(self, mem, clean_prefix):
         # [8/29 PR fix Bundle 3] _mcp_repo 删了, 走 PEP 562 facade
         from mcp_server import _call_tool
+
         for imp in (0.3, 0.7):
             mem._conn.execute(
                 "INSERT INTO entities (id, kind, name, importance, source, valid_from, valid_until) VALUES (?, 'test_imp', ?, ?, 'test_cov', ?, NULL)",

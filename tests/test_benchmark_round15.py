@@ -207,8 +207,6 @@ class TestBenchmarkQueries:
         # At least 5 Chinese characters (entity-style)
         chinese_count = sum(1 for q in BENCHMARK_QUERIES if any("\u4e00" <= c <= "\u9fff" for c in q))
         # At least 5 stock code-style (lowercase letters + digits)
-        stock_count = sum(
-            1 for q in BENCHMARK_QUERIES if any(c.isdigit() for c in q) and any(c.isalpha() and c.islower() for c in q)
-        )
+        stock_count = sum(1 for q in BENCHMARK_QUERIES if any(c.isdigit() for c in q) and any(c.isalpha() and c.islower() for c in q))
         assert chinese_count >= 5
         assert stock_count >= 5

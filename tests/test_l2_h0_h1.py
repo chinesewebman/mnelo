@@ -14,6 +14,7 @@
 
 不依赖外部数据 — 写完后清理本类写入的 audit_log + meta flags。
 """
+
 import os
 import unittest
 
@@ -36,8 +37,7 @@ class TestL2Gate(unittest.TestCase):
         # 先确保 disabled (setup 默认)
         self.mem._l2_set("l2.enabled", "0")
         r = self.mem.run_maintenance(passes=["hygiene"], dry_run=True)
-        self.assertEqual(r["status"], "disabled",
-            "l2.enabled=0 应返 disabled")
+        self.assertEqual(r["status"], "disabled", "l2.enabled=0 应返 disabled")
         self.assertIn("message", r)
         self.assertEqual(r["passes_run"], [])
 
@@ -134,14 +134,12 @@ class TestHygienePass(unittest.TestCase):
             self.skipTest("需要 owner live DB 2259 candidates; fresh DB 0")
         r = self.mem.run_maintenance(passes=["hygiene"], dry_run=True)
         self.assertIn("hygiene", r["passes_run"])
-        self.assertLessEqual(r["applied"], 50,
-            f"applied 超过 50 cap, 实际: {r['applied']}")
+        self.assertLessEqual(r["applied"], 50, f"applied 超过 50 cap, 实际: {r['applied']}")
 
         # 提案里有 decay_importance
         ph = r["proposals"]["hygiene"]
         decay = [p for p in ph if p["action"] == "decay_importance"]
-        self.assertGreater(len(decay), 0,
-            "实际 8/4 ≈2259 候选 0.1-0.3, 应有 decay proposal")
+        self.assertGreater(len(decay), 0, "实际 8/4 ≈2259 候选 0.1-0.3, 应有 decay proposal")
 
     def test_02_decay_proposal_shape(self):
         """[§5.7] decay proposal 形状: before/after/ref_id/action/reason"""
@@ -162,15 +160,14 @@ class TestHygienePass(unittest.TestCase):
 
     def test_03_ttl_candidate_reports_5_types(self):
         """[H3 §3] TTL candidate report 覆盖 fact/preference/episode/decision/ephemeral
-           (procedure 永久 = None = 不报告)"""
+        (procedure 永久 = None = 不报告)"""
         if getattr(self, "skip_tests_in_fresh", False):
             self.skipTest("需要 owner live DB TTL variety; fresh DB 0")
         r = self.mem.run_maintenance(passes=["hygiene"], dry_run=True)
         ph = r["proposals"]["hygiene"]
         ttl = [p for p in ph if p["action"] == "ttl_candidate_report"]
         # 5 type reports (procedure 不报告因为永久)
-        self.assertEqual(len(ttl), 5,
-            f"5 TTL reports (procedure 永久不报告), 实际: {len(ttl)}")
+        self.assertEqual(len(ttl), 5, f"5 TTL reports (procedure 永久不报告), 实际: {len(ttl)}")
 
     def test_04_ttl_ephemeral_finds_chunks(self):
         """[实际 8/4] ephemeral 7d 实际有 52 chunk > 7 天 (P1a v0.2 升级后)"""
@@ -178,8 +175,7 @@ class TestHygienePass(unittest.TestCase):
             self.skipTest("需要 owner live DB ephemeral chunks; fresh DB 0")
         r = self.mem.run_maintenance(passes=["hygiene"], dry_run=True)
         ph = r["proposals"]["hygiene"]
-        ttl_eph = [p for p in ph if p["action"] == "ttl_candidate_report"
-                   and p["before"]["memory_type"] == "ephemeral"]
+        ttl_eph = [p for p in ph if p["action"] == "ttl_candidate_report" and p["before"]["memory_type"] == "ephemeral"]
         self.assertEqual(len(ttl_eph), 1)
         # 实际有数据 (P1a v0.2 1.2% ephemeral)
         # '52 chunks' or 'X chunks older than 7 days' 都行
@@ -195,8 +191,7 @@ class TestHygienePass(unittest.TestCase):
         after_count = self.mem._conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
         # applied 行写 audit_log (PROPOSED)
         # 注意: UNIQUE 约束 (同 run_id 同 ref_id 同 status), 重跑会有 skipped
-        self.assertGreaterEqual(after_count - before_count, applied - r["skipped"],
-            f"应至少新增 applied-skipped 行 audit_log")
+        self.assertGreaterEqual(after_count - before_count, applied - r["skipped"], f"应至少新增 applied-skipped 行 audit_log")
 
     def test_06_proposals_written_as_proposed_status(self):
         """[§5.9.1] decay proposals 写 audit_log 是 'proposed' 状态"""
@@ -205,8 +200,7 @@ class TestHygienePass(unittest.TestCase):
         # 跑一次 + 看最新 hygiene 行的 status
         self.mem.run_maintenance(passes=["hygiene"], dry_run=True)
         recent = self.mem.list_audit(pass_name="hygiene", status="proposed", limit=10)
-        self.assertGreater(len(recent), 0,
-            "应有 proposed 状态的 hygiene audit 行")
+        self.assertGreater(len(recent), 0, "应有 proposed 状态的 hygiene audit 行")
         for a in recent:
             self.assertEqual(a["status"], "proposed")
 
@@ -217,12 +211,12 @@ class TestHygienePass(unittest.TestCase):
         self.mem._l2_set("l2.last_run.hygiene", "")  # 清空 reset
         before = self.mem._l2_get("l2.last_run.hygiene")
         import time as _t
+
         _t.sleep(0.01)
         self.mem.run_maintenance(passes=["hygiene"], dry_run=True)
         after_dry = self.mem._l2_get("l2.last_run.hygiene")
         # 关键: dry_run 不推 last_run (since empty before, after 应依旧空)
-        self.assertEqual(before, after_dry,
-            "dry_run 不推 l2.last_run.hygiene (last_run 只在真 apply 时推进)")
+        self.assertEqual(before, after_dry, "dry_run 不推 l2.last_run.hygiene (last_run 只在真 apply 时推进)")
 
     def test_07b_dry_run_records_last_dry_run(self):
         """[§5.9.2] dry_run 应记 l2.last_dry_run.hygiene
@@ -235,8 +229,7 @@ class TestHygienePass(unittest.TestCase):
         # 跑 dry_run
         self.mem.run_maintenance(passes=["hygiene"], dry_run=True)
         after_dry = self.mem._l2_get("l2.last_run.hygiene")
-        self.assertEqual(before, after_dry,
-            f"dry_run 不应动 last_run.hygiene (before={before}, after={after_dry})")
+        self.assertEqual(before, after_dry, f"dry_run 不应动 last_run.hygiene (before={before}, after={after_dry})")
 
     def test_08_unknown_pass_skipped(self):
         """[run_maintenance] unknown pass 加 warnings, 不抛"""
@@ -265,9 +258,7 @@ class TestStatsHygieneSubkey(unittest.TestCase):
     def test_02_hygiene_subkey_fields(self):
         """[§6.5] hygiene 子键有 7 字段"""
         s = self.mem.stats()["hygiene"]
-        for field in ("importance_floor", "decay_candidates", "decay_floor_chunks",
-                      "purge_backlog", "audit_log_total",
-                      "last_run_hygiene", "last_dry_run_hygiene"):
+        for field in ("importance_floor", "decay_candidates", "decay_floor_chunks", "purge_backlog", "audit_log_total", "last_run_hygiene", "last_dry_run_hygiene"):
             self.assertIn(field, s, f"hygiene 子键缺 {field}")
 
     def test_03_decay_candidates_count_positive(self):
@@ -275,15 +266,12 @@ class TestStatsHygieneSubkey(unittest.TestCase):
         if getattr(self, "skip_tests_in_fresh", False):
             self.skipTest("需要 owner live DB 2259 candidates; fresh DB 0")
         s = self.mem.stats()["hygiene"]
-        self.assertGreater(s["decay_candidates"], 0,
-            f"实际 8/4 ≈2259 候选, 实际 {s['decay_candidates']}")
+        self.assertGreater(s["decay_candidates"], 0, f"实际 8/4 ≈2259 候选, 实际 {s['decay_candidates']}")
 
     def test_04_purge_backlog_count_matches_purged_queue(self):
         """[§6.5] purge_backlog = purged_queue WHERE done=0 计数"""
         s = self.mem.stats()["hygiene"]
-        actual = self.mem._conn.execute(
-            "SELECT COUNT(*) FROM purged_queue WHERE done=0"
-        ).fetchone()[0]
+        actual = self.mem._conn.execute("SELECT COUNT(*) FROM purged_queue WHERE done=0").fetchone()[0]
         self.assertEqual(s["purge_backlog"], actual)
 
 

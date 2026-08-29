@@ -10,6 +10,7 @@
 [8/5 P2] test_mcp_coverage_round4 会在某些条件下 reload mcp_server, 因此测试
 只用静态 schema + dispatcher, 不碰 server instance state.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -29,12 +30,14 @@ def _setup_minimal_digest(mem):
         content="identity: S1 test subject",
         source="s1_test",
         importance=1.0,
-        entities=[{
-            "id": "identity:s1_test_id",
-            "kind": "identity_fact",
-            "name": "S1 Tester",
-            "summary": "S1 Tester",
-        }],
+        entities=[
+            {
+                "id": "identity:s1_test_id",
+                "kind": "identity_fact",
+                "name": "S1 Tester",
+                "summary": "S1 Tester",
+            }
+        ],
     )
     return cid
 
@@ -43,7 +46,8 @@ def _cleanup_s1(mem):
     # [8/6 plan §10] 顺序 bug 修复: 原先 DELETE chunks 再 DELETE vectors,
     # 子查询空, vectors 残留. helper 先 _index.remove 再 DELETE chunks.
     from helpers import cleanup_chunks
-    cleanup_chunks(mem, source='s1_test')
+
+    cleanup_chunks(mem, source="s1_test")
     mem._conn.execute("DELETE FROM entities WHERE id='identity:s1_test_id'")
     mem._conn.execute("DELETE FROM meta WHERE key IN ('digest_chunk_id', 'digest_dirty')")
     mem._conn.commit()
@@ -68,6 +72,7 @@ def test_s1_dispatch_in_registry():
 def test_s1_no_ref_returns_digest_compressed_view():
     """[S1 验收] 无 ref → 摘要压缩视图 (走 _call_tool 内部 dispatcher)."""
     from memory import Memory
+
     mem = Memory()
     try:
         _setup_minimal_digest(mem)
@@ -92,6 +97,7 @@ def test_s1_no_ref_returns_digest_compressed_view():
 def test_s1_ref_returns_expanded_source_chunks():
     """[S1 验收] ref=<行号> → 展开源 chunk (source_chunks)."""
     from memory import Memory
+
     mem = Memory()
     try:
         _setup_minimal_digest(mem)
@@ -104,9 +110,7 @@ def test_s1_ref_returns_expanded_source_chunks():
 
         result_json = mcp_server._call_tool("memory_get_digest", {"ref": first_line})
         data = json.loads(result_json)
-        assert "source_chunks" in data, (
-            f"ref 应返 source_chunks, got {list(data.keys())}"
-        )
+        assert "source_chunks" in data, f"ref 应返 source_chunks, got {list(data.keys())}"
     finally:
         _cleanup_s1(mem)
         mem.close()

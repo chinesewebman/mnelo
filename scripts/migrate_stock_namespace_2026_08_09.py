@@ -28,7 +28,6 @@ import sys
 import time
 from pathlib import Path
 
-
 DB_PATH = Path("~/.hermes/memory/memory.db").expanduser()
 
 
@@ -54,12 +53,12 @@ def migrate(conn: sqlite3.Connection, dry_run: bool) -> dict:
         "dry_run": dry_run,
     }
 
-    print(f"=== 单纯裸 id (加前缀) ===")
+    print("=== 单纯裸 id (加前缀) ===")
     print(f"  计数: {len(only_bare)}")
     for bid in only_bare:
         print(f"    {bid} → stock:{bid}")
     print()
-    print(f"=== 重复对 (合并到带前缀) ===")
+    print("=== 重复对 (合并到带前缀) ===")
     print(f"  计数: {len(dup_pairs)}")
     for bid, nid in dup_pairs:
         print(f"    {bid} → {nid} (合并, 保留 {nid})")
@@ -183,7 +182,7 @@ def main() -> int:
             return 0
         stats = migrate(conn, dry_run=False)
         print()
-        print(f"=== 真跑完成 ===")
+        print("=== 真跑完成 ===")
         print(f"  entity 改: {stats['total_entities_to_migrate']}")
         print(f"  audit_log: {len(stats.get('audit_ids', []))} 条")
         return 0

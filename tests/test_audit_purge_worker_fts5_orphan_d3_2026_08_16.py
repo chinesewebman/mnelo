@@ -5,6 +5,7 @@ accumulate for every forgotten chunk → unbounded FTS5 index bloat.
 
 _post-fix: D3 purges FTS5 rowids BEFORE the physical DELETE from chunks.
 """
+
 import os
 import sys
 import tempfile
@@ -26,9 +27,7 @@ def test_purge_worker_cleans_fts5_rows_for_deleted_chunks():
             # Insert a chunk
             cid = m.remember("hello world unique token alpha", source="manual")
             # Verify FTS5 has the row
-            fts_count_before = m._conn.execute(
-                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'hello'"
-            ).fetchone()[0]
+            fts_count_before = m._conn.execute("SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'hello'").fetchone()[0]
             assert fts_count_before == 1
 
             # Soft-delete via forget
@@ -48,9 +47,7 @@ def test_purge_worker_cleans_fts5_rows_for_deleted_chunks():
             assert stats["chunks_physically_deleted"] >= 1
 
             # Verify FTS5 is clean (no orphan rows for our query)
-            fts_count_after = m._conn.execute(
-                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'hello'"
-            ).fetchone()[0]
+            fts_count_after = m._conn.execute("SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'hello'").fetchone()[0]
             assert fts_count_after == 0, f"FTS5 still has {fts_count_after} orphan rows"
         finally:
             m.close()

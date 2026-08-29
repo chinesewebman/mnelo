@@ -5,6 +5,7 @@
   M34.2 limit 范围 - 拒绝 <1, >1000, 非 int
   M34.3 status='all' - 包含 resolved/applied entries
 """
+
 import sys
 import sqlite3
 from pathlib import Path
@@ -18,6 +19,7 @@ from datetime import datetime, timedelta
 
 # [8/9 P1 follow-up] hard-coded "2026-08-06T..." 边界 fail.
 NOW_REF = (datetime.now() + timedelta(seconds=1)).isoformat(timespec="milliseconds")
+
 
 def _setup():
     c = sqlite3.connect(str(memory.DB_PATH))
@@ -87,8 +89,7 @@ def test_m34_status_all_includes_resolved():
         proposed = task_states.list_stale_proposals(c, status="proposed")
         all_results = task_states.list_stale_proposals(c, status="all")
 
-        applied_ids = {p["ref_id"] for p in all_results["proposals"]
-                       if p["status"] == "applied"}
+        applied_ids = {p["ref_id"] for p in all_results["proposals"] if p["status"] == "applied"}
         proposed_ids = {p["ref_id"] for p in proposed["proposals"]}
         assert tid in applied_ids, f"status='all' 应含 applied 条目, got {applied_ids}"
         assert tid not in proposed_ids, "status='proposed' 应排除 resolved"

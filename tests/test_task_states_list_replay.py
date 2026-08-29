@@ -3,6 +3,7 @@
 
 DESIGN §5.1 memory_task_list / memory_task_replay.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -12,12 +13,14 @@ sys.path.insert(0, str(_REPO))
 
 import importlib.util as _ilu
 
+
 def _load(name: str):
     spec = _ilu.spec_from_file_location(name, _REPO / f"{name}.py")
     mod = _ilu.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
+
 
 _load("config")
 _load("embedder")
@@ -63,8 +66,7 @@ def _mk_task(m, suffix: str, props: dict = None) -> str:
         (tid, "task", f"tlm3-{suffix}", json.dumps(props or {})),
     )
     m._conn.execute(
-        "INSERT INTO task_states (task_id, state, valid_from, created_at) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO task_states (task_id, state, valid_from, created_at) VALUES (?, ?, ?, ?)",
         (tid, "open", "2026-08-06T10:00", "2026-08-06T10:00"),
     )
     m._conn.commit()
@@ -80,10 +82,8 @@ def test_list_tasks_default_active_only():
         b = _mk_task(m, "active-b")
         c = _mk_task(m, "done-c")
         # c 推到 done
-        ts_mod.transition(m._conn, task_id=c, to_state="in_progress",
-                          reason="x", now="2026-08-06T10:05")
-        ts_mod.transition(m._conn, task_id=c, to_state="done",
-                          reason="x", now="2026-08-06T10:30")
+        ts_mod.transition(m._conn, task_id=c, to_state="in_progress", reason="x", now="2026-08-06T10:05")
+        ts_mod.transition(m._conn, task_id=c, to_state="done", reason="x", now="2026-08-06T10:30")
 
         result = ts_mod.list_tasks(m._conn)
         ids = sorted([t["task_id"] for t in result["tasks"]])
@@ -101,8 +101,7 @@ def test_list_tasks_with_state_filter():
         a = _mk_task(m, "ip-a")
         b = _mk_task(m, "ip-b")
         # a → in_progress
-        ts_mod.transition(m._conn, task_id=a, to_state="in_progress",
-                          reason="x", now="2026-08-06T10:05")
+        ts_mod.transition(m._conn, task_id=a, to_state="in_progress", reason="x", now="2026-08-06T10:05")
 
         result = ts_mod.list_tasks(m._conn, state="in_progress")
         assert result["count"] == 1
@@ -118,18 +117,18 @@ def test_replay_task_returns_full_history():
     try:
         _setup(m)
         tid = _mk_task(m, "replay")
-        ts_mod.transition(m._conn, task_id=tid, to_state="in_progress",
-                          reason="开始", now="2026-08-06T10:05")
-        ts_mod.transition(m._conn, task_id=tid, to_state="waiting",
-                          reason="等", now="2026-08-06T10:30")
-        ts_mod.transition(m._conn, task_id=tid, to_state="in_progress",
-                          reason="继续", now="2026-08-06T11:00")
+        ts_mod.transition(m._conn, task_id=tid, to_state="in_progress", reason="开始", now="2026-08-06T10:05")
+        ts_mod.transition(m._conn, task_id=tid, to_state="waiting", reason="等", now="2026-08-06T10:30")
+        ts_mod.transition(m._conn, task_id=tid, to_state="in_progress", reason="继续", now="2026-08-06T11:00")
 
         result = ts_mod.replay_task(m._conn, task_id=tid)
         assert result["current_state"] == "in_progress"
         assert result["window_count"] == 4
         assert [w["state"] for w in result["windows"]] == [
-            "open", "in_progress", "waiting", "in_progress",
+            "open",
+            "in_progress",
+            "waiting",
+            "in_progress",
         ]
         # 第一窗 valid_until=10:05, 第二窗 10:30, 第三窗 11:00, 第四窗 None
         assert result["windows"][0]["valid_until"] == "2026-08-06T10:05"
@@ -144,12 +143,9 @@ def test_replay_task_asof_slice():
     try:
         _setup(m)
         tid = _mk_task(m, "asof")
-        ts_mod.transition(m._conn, task_id=tid, to_state="in_progress",
-                          reason="x", now="2026-08-06T10:05")
-        ts_mod.transition(m._conn, task_id=tid, to_state="waiting",
-                          reason="x", now="2026-08-06T10:30")
-        ts_mod.transition(m._conn, task_id=tid, to_state="in_progress",
-                          reason="x", now="2026-08-06T11:00")
+        ts_mod.transition(m._conn, task_id=tid, to_state="in_progress", reason="x", now="2026-08-06T10:05")
+        ts_mod.transition(m._conn, task_id=tid, to_state="waiting", reason="x", now="2026-08-06T10:30")
+        ts_mod.transition(m._conn, task_id=tid, to_state="in_progress", reason="x", now="2026-08-06T11:00")
 
         # asof 10:00: 期望 open 窗起点 (valid_from=10:00, valid_until=10:05; valid_from <= 10:00 ✅)
         # half-open [valid_from, valid_until) 区间, valid_until=10:05 > 10:00 ✅

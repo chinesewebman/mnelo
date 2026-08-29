@@ -15,9 +15,9 @@
 - 失败 retry: launchd StartCalendarInterval 不自带, 失败靠主人下次手动跑
 """
 
-import sys
 import json
 import os
+import sys
 from pathlib import Path
 
 # [跟 mcp_server.py / mnelo_loop_tick_cron.py 一致] MNELO_HOME 路由 DB/config
@@ -29,11 +29,11 @@ sys.path.insert(0, str(_HOME / "memory"))
 # usearch 是纯内存, 无外部 lock, 跟 mcp_server 同 db 走 WAL reader 不冲突.
 os.environ.setdefault("MNELO_MEMORY_SEARCH_BACKEND", "usearch")
 
-from memory import Memory  # noqa: E402
-
 # [8/7 SOP-fix] 把所有 logger (含 mnelo namespace) 全部 redirect 到 stderr, 让 stdout 只剩 JSON result
 # (cron 场景 StandardOutPath 写 log, 但 SOP 脚本要 stdout 是纯 JSON 才能 json.load 解析)
 import logging
+
+from memory import Memory  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,

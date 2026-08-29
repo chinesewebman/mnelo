@@ -3,6 +3,7 @@
 
 Stance under test: returns list of hits, never blocks, never rewrites.
 """
+
 import sys
 from pathlib import Path
 
@@ -26,6 +27,7 @@ v = sys.modules["validation"]
 
 
 # --- happy paths: each category should hit on realistic input ---
+
 
 def test_luhn_valid_visa_hits_credit_card():
     # Generated Luhn-valid Visa test number (well-known public test PAN)
@@ -83,6 +85,7 @@ def test_secret_token_jwt_hits():
 
 
 # --- stance: never blocks, never rewrites ---
+
 
 def test_empty_content_returns_empty_list():
     assert v.scan_pii_warnings("") == []

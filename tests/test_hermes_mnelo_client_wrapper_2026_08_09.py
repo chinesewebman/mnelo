@@ -13,6 +13,7 @@ recall 看到燕如写入.
   5. remember 显式 source='foo' → 强制前缀 'hermes-gw/foo'
   6. remember 已是 'hermes-gw/...' → 保留
 """
+
 import importlib.util as _ilu
 import sys
 from pathlib import Path
@@ -26,9 +27,9 @@ sys.path.insert(0, str(_REPO))
 
 
 def _load_from_repo(mod_name: str):
-    target = str(_TARGET if (mod_name == 'mnelo_remote_client') else _REPO / f'{mod_name}.py')
+    target = str(_TARGET if (mod_name == "mnelo_remote_client") else _REPO / f"{mod_name}.py")
     existing = sys.modules.get(mod_name)
-    if existing is not None and getattr(existing, '__file__', None) == target:
+    if existing is not None and getattr(existing, "__file__", None) == target:
         return existing
     spec = _ilu.spec_from_file_location(mod_name, target)
     mod = _ilu.module_from_spec(spec)  # type: ignore[arg-type]
@@ -37,7 +38,7 @@ def _load_from_repo(mod_name: str):
     return mod
 
 
-_mcp_repo = _load_from_repo('mnelo_remote_client')
+_mcp_repo = _load_from_repo("mnelo_remote_client")
 
 
 class TestHermesMneloClient:
@@ -141,6 +142,7 @@ class TestHermesMneloClient:
 
     def test_subclass_overridable(self):
         """子类可 override DEFAULT_SOURCE (e.g. 测试场景)."""
+
         class TestClient(_mcp_repo.HermesMneloClient):
             DEFAULT_SOURCE = "test-source"
 

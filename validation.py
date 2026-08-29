@@ -60,18 +60,10 @@ _BIDI_ZW_RE = re.compile(f"[{re.escape(_BIDI_ZERO_WIDTH)}]")
 # 4 entity 撞限制 (主人 / user 2026-07-01... / comfyanonymous/ComfyUI / ltdrdata/...).
 # 仍拒: 反斜杠 \\ 单引号 ' 双引号 " 分号 ; 反引号 ` NUL \n \r \t (SQL/shell injection + HTTP injection).
 # [8/29 PR-D] update docstring + expose _ID_ALLOWED_DESC / _ID_REJECTED_DESC 给 error msg 单 source of truth
-_ID_RE = re.compile(
-    r"^[\w \u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af/.\-:]{1,"
-    + str(MAX_ID_LEN)
-    + r"}$"
-)
+_ID_RE = re.compile(r"^[\w \u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af/.\-:]{1," + str(MAX_ID_LEN) + r"}$")
 # [8/29 PR-D] 单 source of truth: allowed + rejected 字符描述, 避免 8/16 patch 后错误信息
 # 误导 (曾 hard-code `[a-zA-Z0-9_:.\\-]`). pattern 改时这两个常量同步 update.
-_ID_ALLOWED_DESC = (
-    f"word chars (a-z A-Z 0-9 _) + Unicode 4 ranges "
-    f"(中文 \\u4e00-\\u9fff, 日 \\u3040-\\u30ff, 韩 \\uac00-\\ud7af) "
-    f"+ space + / + . + : + -, max {MAX_ID_LEN} chars"
-)
+_ID_ALLOWED_DESC = f"word chars (a-z A-Z 0-9 _) + Unicode 4 ranges (中文 \\u4e00-\\u9fff, 日 \\u3040-\\u30ff, 韩 \\uac00-\\ud7af) + space + / + . + : + -, max {MAX_ID_LEN} chars"
 _ID_REJECTED_DESC = (
     r"backslash \ single-quote ' double-quote \" semicolon ; backquote ` "
     r"NUL \0 newline \n carriage-return \r tab \t"

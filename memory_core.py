@@ -156,6 +156,7 @@ class MemoryCore:
                     if _vec0_sql
                     else _sql
                 )
+
                 # 先 exec 其他 DDL (entities/chunks/relations/meta/recall_log/...
                 # task_states/state_transitions + 索引), vec0 单独 exec.
                 # [bug fix D1 2026-08-16] Register Python-side ISO 8601 helpers for
@@ -170,13 +171,18 @@ class MemoryCore:
                 def _iso_now_local() -> str:
                     """SQL function: return current local time as ISO 8601 T-sep."""
                     from memory import now as _now
+
                     return _now("local")
+
                 def _iso_now_offset(days: int) -> str:
                     """SQL function: return now + N days as ISO 8601 T-sep."""
                     from datetime import datetime, timedelta
+
                     from memory import now as _now
+
                     base = datetime.fromisoformat(_now("local"))
                     return (base + timedelta(days=days)).isoformat(timespec="seconds")
+
                 self._conn.create_function("iso_now", 0, _iso_now_local)
                 self._conn.create_function("iso_now_offset", 1, _iso_now_offset)
                 try:
@@ -191,6 +197,7 @@ class MemoryCore:
                             logger.warning(f"[8/10] sqlite-vec 不可用 ({type(_e).__name__}: {_e}); 跳过 vec0 虚拟表创建, vector 走 usearch (search_index.py)")
                         else:
                             raise
+
         # [bug fix D1 2026-08-16] Also re-register on every conn (idempotent —
         # create_function on an already-registered name is a no-op). Needed when
         # a test fixture pre-loads schema.sql via raw sqlite3 (so the schema-load
@@ -199,12 +206,17 @@ class MemoryCore:
         # from schema.sql) would fail without this.
         def _iso_now_local2() -> str:
             from memory import now as _now
+
             return _now("local")
+
         def _iso_now_offset2(days: int) -> str:
             from datetime import datetime, timedelta
+
             from memory import now as _now
+
             base = datetime.fromisoformat(_now("local"))
             return (base + timedelta(days=days)).isoformat(timespec="seconds")
+
         self._conn.create_function("iso_now", 0, _iso_now_local2)
         self._conn.create_function("iso_now_offset", 1, _iso_now_offset2)
         self._migrate_schema()
@@ -391,6 +403,7 @@ class MemoryCore:
             # [bug fix B1 2026-08-16] purge txn-depth dict (avoids id() reuse pollution)
             try:
                 from memory import _txn_depth_by_id
+
                 _txn_depth_by_id.pop(conn_id, None)
             except ImportError:
                 pass  # memory module not imported (shouldn't happen in normal flow)
@@ -1575,6 +1588,7 @@ class MemoryCore:
               AND content LIKE ? ESCAPE '\\'
         """
         from memory import _escape_like  # [bug fix P1 2026-08-29] LIKE wildcard escape
+
         params = [asof, f"%{_escape_like(query)}%"]
         if filters and "source" in filters:
             sql += " AND source = ?"
@@ -1623,7 +1637,7 @@ class MemoryCore:
         evidence_chunk_id=chunk_id, 见 3027 行). LEFT JOIN 让老 entity (无
         evidence relation) 保留 — c_meta NULL → 旧数据兼容.
         """
-        from memory import norm_memory_type, now, _escape_like  # [bug fix P1 2026-08-29] _escape_like
+        from memory import _escape_like, norm_memory_type, now  # [bug fix P1 2026-08-29] _escape_like
 
         if " " in query.strip():
             tokens = query.strip().split()
@@ -1821,7 +1835,7 @@ class MemoryCore:
         [P2 2026-08-11] temporal reasoning: 与 _meta_recall_with_conn 同语义.
         current_state / upcoming 加 SQL 约束; historical / soft_recency 默认.
         """
-        from memory import detect_query_intent, norm_memory_type, now, _escape_like  # [bug fix P1 2026-08-29] _escape_like
+        from memory import _escape_like, detect_query_intent, norm_memory_type, now  # [bug fix P1 2026-08-29] _escape_like
 
         # [7/21 fix] asof: 只看 asof 时点仍有效的 chunk
         # [P0 2026-08-11] scoping: agent_id 走 json_extract SQL 过滤
@@ -1963,7 +1977,7 @@ class MemoryCore:
         等任一时, 直接拉 user 所有 identity_fact 关系 (无需 query-token 重叠,
         这是关键 — '我住在哪里' token 与 '北京市大兴区亦庄镇' 无 2-gram 重叠).
         """
-        from memory import norm_memory_type, now, _escape_like  # [bug fix P1 2026-08-29] _escape_like
+        from memory import _escape_like, norm_memory_type, now  # [bug fix P1 2026-08-29] _escape_like
 
         hits = []
         seen_ids = set()
@@ -2583,11 +2597,7 @@ class MemoryCore:
             # For 'chunk' kind, look up rowids FIRST, then DELETE from chunks_fts.
             if kind == "chunk":
                 try:
-                    fts_rowids = [
-                        r[0] for r in self._conn.execute(
-                            f"SELECT rowid FROM chunks WHERE id IN ({ph})", due_ids
-                        ).fetchall()
-                    ]
+                    fts_rowids = [r[0] for r in self._conn.execute(f"SELECT rowid FROM chunks WHERE id IN ({ph})", due_ids).fetchall()]
                     if fts_rowids:
                         fts_ph = ",".join("?" * len(fts_rowids))
                         self._conn.execute(

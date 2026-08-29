@@ -16,6 +16,7 @@ even though they're the same moment.
 Test verifies: after fix, all timestamp columns have consistent ISO 8601 format
 with T separator.
 """
+
 import os
 import sys
 import tempfile
@@ -41,10 +42,7 @@ def test_chunks_insert_defaults_use_T_separator():
             # All three should use T-separator (ISO 8601)
             for col in ("timestamp", "created_at"):
                 if row[col] is not None:
-                    assert "T" in row[col], (
-                        f"Column {col} uses non-ISO format: {row[col]!r}. "
-                        f"Expected T-separator (ISO 8601), got space-separator"
-                    )
+                    assert "T" in row[col], f"Column {col} uses non-ISO format: {row[col]!r}. Expected T-separator (ISO 8601), got space-separator"
         finally:
             m.close()
 
@@ -83,10 +81,7 @@ def test_relationship_between_columns_uses_consistent_format():
             # lex compare breaks
             ts_t = "T" in row["timestamp"]
             ca_t = "T" in row["created_at"]
-            assert ts_t == ca_t, (
-                f"Format mismatch: timestamp={row['timestamp']!r} (T={ts_t}) "
-                f"vs created_at={row['created_at']!r} (T={ca_t})"
-            )
+            assert ts_t == ca_t, f"Format mismatch: timestamp={row['timestamp']!r} (T={ts_t}) vs created_at={row['created_at']!r} (T={ca_t})"
         finally:
             m.close()
 
@@ -103,14 +98,10 @@ def test_temporal_query_with_now_does_not_miss_recent_rows():
             cid = m.remember("test", source="manual")
             py_now = now()
             # Should return the just-inserted row (created_at is in the past or same second)
-            rows = m._conn.execute(
-                "SELECT id FROM chunks WHERE created_at <= ?", (py_now,)
-            ).fetchall()
+            rows = m._conn.execute("SELECT id FROM chunks WHERE created_at <= ?", (py_now,)).fetchall()
             # Pre-fix: 0 rows (lex says space < T)
             # Post-fix: 1 row (formats match)
-            assert len(rows) >= 1, (
-                f"Recent chunk missed due to format mismatch: {len(rows)} rows for created_at <= {py_now!r}"
-            )
+            assert len(rows) >= 1, f"Recent chunk missed due to format mismatch: {len(rows)} rows for created_at <= {py_now!r}"
         finally:
             m.close()
 
@@ -130,15 +121,12 @@ def test_l2_maintenance_age_query_uses_consistent_format():
             py_now = now()
             # Query: created_at > (py_now - 1 hour) → should return all 3
             from datetime import datetime, timedelta
+
             py_now_dt = datetime.fromisoformat(py_now)
             one_hour_ago = (py_now_dt - timedelta(hours=1)).isoformat()
-            rows = m._conn.execute(
-                "SELECT id FROM chunks WHERE created_at > ?", (one_hour_ago,)
-            ).fetchall()
+            rows = m._conn.execute("SELECT id FROM chunks WHERE created_at > ?", (one_hour_ago,)).fetchall()
             # Pre-fix: 0 rows (format mismatch)
             # Post-fix: 3 rows
-            assert len(rows) == 3, (
-                f"L2 age query broken: {len(rows)} rows > 1h ago (expected 3)"
-            )
+            assert len(rows) == 3, f"L2 age query broken: {len(rows)} rows > 1h ago (expected 3)"
         finally:
             m.close()

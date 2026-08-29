@@ -11,12 +11,14 @@
   M5.2.7 提议文本含 prompt (DESIGN §4.4 "⚠ 需决策")
   M5.2.8 mnelo 不自主 transfer — propose 后 task state 不变
 """
+
 import sqlite3
 import sys
 from pathlib import Path
 
 os_path = Path("/Users/apple/.hermes/memory")
 import os
+
 sys.path.insert(0, str(os_path))
 os.environ.setdefault("MNELO_MEMORY_SEARCH_BACKEND", "usearch")
 
@@ -28,6 +30,7 @@ import task_states
 # 配对 → valid_from = now - 10d, NOW_REF = now + 1s, age = 10d + 1s > threshold 7d (state=open), 必 stale.
 # 任何时区/时间漂移都不会边界 fail, 跟 8/9 业务日期解耦.
 import datetime as _dt
+
 NOW_REF = (_dt.datetime.now() + _dt.timedelta(seconds=1)).isoformat(timespec="milliseconds")
 
 
@@ -66,19 +69,28 @@ def _create_task(name: str, state: str = "open", days_ago: int = 10) -> str:
         if state in ("waiting", "blocked", "done", "cancelled"):
             # 先 open → in_progress
             task_states.transition(
-                m._conn, task_id=tid, to_state="in_progress",
-                reason=f"to in_progress (then {state})", now=vf,
+                m._conn,
+                task_id=tid,
+                to_state="in_progress",
+                reason=f"to in_progress (then {state})",
+                now=vf,
             )
         if state in ("waiting", "blocked"):
             # in_progress → waiting / blocked
             task_states.transition(
-                m._conn, task_id=tid, to_state=state,
-                reason=f"to {state}", now=vf,
+                m._conn,
+                task_id=tid,
+                to_state=state,
+                reason=f"to {state}",
+                now=vf,
             )
         elif state == "done":
             task_states.transition(
-                m._conn, task_id=tid, to_state="done",
-                reason=f"to done", now=vf,
+                m._conn,
+                task_id=tid,
+                to_state="done",
+                reason=f"to done",
+                now=vf,
             )
         m._conn.commit()
         return tid
@@ -87,6 +99,7 @@ def _create_task(name: str, state: str = "open", days_ago: int = 10) -> str:
 
 
 # ===== M5.2.1 basic propose =====
+
 
 def test_m5_2_1_propose_writes_audit_log_proposed():
     _setup()
@@ -118,6 +131,7 @@ def test_m5_2_1_propose_writes_audit_log_proposed():
 
 
 # ===== M5.2.2 threshold buckets =====
+
 
 def test_m5_2_2_threshold_buckets():
     """[M5.2.2] open >7d / waiting >14d / blocked >3d 分桶."""
@@ -153,6 +167,7 @@ def test_m5_2_2_threshold_buckets():
 
 # ===== M5.2.3 idempotent =====
 
+
 def test_m5_2_3_idempotent_skip_existing():
     """[M5.2.3] 已有 pending Proposal 跳过.
 
@@ -183,6 +198,7 @@ def test_m5_2_3_idempotent_skip_existing():
 
 # ===== M5.2.4 apply =====
 
+
 def test_m5_2_4_apply_marks_applied():
     """[M5.2.4] apply_stale_proposal 标记 status='applied' (新 audit_log row)."""
     _setup()
@@ -202,7 +218,9 @@ def test_m5_2_4_apply_marks_applied():
 
         # apply
         applied = task_states.apply_stale_proposal(
-            m._conn, pid, applied_action="transitioned to done",
+            m._conn,
+            pid,
+            applied_action="transitioned to done",
         )
         assert applied["status"] == "applied"
         assert applied["ref_id"] == tid
@@ -232,6 +250,7 @@ def test_m5_2_4_apply_marks_applied():
 
 # ===== M5.2.5 apply error paths =====
 
+
 def test_m5_2_5_apply_invalid_proposal_id():
     """[M5.2.5] 错误 proposal_id 抛 ProposalNotFound."""
     _setup()
@@ -257,13 +276,10 @@ def test_m5_2_5b_apply_wrong_pass_name():
                 run_id, pass_name, action_type, ref_type, ref_id,
                 before_json, after_json, confidence, status, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("test-other", "loop_tick_cron", "tick_due", "loop", "loop:fake",
-             None, "{}", 1.0, "proposed", NOW_REF),
+            ("test-other", "loop_tick_cron", "tick_due", "loop", "loop:fake", None, "{}", 1.0, "proposed", NOW_REF),
         )
         m._conn.commit()
-        fake_id = m._conn.execute(
-            "SELECT id FROM audit_log WHERE pass_name='loop_tick_cron' ORDER BY id DESC LIMIT 1"
-        ).fetchone()[0]
+        fake_id = m._conn.execute("SELECT id FROM audit_log WHERE pass_name='loop_tick_cron' ORDER BY id DESC LIMIT 1").fetchone()[0]
         try:
             task_states.apply_stale_proposal(m._conn, fake_id, applied_action="x")
             raise AssertionError("expected raise")
@@ -274,6 +290,7 @@ def test_m5_2_5b_apply_wrong_pass_name():
 
 
 # ===== M5.2.6 list_stale_proposals =====
+
 
 def test_m5_2_6_list_stale_proposals_filtered():
     """[M5.2.6] list_stale_proposals 按 status 过滤.
@@ -300,6 +317,7 @@ def test_m5_2_6_list_stale_proposals_filtered():
 
 # ===== M5.2.7 prompt text =====
 
+
 def test_m5_2_7_proposal_prompt_text():
     """[M5.2.7] Proposal after_json.prompt 包含 ⚠ 需决策 标记 (DESIGN §4.4)."""
     _setup()
@@ -323,6 +341,7 @@ def test_m5_2_7_proposal_prompt_text():
 
 
 # ===== M5.2.8 mnelo 不自主转移 =====
+
 
 def test_m5_2_8_propose_does_not_mutate_task_state():
     """[M5.2.8 + D5] mnelo 绝不自主转移 — propose 后 task state 仍 open, 没新状态窗."""
@@ -358,6 +377,7 @@ def test_m5_2_8_propose_does_not_mutate_task_state():
 
 
 # ===== M5.2.9 fresh task < 7d 不被提议 =====
+
 
 def test_m5_2_9_fresh_task_not_proposed():
     """[M5.2.9] 昨日建的 task 不应被提议 (age < 7d)."""

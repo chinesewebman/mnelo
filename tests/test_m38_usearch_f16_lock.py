@@ -14,6 +14,7 @@ f64 / i8 / b1x8 即抛 RuntimeError fail-fast.
        byte sequence 是确定的 0x5753... — 大端检查).
   M38.5 [正] load 已有 f16 usearch.index 不抛错 (兼容路径).
 """
+
 import os
 import sys
 import sqlite3
@@ -45,22 +46,23 @@ def _make_tmp_db_and_index():
 
 # ===== M38.1 [正] 构造 OK + dtype 锁定 =====
 
+
 def test_m38_1_usearch_index_construction_locks_f16():
     """[M38.1] 构造 UsearchIndex 不抛错, _index.dtype.name='F16'."""
     tmpdir, db = _make_tmp_db_and_index()
     try:
         idx = UsearchIndex(db, dim=4)
-        assert idx._index.dtype.name == "F16", (
-            f"主人口中 8/6 锁定 f16, got {idx._index.dtype.name}"
-        )
+        assert idx._index.dtype.name == "F16", f"主人口中 8/6 锁定 f16, got {idx._index.dtype.name}"
     finally:
         import shutil
+
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def test_m38_2_index_dtype_enum_is_f16_not_f32():
     """[M38.2] usearch.Index.dtype 拿出的 ScalarKind 名是 F16, 不是 F32."""
     from usearch.index import Index
+
     i16 = Index(ndim=4, metric="cos", dtype="f16")
     i32 = Index(ndim=4, metric="cos", dtype="f32")
     try:
@@ -73,6 +75,7 @@ def test_m38_2_index_dtype_enum_is_f16_not_f32():
 
 # ===== M38.3 [负] 绕过构造 — 模拟未来 PR 不慎改 dtype =====
 
+
 def test_m38_3_assertion_blocks_non_f16_index():
     """[M38.3 负样本] 万一有人 monkey-patch _index 改成 f32, 改回 UsearchIndex
     应抛 RuntimeError.
@@ -80,6 +83,7 @@ def test_m38_3_assertion_blocks_non_f16_index():
     这模拟主人口中 '如果未来 PR 改 dtype 应该报错' 的 fail-fast 行为.
     """
     from usearch.index import Index as UsIndex
+
     tmpdir, db = _make_tmp_db_and_index()
     try:
         idx = UsearchIndex(db, dim=4)
@@ -92,18 +96,17 @@ def test_m38_3_assertion_blocks_non_f16_index():
         assert actual_dtype_name == "F32", "sanity: monkey-patch 应返 F32"
         # 守卫逻辑:
         if actual_dtype_name.upper() != "F16":
-            err_msg = (
-                f"UsearchIndex 必须 f16 (主人口中 8/6 锁定), got dtype={actual_dtype_name!r}. "
-                "改 dtype 之前请先走 design review + RUNBOOK §usearch-f16 章节."
-            )
+            err_msg = f"UsearchIndex 必须 f16 (主人口中 8/6 锁定), got dtype={actual_dtype_name!r}. 改 dtype 之前请先走 design review + RUNBOOK §usearch-f16 章节."
             assert "必须 f16" in err_msg, "guard message should mandate f16"
             assert "F32" in err_msg, "guard message should include actual non-f16 dtype"
     finally:
         import shutil
+
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 # ===== M38.4 [正] save → file 是 f16 序列化 =====
+
 
 def test_m38_4_add_then_save_writes_f16_index():
     """[M38.4] add + close → usearch.index 持久化, 含 f16 序列化头."""
@@ -137,10 +140,12 @@ def test_m38_4_add_then_save_writes_f16_index():
         idx2.close()
     finally:
         import shutil
+
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 # ===== M38.5 [正] load 已存在 f16 索引 =====
+
 
 def test_m38_5_load_existing_f16_index_compatible():
     """[M38.5] load 已有 f16 usearch.index 不抛错, size 一致."""
@@ -167,4 +172,5 @@ def test_m38_5_load_existing_f16_index_compatible():
         idx2.close()
     finally:
         import shutil
+
         shutil.rmtree(tmpdir, ignore_errors=True)

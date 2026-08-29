@@ -11,6 +11,7 @@ Targets uncovered lines:
 - 648: graph_recall empty seed_entities path
 - 706, 737-738: misc branches
 """
+
 import time
 import sqlite3
 import pytest
@@ -28,7 +29,7 @@ def mem():
 
 @pytest.fixture
 def clean_prefix():
-    return f'memcov_{int(time.time() * 1_000_000)}'
+    return f"memcov_{int(time.time() * 1_000_000)}"
 
 
 class TestNowTzFallback:
@@ -38,12 +39,12 @@ class TestNowTzFallback:
         """Basic now() returns ISO timestamp."""
         result = memory_module.now()
         assert isinstance(result, str)
-        assert 'T' in result
+        assert "T" in result
 
     def test_now_with_explicit_tz(self):
-        result = memory_module.now(tz='UTC')
+        result = memory_module.now(tz="UTC")
         assert isinstance(result, str)
-        assert 'T' in result
+        assert "T" in result
 
 
 class TestWarmUpLogging:
@@ -52,6 +53,7 @@ class TestWarmUpLogging:
     def test_warm_up_disabled_via_config(self):
         """Set warm_up_embedder=False in config → disabled log line fires."""
         from config import config
+
         original = config.warm_up_embedder
         try:
             config.warm_up_embedder = False
@@ -66,45 +68,43 @@ class TestRecallStrategies:
     """Lines 492-500: graph_only, meta_only, entity_only, unknown strategy."""
 
     def test_recall_strategy_graph_only(self, mem, clean_prefix):
-        cid = mem.remember(content=f'{clean_prefix} graph content', source='test_cov')
+        cid = mem.remember(content=f"{clean_prefix} graph content", source="test_cov")
         # Seed an entity + relation so graph_only has something to walk
-        eid = f'{clean_prefix}_e_a'
+        eid = f"{clean_prefix}_e_a"
         mem._conn.execute(
-            "INSERT INTO entities (id, kind, name, source, valid_from, valid_until) "
-            "VALUES (?, 'test', 'graph_only_e', 'test_cov', ?, NULL)",
-            (eid, '2026-07-19T00:00:00'),
+            "INSERT INTO entities (id, kind, name, source, valid_from, valid_until) VALUES (?, 'test', 'graph_only_e', 'test_cov', ?, NULL)",
+            (eid, "2026-07-19T00:00:00"),
         )
         mem._conn.commit()
         try:
-            results = mem.recall(f'{clean_prefix} graph', strategy='graph_only')
+            results = mem.recall(f"{clean_prefix} graph", strategy="graph_only")
             assert isinstance(results, list)
         except Exception:
             pass  # graph_only may fail on empty graph
 
     def test_recall_strategy_meta_only(self, mem, clean_prefix):
-        mem.remember(content=f'{clean_prefix} meta content', source='test_cov')
-        results = mem.recall(f'{clean_prefix} meta', strategy='meta_only')
+        mem.remember(content=f"{clean_prefix} meta content", source="test_cov")
+        results = mem.recall(f"{clean_prefix} meta", strategy="meta_only")
         assert isinstance(results, list)
 
     def test_recall_strategy_entity_only(self, mem, clean_prefix):
-        eid = f'{clean_prefix}_ent_only'
+        eid = f"{clean_prefix}_ent_only"
         mem._conn.execute(
-            "INSERT INTO entities (id, kind, name, summary, source, valid_from, valid_until) "
-            "VALUES (?, 'test', 'unique_entity_name_xyz', 'a summary here', 'test_cov', ?, NULL)",
-            (eid, '2026-07-19T00:00:00'),
+            "INSERT INTO entities (id, kind, name, summary, source, valid_from, valid_until) VALUES (?, 'test', 'unique_entity_name_xyz', 'a summary here', 'test_cov', ?, NULL)",
+            (eid, "2026-07-19T00:00:00"),
         )
         mem._conn.commit()
-        results = mem.recall('unique_entity_name_xyz', strategy='entity_only', top_k=5)
+        results = mem.recall("unique_entity_name_xyz", strategy="entity_only", top_k=5)
         assert isinstance(results, list)
 
     def test_recall_strategy_unknown_raises(self, mem, clean_prefix):
-        with pytest.raises(ValueError, match='unknown strategy'):
-            mem.recall(f'{clean_prefix} query', strategy='totally_unknown_strategy')
+        with pytest.raises(ValueError, match="unknown strategy"):
+            mem.recall(f"{clean_prefix} query", strategy="totally_unknown_strategy")
 
     def test_recall_strategy_vector_only_default(self, mem, clean_prefix):
         """Default strategy (vector_only or whatever default) — line 492 path."""
-        mem.remember(content=f'{clean_prefix} vec content', source='test_cov')
-        results = mem.recall(f'{clean_prefix} vec')
+        mem.remember(content=f"{clean_prefix} vec content", source="test_cov")
+        results = mem.recall(f"{clean_prefix} vec")
         assert isinstance(results, list)
 
 
@@ -120,6 +120,7 @@ class TestVectorRecallExceptionPath:
         验证 application bug (留给后续 fix issue). 实际: skip this test.
         """
         import pytest
+
         pytest.skip("memory.py:_vector_recall 不 catch ProgrammingError; 等 app-side fix")
 
 
@@ -128,9 +129,9 @@ class TestForgetUnknownKind:
 
     def test_forget_unknown_kind_raises(self, mem):
         """Insert a chunk first, then try to forget with unknown kind."""
-        cid = mem.remember(content='forget unknown kind test', source='test_cov')
-        with pytest.raises(ValueError, match='unknown kind'):
-            mem.forget(cid, target_kind='alien_kind')
+        cid = mem.remember(content="forget unknown kind test", source="test_cov")
+        with pytest.raises(ValueError, match="unknown kind"):
+            mem.forget(cid, target_kind="alien_kind")
 
 
 class TestEntityRecallSkipEmpty:
@@ -138,15 +139,14 @@ class TestEntityRecallSkipEmpty:
 
     def test_entity_recall_skips_empty_content(self, mem, clean_prefix):
         """Entity with empty name AND empty summary → skipped (line 635)."""
-        eid = f'{clean_prefix}_empty_ents'
+        eid = f"{clean_prefix}_empty_ents"
         mem._conn.execute(
-            "INSERT INTO entities (id, kind, name, summary, source, valid_from, valid_until) "
-            "VALUES (?, 'test', NULL, NULL, 'test_cov', ?, NULL)",
-            (eid, '2026-07-19T00:00:00'),
+            "INSERT INTO entities (id, kind, name, summary, source, valid_from, valid_until) VALUES (?, 'test', NULL, NULL, 'test_cov', ?, NULL)",
+            (eid, "2026-07-19T00:00:00"),
         )
         mem._conn.commit()
         # Should not crash; should skip empty content
-        result = mem._entity_recall('any', top_k=10, filters={}, asof='2026-07-19T00:00:00')
+        result = mem._entity_recall("any", top_k=10, filters={}, asof="2026-07-19T00:00:00")
         assert isinstance(result, list)
 
 
@@ -155,7 +155,7 @@ class TestGraphRecallEmptySeed:
 
     def test_graph_recall_empty_seeds_returns_empty(self, mem):
         """Empty input → return [] immediately."""
-        result = mem._graph_recall([], hops=1, asof='2026-07-19T00:00:00')
+        result = mem._graph_recall([], hops=1, asof="2026-07-19T00:00:00")
         assert result == []
 
 
@@ -164,12 +164,12 @@ class TestMiscBranches:
 
     def test_meta_recall_with_source_filter(self, mem, clean_prefix):
         """Line 737-738: meta_recall with source filter applied."""
-        mem.remember(content=f'{clean_prefix} filter source test', source='test_filter_a')
-        mem.remember(content=f'{clean_prefix} other source', source='test_filter_b')
+        mem.remember(content=f"{clean_prefix} filter source test", source="test_filter_a")
+        mem.remember(content=f"{clean_prefix} other source", source="test_filter_b")
         results = mem._meta_recall(
             clean_prefix,
             top_k=10,
-            filters={'source': 'test_filter_a'},
-            asof='2026-07-19T00:00:00',
+            filters={"source": "test_filter_a"},
+            asof="2026-07-19T00:00:00",
         )
         assert isinstance(results, list)

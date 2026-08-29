@@ -18,6 +18,7 @@
   所有测试 entity 用 `test_nsguard_*` prefix, conftest `_clean_test_data_session`
   清 `id LIKE 'test_%'`, 自动兜底清理.
 """
+
 import importlib.util as _ilu
 import sys
 from pathlib import Path
@@ -29,9 +30,9 @@ sys.path.insert(0, str(_REPO))  # [8/8 P1] 没 conftest 时手动加 sys.path
 
 
 def _load_from_repo(mod_name: str):
-    target = str(_REPO / f'{mod_name}.py')
+    target = str(_REPO / f"{mod_name}.py")
     existing = sys.modules.get(mod_name)
-    if existing is not None and getattr(existing, '__file__', None) == target:
+    if existing is not None and getattr(existing, "__file__", None) == target:
         return existing
     spec = _ilu.spec_from_file_location(mod_name, target)
     mod = _ilu.module_from_spec(spec)  # type: ignore[arg-type]
@@ -41,8 +42,8 @@ def _load_from_repo(mod_name: str):
 
 
 # 强制走 repo 版本 (避免 LIVE memory.py 覆盖)
-_validation_repo = _load_from_repo('validation')
-_memory_repo = _load_from_repo('memory')
+_validation_repo = _load_from_repo("validation")
+_memory_repo = _load_from_repo("memory")
 # Rebind memory module 的 ValidationError 引用 (它 'from validation import')
 _memory_repo.ValidationError = _validation_repo.ValidationError  # type: ignore[attr-defined]
 
@@ -61,30 +62,34 @@ def mem(tmp_path, monkeypatch):
           3) Memory() init — 触发 embedder warm-up + usearch.index 初始化
     """
     import config as _cfg_mod
-    monkeypatch.setattr(_cfg_mod.config, 'search_backend', 'usearch', raising=True)
-    db_path = tmp_path / 'test.db'
-    monkeypatch.setattr(_cfg_mod.config, 'db_path', db_path, raising=False)
+
+    monkeypatch.setattr(_cfg_mod.config, "search_backend", "usearch", raising=True)
+    db_path = tmp_path / "test.db"
+    monkeypatch.setattr(_cfg_mod.config, "db_path", db_path, raising=False)
 
     # 跑 schema.sql (内置 executescript 处理 -- 注释剥离)
-    schema_path = _REPO / 'schema.sql'
+    schema_path = _REPO / "schema.sql"
     import sqlite3 as _sqlite
     import re
+
     conn = _sqlite.connect(str(db_path))
     sql = schema_path.read_text()
     # 跳过 PRAGMA / INSTALL / LOAD (sqlite-vec 加载) — usearch 模式不需要
-    sql = re.sub(r'PRAGMA[^;]*;', '', sql, flags=re.IGNORECASE)
-    sql = re.sub(r'INSTALL[^;]*;', '', sql, flags=re.IGNORECASE)
-    sql = re.sub(r'LOAD[^;]*;', '', sql, flags=re.IGNORECASE)
+    sql = re.sub(r"PRAGMA[^;]*;", "", sql, flags=re.IGNORECASE)
+    sql = re.sub(r"INSTALL[^;]*;", "", sql, flags=re.IGNORECASE)
+    sql = re.sub(r"LOAD[^;]*;", "", sql, flags=re.IGNORECASE)
     # 移除 vec0 段 (usearch 模式不写 vec0 表)
     sql = re.sub(
-        r'CREATE VIRTUAL TABLE[^;]*USING vec0[^)]*\)',
-        '', sql, flags=re.IGNORECASE | re.DOTALL,
+        r"CREATE VIRTUAL TABLE[^;]*USING vec0[^)]*\)",
+        "",
+        sql,
+        flags=re.IGNORECASE | re.DOTALL,
     )
     try:
         conn.executescript(sql)
     except Exception as e:
         # 表已存在 — idempotent re-init, 跳过
-        if 'already exists' not in str(e):
+        if "already exists" not in str(e):
             raise
     conn.commit()
     conn.close()
@@ -93,14 +98,8 @@ def mem(tmp_path, monkeypatch):
     yield m
     # 兜底清理本测试产生的 entity (conftest session-level 也清, 双保险)
     try:
-        m._conn.execute(
-            "DELETE FROM entities WHERE id LIKE 'test_nsguard_%' "
-            "AND valid_until IS NULL"
-        )
-        m._conn.execute(
-            "DELETE FROM relations WHERE source_id LIKE 'test_nsguard_%' "
-            "OR target_id LIKE 'test_nsguard_%'"
-        )
+        m._conn.execute("DELETE FROM entities WHERE id LIKE 'test_nsguard_%' AND valid_until IS NULL")
+        m._conn.execute("DELETE FROM relations WHERE source_id LIKE 'test_nsguard_%' OR target_id LIKE 'test_nsguard_%'")
         m._conn.commit()
     finally:
         m.close()
@@ -109,6 +108,7 @@ def mem(tmp_path, monkeypatch):
 # ============================================================
 # 黑名单 — 必须拒
 # ============================================================
+
 
 class TestNamespaceBlacklist:
     def test_anno_namespace_rejected(self, mem):
@@ -223,6 +223,7 @@ class TestNamelessKindCheck:
         (无 namespace id + 长 kind) 仍抛 ValidationError "entity.kind".
         """
         from validation import ValidationError as _VE
+
         long_kind = "x" * 65  # 65 chars > 64 limit
         ent = {
             "id": "test_nsguard_long_kind_a1",
@@ -265,25 +266,25 @@ class TestNamelessKindCheck:
 # 白名单 — 必须放行
 # ============================================================
 
+
 class TestNamespaceWhitelist:
-    @pytest.mark.parametrize("ns", [
-        "identity:github_handle:test_nsguard_user",
-        "stock:test_nsguard_600021",
-        "holding:2026-08-08:test_nsguard_600021",
-        "loop:test_nsguard_daily",
-        "task:test_nsguard_build_x",
-    ])
+    @pytest.mark.parametrize(
+        "ns",
+        [
+            "identity:github_handle:test_nsguard_user",
+            "stock:test_nsguard_600021",
+            "holding:2026-08-08:test_nsguard_600021",
+            "loop:test_nsguard_daily",
+            "task:test_nsguard_build_x",
+        ],
+    )
     def test_allowed_namespace_passes(self, mem, ns):
         """5 个官方 namespace 都通过 (不管 name 多长)."""
         ent = {
             "id": ns,
-            "kind": "concept" if ns.startswith("loop:") else (
-                "identity_fact" if ns.startswith("identity:") else (
-                    "stock" if ns.startswith("stock:") else (
-                        "position_snapshot" if ns.startswith("holding:") else "task"
-                    )
-                )
-            ),
+            "kind": "concept"
+            if ns.startswith("loop:")
+            else ("identity_fact" if ns.startswith("identity:") else ("stock" if ns.startswith("stock:") else ("position_snapshot" if ns.startswith("holding:") else "task"))),
             "name": "x" * 100,  # 长 name 也允许 (结构化 kind 不限)
         }
         mem._upsert_entity(ent)  # 不抛 = pass
@@ -307,20 +308,24 @@ class TestNamespaceWhitelist:
 # 集成 — memory_remember 路径也会触发 guard
 # ============================================================
 
+
 class TestRememberIntegration:
     def test_remember_with_anno_entity_rejected(self, mem):
         """memory_remember 传 anno: entity → ValidationError 上抛."""
         from memory import Memory as _M
+
         with pytest.raises(ValidationError):
             mem.remember(
                 content="测试 chunk",
                 source="test_nsguard_remember",
                 importance=0.7,
-                entities=[{
-                    "id": "anno:test_nsguard_should_fail",
-                    "kind": "concept",
-                    "name": "test",
-                }],
+                entities=[
+                    {
+                        "id": "anno:test_nsguard_should_fail",
+                        "kind": "concept",
+                        "name": "test",
+                    }
+                ],
             )
 
     def test_remember_with_clean_entity_succeeds(self, mem):
@@ -329,11 +334,13 @@ class TestRememberIntegration:
             content="测试 chunk with clean entity",
             source="test_nsguard_remember_clean",
             importance=0.7,
-            entities=[{
-                "id": "test_nsguard_clean_concept",
-                "kind": "concept",
-                "name": "干净 concept",
-            }],
+            entities=[
+                {
+                    "id": "test_nsguard_clean_concept",
+                    "kind": "concept",
+                    "name": "干净 concept",
+                }
+            ],
         )
         assert cid is not None
         # 验证 entity 写入

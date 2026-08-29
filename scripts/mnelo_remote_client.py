@@ -36,8 +36,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
-from typing import Optional, List, Dict, Any
-
+from typing import Any, Dict, List, Optional
 
 DEFAULT_TAILSCALE_HOST = "mnelo.tail6a710.ts.net"  # [8/9 P1-yanru] 占位 fallback — 实际从 config.client_tailscale_host 读
 DEFAULT_PORT = 8086
@@ -79,7 +78,7 @@ class MneloRemoteClient:
                     token = f.read().strip()
             else:
                 raise MneloRemoteError(
-                    f"No auth token. Provide via MNELO_REMOTE_TOKEN env, --token CLI arg, or mount ~/.config/mnelo/auth_token",
+                    "No auth token. Provide via MNELO_REMOTE_TOKEN env, --token CLI arg, or mount ~/.config/mnelo/auth_token",
                 )
         self.token = token
         self.timeout = timeout
@@ -123,7 +122,7 @@ class MneloRemoteClient:
         # 没 data: prefix — try raw
         try:
             return json.loads(raw)
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
             raise MneloRemoteError(f"unparseable mnelo response: {raw[:200]}")
 
     def initialize(self) -> Dict[str, Any]:

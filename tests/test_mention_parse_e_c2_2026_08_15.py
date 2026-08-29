@@ -29,6 +29,7 @@
   12. mention 检测: chunk content "buy @company:tb_tech #strategy" →
       2 entity ids + 1 tag id
 """
+
 import importlib.util as _ilu
 import json
 import re
@@ -42,9 +43,9 @@ sys.path.insert(0, str(_REPO))
 
 
 def _load_from_repo(mod_name: str):
-    target = str(_REPO / f'{mod_name}.py')
+    target = str(_REPO / f"{mod_name}.py")
     existing = sys.modules.get(mod_name)
-    if existing is not None and getattr(existing, '__file__', None) == target:
+    if existing is not None and getattr(existing, "__file__", None) == target:
         return existing
     spec = _ilu.spec_from_file_location(mod_name, target)
     mod = _ilu.module_from_spec(spec)  # type: ignore[arg-type]
@@ -53,8 +54,8 @@ def _load_from_repo(mod_name: str):
     return mod
 
 
-_validation_repo = _load_from_repo('validation')
-_memory_repo = _load_from_repo('memory')
+_validation_repo = _load_from_repo("validation")
+_memory_repo = _load_from_repo("memory")
 _memory_repo.ValidationError = _validation_repo.ValidationError  # type: ignore[attr-defined]
 
 
@@ -62,30 +63,35 @@ _memory_repo.ValidationError = _validation_repo.ValidationError  # type: ignore[
 def mem(tmp_path, monkeypatch):
     """Fresh REPO Memory with tmp_path db + usearch backend."""
     import config as _cfg_mod
-    monkeypatch.setattr(_cfg_mod.config, 'search_backend', 'usearch', raising=True)
-    db_path = tmp_path / 'test.db'
-    monkeypatch.setattr(_cfg_mod.config, 'db_path', db_path, raising=False)
 
-    schema_path = _REPO / 'schema.sql'
+    monkeypatch.setattr(_cfg_mod.config, "search_backend", "usearch", raising=True)
+    db_path = tmp_path / "test.db"
+    monkeypatch.setattr(_cfg_mod.config, "db_path", db_path, raising=False)
+
+    schema_path = _REPO / "schema.sql"
     import sqlite3 as _sqlite
     import re as _re
+
     conn = _sqlite.connect(str(db_path))
     sql = schema_path.read_text()
-    sql = _re.sub(r'PRAGMA[^;]*;', '', sql, flags=_re.IGNORECASE)
-    sql = _re.sub(r'INSTALL[^;]*;', '', sql, flags=_re.IGNORECASE)
-    sql = _re.sub(r'LOAD[^;]*;', '', sql, flags=_re.IGNORECASE)
+    sql = _re.sub(r"PRAGMA[^;]*;", "", sql, flags=_re.IGNORECASE)
+    sql = _re.sub(r"INSTALL[^;]*;", "", sql, flags=_re.IGNORECASE)
+    sql = _re.sub(r"LOAD[^;]*;", "", sql, flags=_re.IGNORECASE)
     sql = _re.sub(
-        r'CREATE VIRTUAL TABLE[^;]*USING vec0[^)]*\)',
-        '', sql, flags=_re.IGNORECASE | _re.DOTALL,
+        r"CREATE VIRTUAL TABLE[^;]*USING vec0[^)]*\)",
+        "",
+        sql,
+        flags=_re.IGNORECASE | _re.DOTALL,
     )
     try:
         # [bug fix D1 2026-08-16] Register iso_now() function before running schema.sql
         from datetime import datetime, timedelta as _td
+
         conn.create_function("iso_now", 0, lambda: datetime.now().isoformat(timespec="seconds"))
         conn.create_function("iso_now_offset", 1, lambda d: (datetime.now() + _td(days=d)).isoformat(timespec="seconds"))
         conn.executescript(sql)
     except Exception as e:
-        if 'already exists' not in str(e):
+        if "already exists" not in str(e):
             raise
     conn.commit()
     conn.close()
@@ -101,6 +107,7 @@ def mem(tmp_path, monkeypatch):
 def _seed_entity(mem, eid: str, kind: str, name: str):
     """Seed entity 走完整 schema (P1 #56 教训)."""
     from memory import now as _now
+
     _t = _now()
     mem._conn.execute(
         "INSERT INTO entities (id, kind, name, source, importance, valid_from, "
@@ -153,9 +160,7 @@ class TestMentionParse:
         # 1 relation (chunk -[mentions]-> entity)
         n = mem._conn.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
         assert n == 1
-        r = mem._conn.execute(
-            "SELECT source_id, target_id, relation FROM relations"
-        ).fetchone()
+        r = mem._conn.execute("SELECT source_id, target_id, relation FROM relations").fetchone()
         assert r["source_id"] == cid
         assert r["target_id"] == "company:tb_tech"
         assert r["relation"] == "mentions"
@@ -179,16 +184,12 @@ class TestMentionParse:
             auto_relate=True,
         )
         # 1 tag entity + 1 relation
-        e = mem._conn.execute(
-            "SELECT id, kind FROM entities WHERE id = 'tag:strategy'"
-        ).fetchone()
+        e = mem._conn.execute("SELECT id, kind FROM entities WHERE id = 'tag:strategy'").fetchone()
         assert e is not None
         assert e["kind"] == "tag"
         n = mem._conn.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
         assert n == 1
-        r = mem._conn.execute(
-            "SELECT source_id, target_id, relation FROM relations"
-        ).fetchone()
+        r = mem._conn.execute("SELECT source_id, target_id, relation FROM relations").fetchone()
         assert r["relation"] == "tagged"
         assert r["target_id"] == "tag:strategy"
 
@@ -222,15 +223,11 @@ class TestMentionParse:
         """[E-C.2.8] #tag 重复 → 复用已有 tag entity (dedup)."""
         # 第一次创建 tag:strategy
         mem.remember("first #strategy", auto_relate=True)
-        n1 = mem._conn.execute(
-            "SELECT COUNT(*) FROM entities WHERE id = 'tag:strategy'"
-        ).fetchone()[0]
+        n1 = mem._conn.execute("SELECT COUNT(*) FROM entities WHERE id = 'tag:strategy'").fetchone()[0]
         assert n1 == 1
         # 第二次 reuse 同一 tag
         mem.remember("second #strategy", auto_relate=True)
-        n2 = mem._conn.execute(
-            "SELECT COUNT(*) FROM entities WHERE id = 'tag:strategy'"
-        ).fetchone()[0]
+        n2 = mem._conn.execute("SELECT COUNT(*) FROM entities WHERE id = 'tag:strategy'").fetchone()[0]
         assert n2 == 1  # 仍 1 个, 不重复
 
     def test_autorelate_custom_relation(self, mem):
@@ -242,9 +239,7 @@ class TestMentionParse:
             auto_relate=True,
             entity_relation="discusses",  # 自定义 relation
         )
-        r = mem._conn.execute(
-            "SELECT relation FROM relations WHERE source_id = ?", (cid,)
-        ).fetchone()
+        r = mem._conn.execute("SELECT relation FROM relations WHERE source_id = ?", (cid,)).fetchone()
         assert r["relation"] == "discusses"
 
     def test_autorelate_invalid_mention_skipped(self, mem):
@@ -278,9 +273,7 @@ class TestMentionParse:
         )
         # 2 个 chunk + 1 个 mentions relation (dedup_check 只对 rel dedup,
         # chunk 走自己 insert). 验证关系只 1 个
-        n = mem._conn.execute(
-            "SELECT COUNT(*) FROM relations WHERE target_id = 'company:tb_tech'"
-        ).fetchone()[0]
+        n = mem._conn.execute("SELECT COUNT(*) FROM relations WHERE target_id = 'company:tb_tech'").fetchone()[0]
         assert n == 2  # 2 个 chunk 都 mention 同一 entity (dedup_check 对同 chunk 不 dedup)
 
     def test_mention_extraction_regex(self, mem):
@@ -288,6 +281,7 @@ class TestMentionParse:
         → 2 entity ids + 1 tag id."""
         # 直接测试 parser 函数 (不用 remember)
         from memory import _extract_mentions
+
         # 用我们设计的 parser
         content = "buy @company:tb_tech #strategy rebalance"
         entity_mentions, tag_mentions = _extract_mentions(content)

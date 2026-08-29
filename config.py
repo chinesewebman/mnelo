@@ -168,16 +168,14 @@ class Config:
         ipfilter_from_env = [c.strip() for c in env_ipfilter.split(",") if c.strip()] if env_ipfilter else []
         ipfilter_from_cfg = server_section.get("ipfilter_cidrs") or []
         if not isinstance(ipfilter_from_cfg, list):
-            print(f'[config] WARN: server.ipfilter_cidrs must be list, got {type(ipfilter_from_cfg).__name__}; ignore', file=sys.stderr)
+            print(f"[config] WARN: server.ipfilter_cidrs must be list, got {type(ipfilter_from_cfg).__name__}; ignore", file=sys.stderr)
             ipfilter_from_cfg = []
         self.server_ipfilter_cidrs = ipfilter_from_env if ipfilter_from_env else ipfilter_from_cfg
         # [bug fix B3 2026-08-16] trust_xff: opt-in for X-Forwarded-For header parsing.
         # When True and ipfilter is enforced, middleware uses leftmost XFF IP instead
         # of TCP peer. Default False — anyone can spoof XFF without a trusted proxy
         # chain. env override MNELO_MEMORY_SERVER_TRUST_XFF=1.
-        self.server_trust_xff = bool(
-            os.environ.get("MNELO_MEMORY_SERVER_TRUST_XFF", "").strip() == "1"
-        ) or bool(server_section.get("trust_xff", False))
+        self.server_trust_xff = bool(os.environ.get("MNELO_MEMORY_SERVER_TRUST_XFF", "").strip() == "1") or bool(server_section.get("trust_xff", False))
 
         # [7/21 fix] Storage location: env MNELO_MEMORY_DIR/MNELO_MEMORY_DB_PATH
         # > config.toml [storage].dir > ~/.hermes/memory (backward compatible).

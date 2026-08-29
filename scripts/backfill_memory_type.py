@@ -61,11 +61,11 @@ def run(dry_run: bool, limit: int | None, reclassify: bool = False) -> None:
         print(f"❌ memory.db 不存在: {db_path}")
         sys.exit(1)
 
-    print(f"=== backfill_memory_type (P1a E5 v0.2) ===")
+    print("=== backfill_memory_type (P1a E5 v0.2) ===")
     print(f"  DB: {db_path}")
     print(f"  mode: {'dry-run' if dry_run else 'APPLY'}")
     if reclassify:
-        print(f"  [v0.2] reclassify=True: 回填所有非 fact chunk (还原 v0.1 误标)")
+        print("  [v0.2] reclassify=True: 回填所有非 fact chunk (还原 v0.1 误标)")
     if limit is not None:
         print(f"  limit: {limit}")
     print()
@@ -91,7 +91,7 @@ def run(dry_run: bool, limit: int | None, reclassify: bool = False) -> None:
             changes.append((chunk_id, current_type, new_type))
 
     print()
-    print(f"[2] 分类结果:")
+    print("[2] 分类结果:")
     if not changes:
         print("    无变化 (所有 chunk 当前类型已正确)")
         con.close()

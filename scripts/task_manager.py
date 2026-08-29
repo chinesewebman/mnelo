@@ -31,8 +31,8 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
-from memory import Memory  # noqa: E402
 import task_states as ts  # noqa: E402
+from memory import Memory  # noqa: E402
 
 
 def cmd_create(args, mem):
@@ -175,7 +175,7 @@ def main():
     try:
         try:
             args.func(args, mem)
-        except TaskLoopError as e:
+        except ts.TaskLoopError as e:
             # [CLI-R4 8/6 review-pass] 友好错误输出, non-zero 退出.
             # 不裸 Traceback; Claude Code / 终端用户都能解析.
             print(f"[{e.code}] {e.message}", file=sys.stderr)

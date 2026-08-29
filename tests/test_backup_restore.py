@@ -11,6 +11,7 @@
 - restore 损坏 sha256 失败提示降级
 - restore 错 timestamp 报错清晰
 """
+
 import gzip
 import os
 import shutil
@@ -33,6 +34,7 @@ class BackupRestoreBase(unittest.TestCase):
     def setUp(self):
         # 临时目录
         import tempfile
+
         self.tmp = tempfile.mkdtemp(prefix="mnelo_br_")
         self.snap_dir = Path(self.tmp) / "snapshots"
         # 小 db: create + 2 chunks + 1 entity
@@ -101,7 +103,6 @@ class BackupRestoreBase(unittest.TestCase):
 
 
 class TestBackup(BackupRestoreBase):
-
     def test_01_backup_creates_snapshot_file(self):
         result = backup_db.backup(self.snap_dir, retention=5, dry_run=False, db_path=self.db_path)
         self.assertIn("path", result)
@@ -139,22 +140,21 @@ class TestBackup(BackupRestoreBase):
 
     def test_05_scheduled_disabled_skips(self):
         """[8/5 fix] --scheduled 且 [backup] enabled=false → 跳过, 不写快照."""
-        with mock.patch.object(backup_db._config, 'backup_enabled', False):
+        with mock.patch.object(backup_db._config, "backup_enabled", False):
             old_argv = sys.argv
-            sys.argv = ['backup_db.py', '--scheduled', '--dry-run',
-                        '--snapshot-dir', str(self.snap_dir)]
+            sys.argv = ["backup_db.py", "--scheduled", "--dry-run", "--snapshot-dir", str(self.snap_dir)]
             try:
                 rc = backup_db.main()
             finally:
                 sys.argv = old_argv
         self.assertEqual(rc, 0)
-        self.assertFalse(list(self.snap_dir.glob('*.db.gz')) if self.snap_dir.exists() else [])
+        self.assertFalse(list(self.snap_dir.glob("*.db.gz")) if self.snap_dir.exists() else [])
 
     def test_04_backup_retention_prunes_old(self):
         # 造 5 份, 手动改 mtime 让 retention=3 删 2 份
         self.snap_dir.mkdir(parents=True, exist_ok=True)
         for i in range(5):
-            ts = f"2026-08-0{i+1}-030000"
+            ts = f"2026-08-0{i + 1}-030000"
             p = self.snap_dir / f"{ts}.db.gz"
             sha = p.parent / (p.name + ".sha256")
             p.write_bytes(b"x")
@@ -167,7 +167,6 @@ class TestBackup(BackupRestoreBase):
 
 
 class TestRestore(BackupRestoreBase):
-
     def test_01_list_snapshots(self):
         backup_db.backup(self.snap_dir, retention=5, dry_run=False, db_path=self.db_path)
         backup_db.backup(self.snap_dir, retention=5, dry_run=False, force=True, db_path=self.db_path)
@@ -181,9 +180,7 @@ class TestRestore(BackupRestoreBase):
         # 假冒 target (live db) — dry-run 不应动它
         target = self.db_path
         target_sha_before = target.read_bytes()[:8]
-        report = restore_db.restore(
-            self.snap_dir, ts=None, target=target, dry_run=True
-        )
+        report = restore_db.restore(self.snap_dir, ts=None, target=target, dry_run=True)
         self.assertTrue(report["sha256_ok"])
         self.assertEqual(report["integrity_check"]["integrity_check"], "ok")
         self.assertEqual(report["integrity_check"]["foreign_key_check"], "ok")
@@ -240,8 +237,7 @@ class TestRestore(BackupRestoreBase):
         result = backup_db.backup(self.snap_dir, retention=5, dry_run=False, db_path=self.db_path)
         self.assertIn("path", result)
         orig = self.db_path.read_bytes()
-        with mock.patch.object(restore_db, "_server_running", return_value=True), \
-             mock.patch.object(restore_db._config, "db_path", self.db_path):
+        with mock.patch.object(restore_db, "_server_running", return_value=True), mock.patch.object(restore_db._config, "db_path", self.db_path):
             report = restore_db.restore(self.snap_dir, ts=None, target=self.db_path)
         self.assertIn("error", report)
         self.assertIn("server", report["error"].lower())
@@ -251,15 +247,13 @@ class TestRestore(BackupRestoreBase):
         """[8/5 fix] --force 时放行, 带 warning."""
         result = backup_db.backup(self.snap_dir, retention=5, dry_run=False, db_path=self.db_path)
         self.assertIn("path", result)
-        with mock.patch.object(restore_db, "_server_running", return_value=True), \
-             mock.patch.object(restore_db._config, "db_path", self.db_path):
+        with mock.patch.object(restore_db, "_server_running", return_value=True), mock.patch.object(restore_db._config, "db_path", self.db_path):
             report = restore_db.restore(self.snap_dir, ts=None, target=self.db_path, force=True)
         self.assertIn("warning", report)
         self.assertIn("restored", report)
 
 
 class TestEndToEnd(BackupRestoreBase):
-
     def test_round_trip_real_db(self):
         """端到端: 拷 live db → backup → restore → 校验完整性 (不依赖 snapshot->source 一致).
 
@@ -299,15 +293,13 @@ class TestRestoreAfterIndex(BackupRestoreBase):
 
         # 2. 改坏 db (加新 chunk, 让 snapshot 比 live 旧)
         con = sqlite3.connect(str(self.db_path))
-        con.execute("INSERT INTO chunks VALUES (?, ?, datetime('now'), NULL, ?, ?)",
-                    ("c_garbage", "garbage", "manual", 1.0))
+        con.execute("INSERT INTO chunks VALUES (?, ?, datetime('now'), NULL, ?, ?)", ("c_garbage", "garbage", "manual", 1.0))
         con.commit()
         con.close()
 
         # 3. restore with rebuild=True (验证索引重建后内容跟 snapshot 一致)
         restore_target = Path(self.tmp) / "restored.db"
-        report = restore_db.restore(self.snap_dir, ts=None, target=restore_target,
-                                     dry_run=False, rebuild=True)
+        report = restore_db.restore(self.snap_dir, ts=None, target=restore_target, dry_run=False, rebuild=True)
 
         # 4. 校验 DB 恢复了
         self.assertTrue(report["sha256_ok"])
@@ -324,13 +316,12 @@ class TestRestoreAfterIndex(BackupRestoreBase):
 
         # 6. 校验恢复后的 db 能 recall
         from search_index import build_search_index
+
         idx = build_search_index("auto", restore_target, dim=512)
         try:
             # size 应该跟 chunks 活跃数一致
             con = sqlite3.connect(str(restore_target))
-            alive = con.execute(
-                "SELECT COUNT(*) FROM chunks WHERE valid_until IS NULL"
-            ).fetchone()[0]
+            alive = con.execute("SELECT COUNT(*) FROM chunks WHERE valid_until IS NULL").fetchone()[0]
             con.close()
             self.assertEqual(idx.size(), alive, f"idx.size()={idx.size()} vs alive={alive}")
         finally:

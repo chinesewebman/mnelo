@@ -5,6 +5,7 @@ Verify config.server_ipfilter_cidrs reads from:
   2. env var MNELO_MEMORY_SERVER_IPFILTER (comma-separated)
   3. fallback empty list (backward compat)
 """
+
 import os
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ def test_default_ipfilter_empty_list():
     os.environ.pop("MNELO_MEMORY_SERVER_IPFILTER", None)
     import importlib
     import config
+
     importlib.reload(config)
     cfg = config.Config()
     assert cfg.server_ipfilter_cidrs == []
@@ -29,6 +31,7 @@ def test_env_var_takes_priority():
     os.environ["MNELO_MEMORY_SERVER_IPFILTER"] = "100.64.0.0/10,127.0.0.0/8"
     import importlib
     import config
+
     importlib.reload(config)
     cfg = config.Config()
     assert cfg.server_ipfilter_cidrs == ["100.64.0.0/10", "127.0.0.0/8"]
@@ -41,9 +44,7 @@ def test_invalid_ipfilter_in_config_warns_and_ignores(tmp_path, capsys):
     import config
 
     bad_config = tmp_path / "config.toml"
-    bad_config.write_text(
-        '[server]\nipfilter_cidrs = "not-a-list"  # should be list\n'
-    )
+    bad_config.write_text('[server]\nipfilter_cidrs = "not-a-list"  # should be list\n')
     os.environ["MNELO_MEMORY_CONFIG"] = str(bad_config)
     try:
         importlib.reload(config)
@@ -78,16 +79,12 @@ def test_middleware_integration_with_config():
 def test_config_toml_loads_ipfilter(tmp_path):
     """Real config.toml with ipfilter_cidrs loads correctly."""
     cfg_file = tmp_path / "config.toml"
-    cfg_file.write_text(
-        "[server]\n"
-        'host = "127.0.0.1"\n'
-        "port = 8086\n"
-        "ipfilter_cidrs = ['100.64.0.0/10', '127.0.0.0/8']\n"
-    )
+    cfg_file.write_text("[server]\nhost = \"127.0.0.1\"\nport = 8086\nipfilter_cidrs = ['100.64.0.0/10', '127.0.0.0/8']\n")
     os.environ["MNELO_MEMORY_CONFIG"] = str(cfg_file)
     try:
         import importlib
         import config
+
         importlib.reload(config)
         cfg = config.Config()
         assert cfg.server_ipfilter_cidrs == ["100.64.0.0/10", "127.0.0.0/8"]

@@ -9,6 +9,7 @@ DESIGN §5.1:
   list_loops: 列 loop entities + current_state.
               enabled_only=True / state=过滤 / asof 时间切片.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
 import importlib.util as _ilu
+
 
 def _load(name: str):
     spec = _ilu.spec_from_file_location(name, _REPO / f"{name}.py")
@@ -36,21 +38,12 @@ ts_mod = _load("task_states")
 
 def _setup():
     from memory import Memory
+
     mem = Memory()
     mem._conn.execute("PRAGMA foreign_keys = OFF")
     try:
-        mem._conn.execute(
-            "DELETE FROM task_states WHERE task_id LIKE 'task:tlm12-%' "
-            "OR task_id LIKE 'task:20260806-t12-%' "
-            "OR task_id LIKE 'loop:tlm12-%' "
-            "OR task_id LIKE 'loop:20260806-t12-%'"
-        )
-        mem._conn.execute(
-            "DELETE FROM entities WHERE id LIKE 'task:tlm12-%' "
-            "OR id LIKE 'task:20260806-t12-%' "
-            "OR id LIKE 'loop:tlm12-%' "
-            "OR id LIKE 'loop:20260806-t12-%'"
-        )
+        mem._conn.execute("DELETE FROM task_states WHERE task_id LIKE 'task:tlm12-%' OR task_id LIKE 'task:20260806-t12-%' OR task_id LIKE 'loop:tlm12-%' OR task_id LIKE 'loop:20260806-t12-%'")
+        mem._conn.execute("DELETE FROM entities WHERE id LIKE 'task:tlm12-%' OR id LIKE 'task:20260806-t12-%' OR id LIKE 'loop:tlm12-%' OR id LIKE 'loop:20260806-t12-%'")
     finally:
         mem._conn.execute("PRAGMA foreign_keys = ON")
     mem._conn.commit()
@@ -64,14 +57,19 @@ def test_loop_update_enabled_to_disabled_writes_dormant():
     try:
         # 建 enabled=True loop
         loop_r = ts_mod.loop_create(
-            m._conn, name="tlm12-a", trigger="x",
-            enabled=True, now="2026-08-06T09:00",
+            m._conn,
+            name="tlm12-a",
+            trigger="x",
+            enabled=True,
+            now="2026-08-06T09:00",
         )
         lid = loop_r["loop_id"]
 
         # 改 enabled=False
         result = ts_mod.loop_update(
-            m._conn, loop_id=lid, enabled=False,
+            m._conn,
+            loop_id=lid,
+            enabled=False,
             now="2026-08-06T10:00",
         )
         assert result["enabled"] is False
@@ -93,8 +91,11 @@ def test_loop_update_dormant_to_running_resumes():
     m = mem_mod.Memory()
     try:
         loop_r = ts_mod.loop_create(
-            m._conn, name="tlm12-b", trigger="x",
-            enabled=False, now="2026-08-06T09:00",
+            m._conn,
+            name="tlm12-b",
+            trigger="x",
+            enabled=False,
+            now="2026-08-06T09:00",
         )
         lid = loop_r["loop_id"]
 
@@ -115,14 +116,20 @@ def test_loop_update_partial_fields_only():
     m = mem_mod.Memory()
     try:
         loop_r = ts_mod.loop_create(
-            m._conn, name="tlm12-c", trigger="old",
-            interval_hours=24, priority=3, now="2026-08-06T09:00",
+            m._conn,
+            name="tlm12-c",
+            trigger="old",
+            interval_hours=24,
+            priority=3,
+            now="2026-08-06T09:00",
         )
         lid = loop_r["loop_id"]
 
         # 只改 trigger
         result = ts_mod.loop_update(
-            m._conn, loop_id=lid, trigger="new trigger",
+            m._conn,
+            loop_id=lid,
+            trigger="new trigger",
             now="2026-08-06T10:00",
         )
         assert result["changed"] == {"trigger": "new trigger"}
@@ -130,9 +137,12 @@ def test_loop_update_partial_fields_only():
         assert result["interval_hours"] == 24
 
         # 校验 DB
-        cfg = json.loads(m._conn.execute(
-            "SELECT properties_json FROM entities WHERE id=?", (lid,),
-        ).fetchone()[0])
+        cfg = json.loads(
+            m._conn.execute(
+                "SELECT properties_json FROM entities WHERE id=?",
+                (lid,),
+            ).fetchone()[0]
+        )
         assert cfg["trigger"] == "new trigger"
         assert cfg["interval_hours"] == 24
         assert cfg["priority"] == 3
@@ -146,12 +156,16 @@ def test_loop_update_does_not_touch_active_task():
     m = mem_mod.Memory()
     try:
         loop_r = ts_mod.loop_create(
-            m._conn, name="tlm12-d", trigger="x",
+            m._conn,
+            name="tlm12-d",
+            trigger="x",
             now="2026-08-06T09:00",
         )
         lid = loop_r["loop_id"]
         task_r = ts_mod.task_create(
-            m._conn, name="tlm12-d-task", loop_id=lid,
+            m._conn,
+            name="tlm12-d-task",
+            loop_id=lid,
             now="2026-08-06T10:00",
         )
         active_before = task_r["task_id"]
@@ -159,9 +173,12 @@ def test_loop_update_does_not_touch_active_task():
         # 改 trigger, 不应动 active_task_id
         ts_mod.loop_update(m._conn, loop_id=lid, trigger="new", now="2026-08-06T10:05")
 
-        cfg = json.loads(m._conn.execute(
-            "SELECT properties_json FROM entities WHERE id=?", (lid,),
-        ).fetchone()[0])
+        cfg = json.loads(
+            m._conn.execute(
+                "SELECT properties_json FROM entities WHERE id=?",
+                (lid,),
+            ).fetchone()[0]
+        )
         assert cfg["active_task_id"] == active_before
     finally:
         m.close()
@@ -187,10 +204,8 @@ def test_list_loops_basic():
     _setup()
     m = mem_mod.Memory()
     try:
-        ts_mod.loop_create(m._conn, name="tlm12-e1", trigger="x",
-                          enabled=True, now="2026-08-06T09:00")
-        ts_mod.loop_create(m._conn, name="tlm12-e2", trigger="y",
-                          enabled=False, now="2026-08-06T09:01")
+        ts_mod.loop_create(m._conn, name="tlm12-e1", trigger="x", enabled=True, now="2026-08-06T09:00")
+        ts_mod.loop_create(m._conn, name="tlm12-e2", trigger="y", enabled=False, now="2026-08-06T09:01")
 
         r = ts_mod.list_loops(m._conn)
         names = [loop["name"] for loop in r["loops"]]
@@ -205,10 +220,8 @@ def test_list_loops_enabled_only():
     _setup()
     m = mem_mod.Memory()
     try:
-        ts_mod.loop_create(m._conn, name="tlm12-on", trigger="x",
-                          enabled=True, now="2026-08-06T09:00")
-        ts_mod.loop_create(m._conn, name="tlm12-off", trigger="x",
-                          enabled=False, now="2026-08-06T09:01")
+        ts_mod.loop_create(m._conn, name="tlm12-on", trigger="x", enabled=True, now="2026-08-06T09:00")
+        ts_mod.loop_create(m._conn, name="tlm12-off", trigger="x", enabled=False, now="2026-08-06T09:01")
 
         r = ts_mod.list_loops(m._conn, enabled_only=True)
         names = [loop["name"] for loop in r["loops"]]
@@ -223,10 +236,8 @@ def test_list_loops_state_filter():
     _setup()
     m = mem_mod.Memory()
     try:
-        ts_mod.loop_create(m._conn, name="tlm12-d1", trigger="x",
-                          enabled=False, now="2026-08-06T09:00")
-        ts_mod.loop_create(m._conn, name="tlm12-d2", trigger="x",
-                          enabled=False, now="2026-08-06T09:01")
+        ts_mod.loop_create(m._conn, name="tlm12-d1", trigger="x", enabled=False, now="2026-08-06T09:00")
+        ts_mod.loop_create(m._conn, name="tlm12-d2", trigger="x", enabled=False, now="2026-08-06T09:01")
 
         r = ts_mod.list_loops(m._conn, state="dormant")
         states = [loop["current_state"] for loop in r["loops"]]

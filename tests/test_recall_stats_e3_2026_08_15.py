@@ -21,6 +21,7 @@ recall_stats() 方法聚合, MCP tool 暴露.
   7. days=N 窗口过滤
   8. recall_details_json NULL (老数据) → 不崩, 跳过 details 聚合
 """
+
 import importlib.util as _ilu
 import json
 import sys
@@ -34,9 +35,9 @@ sys.path.insert(0, str(_REPO))
 
 
 def _load_from_repo(mod_name: str):
-    target = str(_REPO / f'{mod_name}.py')
+    target = str(_REPO / f"{mod_name}.py")
     existing = sys.modules.get(mod_name)
-    if existing is not None and getattr(existing, '__file__', None) == target:
+    if existing is not None and getattr(existing, "__file__", None) == target:
         return existing
     spec = _ilu.spec_from_file_location(mod_name, target)
     mod = _ilu.module_from_spec(spec)  # type: ignore[arg-type]
@@ -45,8 +46,8 @@ def _load_from_repo(mod_name: str):
     return mod
 
 
-_validation_repo = _load_from_repo('validation')
-_memory_repo = _load_from_repo('memory')
+_validation_repo = _load_from_repo("validation")
+_memory_repo = _load_from_repo("memory")
 _memory_repo.ValidationError = _validation_repo.ValidationError  # type: ignore[attr-defined]
 
 
@@ -54,30 +55,35 @@ _memory_repo.ValidationError = _validation_repo.ValidationError  # type: ignore[
 def mem(tmp_path, monkeypatch):
     """Fresh REPO Memory with tmp_path db + usearch backend."""
     import config as _cfg_mod
-    monkeypatch.setattr(_cfg_mod.config, 'search_backend', 'usearch', raising=True)
-    db_path = tmp_path / 'test.db'
-    monkeypatch.setattr(_cfg_mod.config, 'db_path', db_path, raising=False)
 
-    schema_path = _REPO / 'schema.sql'
+    monkeypatch.setattr(_cfg_mod.config, "search_backend", "usearch", raising=True)
+    db_path = tmp_path / "test.db"
+    monkeypatch.setattr(_cfg_mod.config, "db_path", db_path, raising=False)
+
+    schema_path = _REPO / "schema.sql"
     import sqlite3 as _sqlite
     import re
+
     conn = _sqlite.connect(str(db_path))
     sql = schema_path.read_text()
-    sql = re.sub(r'PRAGMA[^;]*;', '', sql, flags=re.IGNORECASE)
-    sql = re.sub(r'INSTALL[^;]*;', '', sql, flags=re.IGNORECASE)
-    sql = re.sub(r'LOAD[^;]*;', '', sql, flags=re.IGNORECASE)
+    sql = re.sub(r"PRAGMA[^;]*;", "", sql, flags=re.IGNORECASE)
+    sql = re.sub(r"INSTALL[^;]*;", "", sql, flags=re.IGNORECASE)
+    sql = re.sub(r"LOAD[^;]*;", "", sql, flags=re.IGNORECASE)
     sql = re.sub(
-        r'CREATE VIRTUAL TABLE[^;]*USING vec0[^)]*\)',
-        '', sql, flags=re.IGNORECASE | re.DOTALL,
+        r"CREATE VIRTUAL TABLE[^;]*USING vec0[^)]*\)",
+        "",
+        sql,
+        flags=re.IGNORECASE | re.DOTALL,
     )
     try:
         # [bug fix D1 2026-08-16] Register iso_now() function before running schema.sql
         from datetime import datetime, timedelta as _td
+
         conn.create_function("iso_now", 0, lambda: datetime.now().isoformat(timespec="seconds"))
         conn.create_function("iso_now_offset", 1, lambda d: (datetime.now() + _td(days=d)).isoformat(timespec="seconds"))
         conn.executescript(sql)
     except Exception as e:
-        if 'already exists' not in str(e):
+        if "already exists" not in str(e):
             raise
     conn.commit()
     conn.close()
@@ -104,17 +110,20 @@ def _seed_recall(
     now_iso = created_at or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     details = None
     if include_details:
-        details = json.dumps([
-            {
-                "rank": i + 1,
-                "chunk_id": r.get("chunk_id"),
-                "method": r.get("method", "vector"),
-                "distance": r.get("distance", 0.5),
-                "rrf_score": r.get("rrf_score", 0.01),
-                "importance": r.get("importance", 0.5),
-            }
-            for i, r in enumerate(results[:5])
-        ], ensure_ascii=False)
+        details = json.dumps(
+            [
+                {
+                    "rank": i + 1,
+                    "chunk_id": r.get("chunk_id"),
+                    "method": r.get("method", "vector"),
+                    "distance": r.get("distance", 0.5),
+                    "rrf_score": r.get("rrf_score", 0.01),
+                    "importance": r.get("importance", 0.5),
+                }
+                for i, r in enumerate(results[:5])
+            ],
+            ensure_ascii=False,
+        )
     mem._conn.execute(
         """
         INSERT INTO recall_log
@@ -146,9 +155,14 @@ class TestRecallStats:
 
     def test_single_recall_single_method(self, mem):
         """[E-3.2] 1 条 recall, 1 个 vector 命中 → method 分布正确."""
-        _seed_recall(mem, "test query 1", [
-            {"chunk_id": "chunk_1", "method": "vector", "distance": 0.3, "rrf_score": 0.02},
-        ], latency_ms=15.0)
+        _seed_recall(
+            mem,
+            "test query 1",
+            [
+                {"chunk_id": "chunk_1", "method": "vector", "distance": 0.3, "rrf_score": 0.02},
+            ],
+            latency_ms=15.0,
+        )
         result = mem.recall_stats(days=30)
         assert result["totals"]["total_recalls"] == 1
         assert result["totals"]["total_hits"] == 1
@@ -190,7 +204,9 @@ class TestRecallStats:
         """
         for i, lat in enumerate([5, 10, 15, 20, 25, 30, 100]):
             _seed_recall(
-                mem, f"q{i}", [{"chunk_id": f"c{i}", "method": "vector"}],
+                mem,
+                f"q{i}",
+                [{"chunk_id": f"c{i}", "method": "vector"}],
                 latency_ms=lat,
             )
         result = mem.recall_stats(days=30)
@@ -214,11 +230,15 @@ class TestRecallStats:
         old = (now - timedelta(days=40)).strftime("%Y-%m-%dT%H:%M:%S")
         recent = (now - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%S")
         _seed_recall(
-            mem, "old_q", [{"chunk_id": "c_old", "method": "vector"}],
+            mem,
+            "old_q",
+            [{"chunk_id": "c_old", "method": "vector"}],
             created_at=old,
         )
         _seed_recall(
-            mem, "new_q", [{"chunk_id": "c_new", "method": "vector"}],
+            mem,
+            "new_q",
+            [{"chunk_id": "c_new", "method": "vector"}],
             created_at=recent,
         )
         result_7d = mem.recall_stats(days=7)

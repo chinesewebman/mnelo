@@ -16,6 +16,7 @@ Test verifies:
   - valid_until comparisons work consistently between task_states and chunks
   - replay_task(asof) returns correct windows
 """
+
 import os
 import sys
 import tempfile
@@ -35,9 +36,8 @@ def test_default_now_uses_second_precision():
     assert "." not in ts, f"_default_now has fractional seconds: {ts!r}"
     # Format: YYYY-MM-DDTHH:MM:SS
     import re
-    assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$", ts), (
-        f"_default_now format mismatch: {ts!r}"
-    )
+
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$", ts), f"_default_now format mismatch: {ts!r}"
 
 
 def test_default_now_matches_memory_now_precision():
@@ -65,6 +65,7 @@ def test_default_now_matches_iso_now_sql_function():
             ts_sql = m._conn.execute("SELECT iso_now()").fetchone()[0]
             # Both should be parseable as ISO 8601 (no fractional vs fractional mismatch)
             from datetime import datetime
+
             dt_python = datetime.fromisoformat(ts_python)
             dt_sql = datetime.fromisoformat(ts_sql)
             # The diff is bounded by 1 second (both run in sequence)

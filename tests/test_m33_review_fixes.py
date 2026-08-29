@@ -8,6 +8,7 @@
        non-empty + min length 5
   M33.3 [whitespace] reason='   ' (纯空白) 应抛 ReasonRequiredError
 """
+
 import sys
 import sqlite3
 import threading
@@ -20,24 +21,16 @@ sys.path.insert(0, str(REPO))
 import task_states
 import memory
 
-FAILED_PREFIXES = (
-    'task:%m33%', 'loop:%m33%'
-)
+FAILED_PREFIXES = ("task:%m33%", "loop:%m33%")
 
 
 def _setup():
     """Clean m33 fixture prefix."""
     c = sqlite3.connect(str(memory.DB_PATH))
     c.execute("PRAGMA foreign_keys = OFF")
-    c.execute(
-        "DELETE FROM task_states WHERE task_id LIKE 'task:%m33-%' OR task_id LIKE 'loop:%m33-%'"
-    )
-    c.execute(
-        "DELETE FROM entities WHERE id LIKE 'task:%m33-%' OR id LIKE 'loop:%m33-%'"
-    )
-    c.execute(
-        "DELETE FROM audit_log WHERE ref_id LIKE 'task:%m33-%' OR ref_id LIKE 'loop:%m33-%'"
-    )
+    c.execute("DELETE FROM task_states WHERE task_id LIKE 'task:%m33-%' OR task_id LIKE 'loop:%m33-%'")
+    c.execute("DELETE FROM entities WHERE id LIKE 'task:%m33-%' OR id LIKE 'loop:%m33-%'")
+    c.execute("DELETE FROM audit_log WHERE ref_id LIKE 'task:%m33-%' OR ref_id LIKE 'loop:%m33-%'")
     c.execute("PRAGMA foreign_keys = ON")
     c.commit()
     c.close()
@@ -62,6 +55,7 @@ def _create_loop(name: str) -> str:
 
 
 # ===== M33.2 [validation] tests =====
+
 
 def test_m33_2_forget_task_reason_required_rejects_empty():
     """[M33.2a] forget_task reason='' 抛 ReasonRequiredError."""
@@ -129,9 +123,7 @@ def test_m33_3c_forget_task_reason_min_length_5_ok():
     tid = _create_task("m33-reason-ok")
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
-        result = task_states.forget_task(
-            c, tid, reason="valid_reason_for_audit_log", now="2026-08-06T15:00"
-        )
+        result = task_states.forget_task(c, tid, reason="valid_reason_for_audit_log", now="2026-08-06T15:00")
         assert result["task_id"] == tid
         # after_json.reason 应存 stripped 值
         row = c.execute(
@@ -140,6 +132,7 @@ def test_m33_3c_forget_task_reason_min_length_5_ok():
             (tid,),
         ).fetchone()
         import json as _json
+
         after = _json.loads(row[0])
         assert after["reason"] == "valid_reason_for_audit_log"
     finally:
@@ -147,6 +140,7 @@ def test_m33_3c_forget_task_reason_min_length_5_ok():
 
 
 # ===== M33.1 [race] concurrent tests =====
+
 
 def test_m33_1_concurrent_forget_task_only_one_succeeds():
     """[M33.1] 真并发 (双连接) forget 同 task_id, 应只 1 成功 + 1 抛 TaskAlreadyForgotten.
@@ -166,7 +160,9 @@ def test_m33_1_concurrent_forget_task_only_one_succeeds():
         try:
             time.sleep(0.01)
             r = task_states.forget_task(
-                conn, tid, reason=f"concurrent_forget_from_{name}",
+                conn,
+                tid,
+                reason=f"concurrent_forget_from_{name}",
             )
             results[name] = r
         except task_states.TaskLoopError as e:
@@ -215,7 +211,9 @@ def test_m33_1b_concurrent_forget_loop_only_one_succeeds():
         try:
             time.sleep(0.01)
             r = task_states.forget_loop(
-                conn, lid, reason=f"concurrent_forget_loop_from_{name}",
+                conn,
+                lid,
+                reason=f"concurrent_forget_loop_from_{name}",
             )
             results[name] = r
         except task_states.TaskLoopError as e:

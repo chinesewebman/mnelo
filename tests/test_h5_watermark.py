@@ -8,6 +8,7 @@
 
 测试用 live DB + cleanup (同 test_h4_purge_candidate.py 策略).
 """
+
 from datetime import datetime
 import sys
 from pathlib import Path
@@ -29,6 +30,7 @@ def _new_mem():
 def _cleanup(mem, ids, source="h5_test"):
     # [8/6 plan §10] 后端感知清理 (helper 先 _index.remove 再 DELETE chunks)
     from helpers import cleanup_chunks
+
     cleanup_chunks(mem, chunk_ids=list(set(ids)))
     # 顺手清掉 source 全量的孤儿 (跨测试类积累)
     cleanup_chunks(mem, source=source)
@@ -68,7 +70,9 @@ def test_h5_watermark_advances_on_clean_run():
         # 确保时间戳能前进 (run_maintenance 用 ms 精度)
         _t.sleep(1.05)
         result = mem.run_maintenance(
-            passes=["hygiene"], dry_run=False, confirm_destructive=True,
+            passes=["hygiene"],
+            dry_run=False,
+            confirm_destructive=True,
         )
         after = mem._l2_get("l2.last_run.hygiene")
         assert result["applied"] >= 1, f"应有 applied > 0, got {result['applied']}"
@@ -96,7 +100,9 @@ def test_h5_watermark_holds_on_failure():
         before = mem._l2_get("l2.last_run.hygiene")
         try:
             mem.run_maintenance(
-                passes=["hygiene"], dry_run=False, confirm_destructive=True,
+                passes=["hygiene"],
+                dry_run=False,
+                confirm_destructive=True,
             )
         except RuntimeError:
             pass  # expected
@@ -114,23 +120,23 @@ def test_h5_idempotency_second_run_no_side_effects():
     cids = [_insert_old_ephemeral(mem, "idem1"), _insert_old_ephemeral(mem, "idem2")]
     try:
         first = mem.run_maintenance(
-            passes=["hygiene"], dry_run=False, confirm_destructive=True,
+            passes=["hygiene"],
+            dry_run=False,
+            confirm_destructive=True,
         )
         first_applied = first["applied"]
         assert first_applied >= 1, f"first run 必须 applied >= 1, got {first_applied}"
         first_wm = mem._l2_get("l2.last_run.hygiene")
 
         second = mem.run_maintenance(
-            passes=["hygiene"], dry_run=False, confirm_destructive=True,
+            passes=["hygiene"],
+            dry_run=False,
+            confirm_destructive=True,
         )
-        assert second["applied"] == 0, (
-            f"second run 已被 soft-delete 的 chunk 不能被再次 applied, got {second['applied']}"
-        )
+        assert second["applied"] == 0, f"second run 已被 soft-delete 的 chunk 不能被再次 applied, got {second['applied']}"
         second_wm = mem._l2_get("l2.last_run.hygiene")
         # watermark 可以推 (idempotent 软写), 但 applied 必须 0
-        assert second_wm == first_wm, (
-            f"无 applied 时 watermark 必须不变, got {first_wm} → {second_wm}"
-        )
+        assert second_wm == first_wm, f"无 applied 时 watermark 必须不变, got {first_wm} → {second_wm}"
     finally:
         _cleanup(mem, cids)
         mem.close()
@@ -152,6 +158,7 @@ def test_h5_apply_failure_rolls_back_half_state():
                 (ts, chunk_id),
             )
             from datetime import timedelta as _td
+
             mem._exec_clean(
                 "INSERT INTO purged_queue (target_id, target_kind, purged_at, done) VALUES (?, 'chunk', ?, 0)",
                 (chunk_id, (datetime.now() + _td(days=30)).strftime("%Y-%m-%dT%H:%M:%S")),
@@ -160,16 +167,14 @@ def test_h5_apply_failure_rolls_back_half_state():
 
         mem._apply_ttl_soft_delete = half_then_fail
         result = mem.run_maintenance(
-            passes=["hygiene"], dry_run=False, confirm_destructive=True,
+            passes=["hygiene"],
+            dry_run=False,
+            confirm_destructive=True,
         )
         # [P0 验收] rollback 必须发生
-        valid_until = mem._conn.execute(
-            "SELECT valid_until FROM chunks WHERE id = ?", (cid,)
-        ).fetchone()["valid_until"]
+        valid_until = mem._conn.execute("SELECT valid_until FROM chunks WHERE id = ?", (cid,)).fetchone()["valid_until"]
         assert valid_until is None, f"P0: valid_until 必须被 rollback, got {valid_until}"
-        queue_rows = mem._conn.execute(
-            "SELECT COUNT(*) FROM purged_queue WHERE target_id = ?", (cid,)
-        ).fetchone()[0]
+        queue_rows = mem._conn.execute("SELECT COUNT(*) FROM purged_queue WHERE target_id = ?", (cid,)).fetchone()[0]
         assert queue_rows == 0, f"P0: purged_queue 必须被 rollback, got {queue_rows}"
         assert result["failed"] == 1, "该 proposal 必须计入 failed"
     finally:

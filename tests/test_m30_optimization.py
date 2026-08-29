@@ -9,6 +9,7 @@
   M30.3 [digest contract] render_digest_block4 输出截断到 ≤2000 字符 (digest
        injection 契约, 防止 Agent context overflow)
 """
+
 import sqlite3
 import sys
 from pathlib import Path
@@ -22,6 +23,7 @@ NOW_REF = (_dt.now() + _td(seconds=1)).isoformat(timespec="milliseconds")
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 import os
+
 os.environ.setdefault("MNELO_MEMORY_SEARCH_BACKEND", "usearch")
 
 import memory
@@ -43,7 +45,9 @@ def _setup():
     c.execute("PRAGMA foreign_keys = OFF")
     c.execute("DELETE FROM task_states WHERE task_id LIKE 'task:%m30-%' OR task_id LIKE 'loop:%m30-%' OR task_id LIKE 'task:%m32-%' OR task_id LIKE 'loop:%m32-%'")
     c.execute("DELETE FROM entities WHERE id LIKE 'task:%m30-%' OR id LIKE 'loop:%m30-%' OR id LIKE 'task:%m32-%' OR id LIKE 'loop:%m32-%'")
-    c.execute("DELETE FROM audit_log WHERE (pass_name='stuck_task' OR pass_name='forced_forget') AND (ref_id LIKE 'task:%m30-%' OR ref_id LIKE 'loop:%m30-%' OR ref_id LIKE 'task:%m32-%' OR ref_id LIKE 'loop:%m32-%')")
+    c.execute(
+        "DELETE FROM audit_log WHERE (pass_name='stuck_task' OR pass_name='forced_forget') AND (ref_id LIKE 'task:%m30-%' OR ref_id LIKE 'loop:%m30-%' OR ref_id LIKE 'task:%m32-%' OR ref_id LIKE 'loop:%m32-%')"
+    )
     c.execute("DELETE FROM chunks WHERE id LIKE 'chunk:m30-%' OR id LIKE 'chunk:m32-%' OR source LIKE '%m30-%' OR source LIKE '%m32-%'")
     c.execute("PRAGMA foreign_keys = ON")
     c.commit()
@@ -64,6 +68,7 @@ def _create_stale_task(name: str, days_ago: int = 10) -> str:
 
 
 # ===== M30.1 race condition =====
+
 
 def test_m30_1_apply_double_resolved_check_atomic():
     """[M30.1] apply_stale_proposal 重复 apply 应抛 ProposalAlreadyResolved.
@@ -94,14 +99,18 @@ def test_m30_1_apply_double_resolved_check_atomic():
 
         # 第一次 apply 成功
         applied1 = task_states.apply_stale_proposal(
-            c, pid, applied_action="first_apply",
+            c,
+            pid,
+            applied_action="first_apply",
         )
         assert applied1["status"] == "applied"
 
         # 第二次 apply 应抛 ProposalAlreadyResolved
         try:
             task_states.apply_stale_proposal(
-                c, pid, applied_action="second_apply_attempt",
+                c,
+                pid,
+                applied_action="second_apply_attempt",
             )
             raise AssertionError("second apply should raise")
         except task_states.TaskLoopError as e:
@@ -167,6 +176,7 @@ def test_m30_1b_apply_second_proposal_blocked_by_resolved():
 
 # ===== M30.2 input validation =====
 
+
 def test_m30_2_propose_rejects_invalid_threshold():
     """[M30.2] propose_stale_tasks 拒绝负数 / 0 / 非 int threshold."""
     _setup()
@@ -209,6 +219,7 @@ def test_m30_2_propose_rejects_invalid_threshold():
 
 # ===== M30.3 digest truncation =====
 
+
 def test_m32_4_concurrent_apply_only_one_succeeds():
     """[M32.4] 真实并发 (双连接) apply 同 proposal_id, 应只有 1 成功.
 
@@ -221,6 +232,7 @@ def test_m32_4_concurrent_apply_only_one_succeeds():
     """
     import threading
     import time as _time
+
     _setup()
     tid = _create_stale_task("m32-concurrent")
 
@@ -250,7 +262,9 @@ def test_m32_4_concurrent_apply_only_one_succeeds():
                 # sleep 0 让两线程竞争锁
                 _time.sleep(0.01)
                 r = task_states.apply_stale_proposal(
-                    conn, pid, applied_action=f"from_{name}",
+                    conn,
+                    pid,
+                    applied_action=f"from_{name}",
                 )
                 results[name] = r
             except task_states.TaskLoopError as e:
@@ -271,8 +285,7 @@ def test_m32_4_concurrent_apply_only_one_succeeds():
         assert ok_count == 1, f"应 1 个 apply 成功, got {ok_count} ({results}, {errors})"
         assert err_count == 1, f"应 1 个 apply 抛错, got {err_count} ({results}, {errors})"
         # 错误码应为 ProposalAlreadyResolved
-        assert (errors["a"] == "ProposalAlreadyResolved" or
-                errors["b"] == "ProposalAlreadyResolved")
+        assert errors["a"] == "ProposalAlreadyResolved" or errors["b"] == "ProposalAlreadyResolved"
 
         # 校验 audit_log 只 1 行 stale_resolved/applied (race fix 核心)
         n = c1.execute(
@@ -329,10 +342,8 @@ def test_m30_3_render_digest_block4_truncates_to_2000_chars():
         # 不依赖 n_active 阈值, 直接断言:
         #   1. block 4 总长 ≤ 2000 chars (含末尾 "..." 截断)
         #   2. 截断后应以 "..." 结尾 (M30.3 显式 truncated flag 后置)
-        assert len(text_block) <= 2000, \
-            "block 4 应 ≤2000 chars, got " + str(len(text_block))
-        assert text_block.endswith("..."), \
-            "block 4 应被截断以 ... 结尾 (M30.3 truncation)"
+        assert len(text_block) <= 2000, "block 4 应 ≤2000 chars, got " + str(len(text_block))
+        assert text_block.endswith("..."), "block 4 应被截断以 ... 结尾 (M30.3 truncation)"
     finally:
         c.execute("PRAGMA foreign_keys = OFF")
         c.execute("DELETE FROM task_states WHERE task_id LIKE 'task:m30-digest-%'")
@@ -340,5 +351,3 @@ def test_m30_3_render_digest_block4_truncates_to_2000_chars():
         c.execute("PRAGMA foreign_keys = ON")
         c.commit()
         c.close()
-
-

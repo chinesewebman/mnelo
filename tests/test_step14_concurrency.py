@@ -17,6 +17,7 @@
 
 每个线程用 subprocess 隔离运行 (避免 _ilu 多模块实例问题 — 同 RF15 修因一致).
 """
+
 import json
 import os
 import subprocess
@@ -55,13 +56,15 @@ def _run_in_subprocess(snippet: str, env_extra: dict = None, fmt: dict = None) -
         env.update(env_extra)
     p = subprocess.run(
         [sys.executable, "-c", snippet],
-        capture_output=True, text=True, env=env, timeout=60,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
         cwd=str(_REPO),
     )
     if p.returncode != 0:
         raise AssertionError(f"subprocess failed: rc={p.returncode}\nstderr={p.stderr[-500:]}")
     return p.stdout
-
 
 
 # [M19 fix] 三引号模板: subprocess snippet 不再硬编码 /Users/apple/.hermes/memory.
@@ -80,13 +83,13 @@ m.close()
 """
 
 
-
 class _SafeFormatDict(dict):
     """[M19 fix] str.format_map 友好 dict: 缺失占位符保留原文, 不抛 KeyError.
 
     让 snippet 写 `{tid}` 等占位符, 调用方忘了传 fmt 也不会崩 — 直接保留原文
     更容易调试.
     """
+
     def __missing__(self, key):
         return "{" + key + "}"
 
@@ -103,22 +106,13 @@ def _setup():
     抛 'no such table' 静默跳过, 并删 0 字节 DB 防污染.
     """
     import sqlite3
+
     db_path = _REPO / "memory.db"
     try:
         c = sqlite3.connect(str(db_path), timeout=10)
         c.execute("PRAGMA foreign_keys = OFF")
-        c.execute(
-            "DELETE FROM task_states WHERE task_id LIKE 'task:step14-%' "
-            "OR task_id LIKE 'loop:step14-%' "
-            "OR task_id LIKE 'task:20260806-step14-%' "
-            "OR task_id LIKE 'loop:20260806-step14-%'"
-        )
-        c.execute(
-            "DELETE FROM entities WHERE id LIKE 'task:step14-%' "
-            "OR id LIKE 'loop:step14-%' "
-            "OR id LIKE 'task:20260806-step14-%' "
-            "OR id LIKE 'loop:20260806-step14-%'"
-        )
+        c.execute("DELETE FROM task_states WHERE task_id LIKE 'task:step14-%' OR task_id LIKE 'loop:step14-%' OR task_id LIKE 'task:20260806-step14-%' OR task_id LIKE 'loop:20260806-step14-%'")
+        c.execute("DELETE FROM entities WHERE id LIKE 'task:step14-%' OR id LIKE 'loop:step14-%' OR id LIKE 'task:20260806-step14-%' OR id LIKE 'loop:20260806-step14-%'")
         c.execute("PRAGMA foreign_keys = ON")
         c.commit()
         c.close()
@@ -176,6 +170,7 @@ except Exception as e:
     # 起 4 个并发 subprocess
     results = []
     threads = []
+
     def _runner(name: str):
         snippet = snippet_template.replace("{name}", name)
         out = _run_in_subprocess(snippet)
@@ -198,8 +193,7 @@ except Exception as e:
     assert len(errors) == 3, f"expected 3 errors, got {len(errors)}: {results}"
     # 全部 error 应是 LoopHasActiveTaskError
     for err in errors:
-        assert "LoopHasActiveTaskError" in err or "TaskLoopError" in err, \
-            f"unexpected error: {err}"
+        assert "LoopHasActiveTaskError" in err or "TaskLoopError" in err, f"unexpected error: {err}"
 
 
 def test_f6_2_concurrent_transition_different_tasks_all_succeed():
@@ -255,6 +249,7 @@ m.close()
     results = []
     threads = []
     timings = []
+
     def _runner_thread(tid, idx):
         out, elapsed = _runner(tid, idx)
         results.append(out)
@@ -323,8 +318,10 @@ m.close()
 
     results = []
     threads = []
+
     def _runner_thread(idx):
         results.append((idx, _runner(idx)))
+
     for i in range(4):
         t = threading.Thread(target=_runner_thread, args=(i,))
         threads.append(t)
@@ -359,8 +356,7 @@ m.close()
     )
     final_state_line = [ln for ln in final_state_check.split("\n") if ln.startswith("FINAL_STATE:")][0]
     final_state = final_state_line.split(": ", 1)[1].strip()
-    assert final_state == "in_progress", \
-        f"after 4 concurrent transitions, final state should be in_progress, got {final_state}"
+    assert final_state == "in_progress", f"after 4 concurrent transitions, final state should be in_progress, got {final_state}"
     print(f"F6.3 oks={len(oks)} errs={len(errs)} final_state={final_state}")
 
 
@@ -388,8 +384,8 @@ def test_f6_5_high_concurrency_stress_16_threads():
         "print('IDS:', ','.join(ids))\n"
     )
     out = _run_in_subprocess(snippet_loop)
-    line = [ln for ln in out.split('\n') if ln.startswith('IDS:')][0]
-    ids = line.split(': ', 1)[1].strip().split(',')
+    line = [ln for ln in out.split("\n") if ln.startswith("IDS:")][0]
+    ids = line.split(": ", 1)[1].strip().split(",")
 
     # 16 并发 task_create, 每个独立 loop
     def _runner(lid: str, idx: int) -> str:
@@ -415,6 +411,7 @@ def test_f6_5_high_concurrency_stress_16_threads():
     results = []
     timings = []
     threads = []
+
     def _runner_thread(lid, idx):
         t0 = time.time()
         results.append((idx, _runner(lid, idx)))
@@ -427,12 +424,12 @@ def test_f6_5_high_concurrency_stress_16_threads():
     for t in threads:
         t.join()
 
-    oks = sum(1 for _, r in results if 'OK-' in r)
-    errs = [(i, r) for i, r in results if 'ERR-' in r]
-    assert oks == 16, f'expected 16 OKs, got {oks}, errors: {errs}'
+    oks = sum(1 for _, r in results if "OK-" in r)
+    errs = [(i, r) for i, r in results if "ERR-" in r]
+    assert oks == 16, f"expected 16 OKs, got {oks}, errors: {errs}"
     # [8/9 P1 follow-up] 16 个并发 Memory() 子进程 + 冷启动 embedder (5-10s)
     # + SQLite WAL contention, 实际 17s. 10s 阈值过紧, 改 60s.
-    assert max(timings) < 60.0, f'timeout risk: max={max(timings):.2f}s' 
+    assert max(timings) < 60.0, f"timeout risk: max={max(timings):.2f}s"
 
 
 def test_f6_4_concurrent_loop_tick_no_double_trigger():
@@ -480,8 +477,10 @@ m.close()
 
     results = []
     threads = []
+
     def _runner_thread(idx):
         results.append((idx, _runner(idx)))
+
     for i in range(4):
         t = threading.Thread(target=_runner_thread, args=(i,))
         threads.append(t)

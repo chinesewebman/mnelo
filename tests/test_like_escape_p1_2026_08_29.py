@@ -13,7 +13,7 @@ the user's literal `%`/`_` as wildcards, causing:
 This breaks recall for any user query containing these chars. FTS5 has its own
 escape (`_fts_escape_query`) — this is the LIKE-side equivalent.
 
-Fix: introduce `_escape_like(query)` that escapes `\` to `\\`, then `%` to `\\%`,
+Fix: introduce `_escape_like(query)` that escapes `\\` to `\\`, then `%` to `\\%`,
 then `_` to `\\_`. Apply it to all 5 LIKE pattern constructions in
 memory_core.py (lines 1576 / 1646 / 1829 / 1909 / 1924 / 2052 / 1646).
 
@@ -21,6 +21,7 @@ Tests verify: `query='%'` no longer matches non-`%` content; `query='_'`
 matches only literal underscore content; `query='snake_case'` matches
 literal underscore; the helper itself round-trips ordinary text unchanged.
 """
+
 import sys
 from pathlib import Path
 
@@ -31,15 +32,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # === Pure helper unit tests (no DB needed) ===
 
+
 def test_escape_like_returns_str():
     """Helper signature: str → str."""
     from memory import _escape_like
+
     assert isinstance(_escape_like("hello"), str)
 
 
 def test_escape_like_passes_through_plain_text():
     """Ordinary text without special chars is unchanged."""
     from memory import _escape_like
+
     assert _escape_like("hello world") == "hello world"
     assert _escape_like("北京") == "北京"
     assert _escape_like("user@email.com") == "user@email.com"
@@ -48,6 +52,7 @@ def test_escape_like_passes_through_plain_text():
 def test_escape_like_escapes_percent():
     """Literal `%` in user query must be escaped to `\\%` so LIKE treats as literal."""
     from memory import _escape_like
+
     # Order matters: backslash first, then percent.
     # Source `%` → escaped `\%` (SQLite ESCAPE '\\')
     assert _escape_like("100%") == "100\\%"
@@ -58,6 +63,7 @@ def test_escape_like_escapes_percent():
 def test_escape_like_escapes_underscore():
     """Literal `_` must be escaped to `\\_`."""
     from memory import _escape_like
+
     assert _escape_like("snake_case") == "snake\\_case"
     assert _escape_like("_") == "\\_"
     assert _escape_like("a_b_c") == "a\\_b\\_c"
@@ -67,6 +73,7 @@ def test_escape_like_escapes_backslash_first():
     """If input has both backslash and %, escape backslash first so % becomes
     literal %, not part of an escape sequence."""
     from memory import _escape_like
+
     # `a\%` (user typed literal backslash + percent) → `a\\\%`
     # (SQLite ESCAPE '\\' reads: \\ is literal \, \% is literal %)
     assert _escape_like("a\\%") == "a\\\\\\%"
@@ -75,16 +82,19 @@ def test_escape_like_escapes_backslash_first():
 def test_escape_like_combined():
     """Combined special chars all escaped."""
     from memory import _escape_like
+
     assert _escape_like("foo_bar%baz") == "foo\\_bar\\%baz"
 
 
 def test_escape_like_empty():
     """Empty input returns empty."""
     from memory import _escape_like
+
     assert _escape_like("") == ""
 
 
 # === Integration tests: prove the bug is fixed at the SQL level ===
+
 
 @pytest.fixture
 def mem_with_chunks(tmp_path, monkeypatch):
@@ -100,6 +110,7 @@ def mem_with_chunks(tmp_path, monkeypatch):
     repo = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(repo))
     from config import config as _cfg
+
     monkeypatch.setattr(_cfg, "search_backend", "usearch", raising=True)
     monkeypatch.setattr(_cfg, "db_path", tmp_path / "test_like_escape.db", raising=False)
 
@@ -134,14 +145,14 @@ def mem_with_chunks(tmp_path, monkeypatch):
     ]
     for cid, content, source in seed:
         conn.execute(
-            "INSERT INTO chunks (id, content, source, timestamp, created_at) "
-            "VALUES (?, ?, ?, '2026-01-01T00:00:00', '2026-01-01T00:00:00')",
+            "INSERT INTO chunks (id, content, source, timestamp, created_at) VALUES (?, ?, ?, '2026-01-01T00:00:00', '2026-01-01T00:00:00')",
             (cid, content, source),
         )
     conn.commit()
     conn.close()
 
     from memory import Memory
+
     m = Memory(db_path=db_path)
     yield m
     try:

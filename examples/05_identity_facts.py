@@ -58,9 +58,7 @@ def main() -> int:
     from memory import Memory
 
     m = Memory()
-    m._conn.execute(
-        "UPDATE entities SET valid_until = datetime('now') WHERE id = 'identity:profession:example_05_value'"
-    )
+    m._conn.execute("UPDATE entities SET valid_until = datetime('now') WHERE id = 'identity:profession:example_05_value'")
     m._conn.execute(
         "UPDATE relations SET valid_until = datetime('now') "
         "WHERE (source_id = 'identity:profession:example_05_value' "
@@ -132,7 +130,7 @@ def main() -> int:
         if my_fact:
             print(f"  ✓ found: {my_fact}")
         else:
-            print(f"  ✗ NOT found")
+            print("  ✗ NOT found")
         print()
 
         # [6] remove — soft-delete.
@@ -163,17 +161,10 @@ def main() -> int:
         # Hard cleanup: soft-delete + remove from purged_queue (we don't
         # want example data lingering in production DB).
         m = Memory()
-        m._conn.execute(
-            "DELETE FROM chunks WHERE source = 'identity_fact_manager' AND content LIKE '%example_05_value%'"
-        )
-        m._conn.execute(
-            "UPDATE entities SET valid_until = datetime('now') WHERE id = 'identity:profession:example_05_value'"
-        )
+        m._conn.execute("DELETE FROM chunks WHERE source = 'identity_fact_manager' AND content LIKE '%example_05_value%'")
+        m._conn.execute("UPDATE entities SET valid_until = datetime('now') WHERE id = 'identity:profession:example_05_value'")
         m._conn.execute("DELETE FROM entities WHERE id = 'identity:profession:example_05_value'")
-        m._conn.execute(
-            "DELETE FROM relations WHERE source_id = 'identity:profession:example_05_value' "
-            "OR target_id = 'identity:profession:example_05_value'"
-        )
+        m._conn.execute("DELETE FROM relations WHERE source_id = 'identity:profession:example_05_value' OR target_id = 'identity:profession:example_05_value'")
         m._conn.execute("DELETE FROM purged_queue WHERE target_id = 'identity:profession:example_05_value'")
         m._conn.commit()
         m.close()

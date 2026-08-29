@@ -8,6 +8,7 @@
        + name 60 char cap. 旧 sum(len(s)+1) 多算 1, 长 dormant loop name
        越界 2000 chars.
 """
+
 import sys
 import sqlite3
 from pathlib import Path
@@ -22,15 +23,9 @@ import memory
 def _setup():
     c = sqlite3.connect(str(memory.DB_PATH))
     c.execute("PRAGMA foreign_keys = OFF")
-    c.execute(
-        "DELETE FROM task_states WHERE task_id LIKE 'task:%m35-%' OR task_id LIKE 'loop:%m35-%'"
-    )
-    c.execute(
-        "DELETE FROM entities WHERE id LIKE 'task:%m35-%' OR id LIKE 'loop:%m35-%'"
-    )
-    c.execute(
-        "DELETE FROM audit_log WHERE ref_id LIKE 'task:%m35-%' OR ref_id LIKE 'loop:%m35-%'"
-    )
+    c.execute("DELETE FROM task_states WHERE task_id LIKE 'task:%m35-%' OR task_id LIKE 'loop:%m35-%'")
+    c.execute("DELETE FROM entities WHERE id LIKE 'task:%m35-%' OR id LIKE 'loop:%m35-%'")
+    c.execute("DELETE FROM audit_log WHERE ref_id LIKE 'task:%m35-%' OR ref_id LIKE 'loop:%m35-%'")
     c.execute("PRAGMA foreign_keys = ON")
     c.commit()
     c.close()
@@ -55,6 +50,7 @@ def _create_loop(name: str, enabled: bool = False) -> str:
 
 
 # ===== M35.1 tests =====
+
 
 def test_m35_1_forget_task_reason_int_raises_tasklooperror():
     """[M35.1a] forget_task reason=12345 (int) 抛 InvalidReasonTypeError, 不 AttributeError."""
@@ -122,6 +118,7 @@ def test_m35_1d_forget_loop_reason_int_raises_tasklooperror():
 
 
 # ===== M35.2 tests =====
+
 
 def test_m35_2_digest_block4_dormant_loop_name_truncated_to_60():
     """[M35.2a] 长 dormant loop name (>60 char) 截断到 60 + '...' 后缀."""

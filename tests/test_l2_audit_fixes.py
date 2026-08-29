@@ -6,6 +6,7 @@
 
 隔离模式: 每个 test 用自己的 row_ids 验证, 真删前 verify.
 """
+
 import json
 import unittest
 from datetime import datetime, timedelta
@@ -65,9 +66,7 @@ class TestAuditGC(unittest.TestCase):
         self.assertIsNotNone(row, "recent applied 不应被 GC 清")
 
         # 清理 test row
-        self.mem._exec_clean(
-            "DELETE FROM audit_log WHERE ref_id = 'test_chunk_recent'", ()
-        )
+        self.mem._exec_clean("DELETE FROM audit_log WHERE ref_id = 'test_chunk_recent'", ())
         self.mem._conn.commit()
 
     def test_03_gc_removes_old_applied(self):
@@ -145,7 +144,9 @@ class TestTimestampISO(unittest.TestCase):
         self.mem._l2_set("l2.running", "0")
         try:
             r = self.mem.run_maintenance(
-                passes=["hygiene"], dry_run=False, confirm_destructive=True,
+                passes=["hygiene"],
+                dry_run=False,
+                confirm_destructive=True,
             )
             # Fixture 不一定在本批 50 cap 里, 但 should be queued
         finally:
@@ -159,8 +160,7 @@ class TestTimestampISO(unittest.TestCase):
         ).fetchone()
         if row:
             # [fix audit #4] 应该 'YYYY-MM-DDTHH:MM:SS' (T+) 不是 'YYYY-MM-DD HH:MM:SS' (空格)
-            self.assertIn("T", row["purged_at"],
-                f"purged_at 应该是 ISO T+ 格式, 实际: {row['purged_at']}")
+            self.assertIn("T", row["purged_at"], f"purged_at 应该是 ISO T+ 格式, 实际: {row['purged_at']}")
 
         # Cleanup
         self.mem._exec_clean("DELETE FROM chunks WHERE id = ?", (cid,))
@@ -175,14 +175,13 @@ class TestMCPConfirmDestructive(unittest.TestCase):
     def test_01_mcp_memory_maintenance_schema_has_confirm_destructive(self):
         """MCP schema 实际应该暴露 confirm_destructive 字段"""
         from mcp_server import TOOLS
+
         tool = next((t for t in TOOLS if t["name"] == "memory_maintenance"), None)
         self.assertIsNotNone(tool, "memory_maintenance 不在 TOOLS")
         props = tool["inputSchema"]["properties"]
-        self.assertIn("confirm_destructive", props,
-            "MCP schema 缺 confirm_destructive 字段")
+        self.assertIn("confirm_destructive", props, "MCP schema 缺 confirm_destructive 字段")
         self.assertEqual(props["confirm_destructive"]["type"], "boolean")
-        self.assertEqual(props["confirm_destructive"]["default"], False,
-            "confirm_destructive 默认 false (安全)")
+        self.assertEqual(props["confirm_destructive"]["default"], False, "confirm_destructive 默认 false (安全)")
 
 
 if __name__ == "__main__":

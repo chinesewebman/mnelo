@@ -28,6 +28,7 @@ Tests verify:
   - l2_maintenance freshness / purge_candidates use T-sep cutoff correctly
   - mcp_transports /health counts correctly across the T/space boundary
 """
+
 import sys
 from pathlib import Path
 
@@ -38,9 +39,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # === Pure helper unit tests (no DB needed) ===
 
+
 def test_datetime_now_returns_space_sep_format():
     """Confirm the source of the bug: datetime('now') is space-sep, distinct from iso_now T-sep."""
     import sqlite3
+
     conn = sqlite3.connect(":memory:")
     space_sep = conn.execute("SELECT datetime('now', '-1 day')").fetchone()[0]
     # Format: 'YYYY-MM-DD HH:MM:SS' (space at index 10)
@@ -50,6 +53,7 @@ def test_datetime_now_returns_space_sep_format():
 
 
 # === Integration tests: prove the bugs are real at the SQL level ===
+
 
 @pytest.fixture
 def mem_with_audit_chunks(tmp_path, monkeypatch):
@@ -63,6 +67,7 @@ def mem_with_audit_chunks(tmp_path, monkeypatch):
     repo = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(repo))
     from config import config as _cfg
+
     monkeypatch.setattr(_cfg, "search_backend", "usearch", raising=True)
     monkeypatch.setattr(_cfg, "db_path", tmp_path / "test_datetime_bug.db", raising=False)
 
@@ -89,11 +94,13 @@ def mem_with_audit_chunks(tmp_path, monkeypatch):
 
     # Get now in T-sep for seeding "now - 30 days" boundary chunks
     from memory import now
+
     now_ts = now()
     # Compute T-sep offsets via datetime arithmetic (iso_now_offset is SQL-side
     # only, registered as a create_function on Memory._conn — not a Python
     # helper callable from here). fact TTL = 365 days.
     from datetime import datetime, timedelta
+
     base_dt = datetime.fromisoformat(now_ts)
     expired_t_sep = (base_dt - timedelta(days=365, seconds=1)).isoformat(timespec="seconds")
     not_expired_t_sep = (base_dt - timedelta(days=364)).isoformat(timespec="seconds")
@@ -107,14 +114,14 @@ def mem_with_audit_chunks(tmp_path, monkeypatch):
     ]
     for cid, content, source, ts, mt in seed:
         conn.execute(
-            "INSERT INTO chunks (id, content, source, timestamp, memory_type, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO chunks (id, content, source, timestamp, memory_type, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             (cid, content, source, ts, mt, ts),
         )
     conn.commit()
     conn.close()
 
     from memory import Memory
+
     m = Memory(db_path=db_path)
     yield m, expired_t_sep, not_expired_t_sep, recent_t_sep
     try:
@@ -138,6 +145,7 @@ def test_l2_maintenance_purge_candidates_includes_expired_chunks(mem_with_audit_
     correct lex compare → expired chunk counted.
     """
     from l2_maintenance import L2MaintenanceMixin
+
     fact_ttl = L2MaintenanceMixin._MEMORY_TYPE_TTL_DAYS["fact"]  # 365
     assert fact_ttl == 365, "test assumption: fact TTL must be 365 days"
 
@@ -170,6 +178,7 @@ def test_mcp_health_pii_warnings_24h_excludes_older_audit(tmp_path, monkeypatch)
     conn.execute("CREATE TABLE audit_log (id INTEGER PRIMARY KEY, pass_name TEXT, created_at TEXT)")
     # Seed: 1 row exactly 1 day 1 second ago (T-sep)
     from datetime import datetime, timedelta
+
     base = datetime.fromisoformat(now())
     one_day_one_sec_ago = (base - timedelta(days=1, seconds=1)).isoformat(timespec="seconds")
     conn.execute(
@@ -191,6 +200,7 @@ def test_mcp_health_pii_warnings_24h_excludes_older_audit(tmp_path, monkeypatch)
     # (the actual fix uses iso_now_offset(-1) SQL function — we replicate
     # the same format here so we test the boundary correctness).
     from datetime import datetime, timedelta
+
     cutoff_t = (datetime.fromisoformat(now()) - timedelta(days=1)).isoformat(timespec="seconds")
     assert cutoff_t[10] == "T", f"expected T-sep cutoff, got {cutoff_t!r}"
     post_fix_count = conn.execute(

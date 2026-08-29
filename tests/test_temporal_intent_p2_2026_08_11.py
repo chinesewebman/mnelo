@@ -41,6 +41,7 @@
    23. existing asof 语义不变 (回归测试)
    24. classify.py classify_memory_type() 不受影响 (独立模块)
 """
+
 from __future__ import annotations
 
 import importlib.util as _ilu
@@ -75,6 +76,7 @@ _memory_repo.ValidationError = _validation_repo.ValidationError  # type: ignore[
 def mem(tmp_path, monkeypatch):
     """Fresh REPO Memory with tmp_path db + usearch backend (no zvec LOCK)."""
     import config as _cfg_mod
+
     monkeypatch.setattr(_cfg_mod.config, "search_backend", "usearch", raising=True)
     db_path = tmp_path / "test_temporal.db"
     monkeypatch.setattr(_cfg_mod.config, "db_path", db_path, raising=False)
@@ -82,6 +84,7 @@ def mem(tmp_path, monkeypatch):
     schema_path = _REPO / "schema.sql"
     import re as _re
     import sqlite3 as _sqlite
+
     conn = _sqlite.connect(str(db_path))
     sql = schema_path.read_text()
     sql = _re.sub(r"PRAGMA[^;]*;", "", sql, flags=_re.IGNORECASE)
@@ -96,6 +99,7 @@ def mem(tmp_path, monkeypatch):
     try:
         # [bug fix D1 2026-08-16] Register iso_now() function before running schema.sql
         from datetime import datetime, timedelta as _td
+
         conn.create_function("iso_now", 0, lambda: datetime.now().isoformat(timespec="seconds"))
         conn.create_function("iso_now_offset", 1, lambda d: (datetime.now() + _td(days=d)).isoformat(timespec="seconds"))
         conn.executescript(sql)
@@ -105,6 +109,7 @@ def mem(tmp_path, monkeypatch):
     conn.close()
 
     from memory import Memory
+
     m = Memory(db_path=db_path)
     yield m
     m.close()
@@ -114,69 +119,82 @@ def mem(tmp_path, monkeypatch):
 # A. detect_query_intent 分类正确 (8 类 marker + 默认)
 # ==========================================================
 
+
 class TestDetectQueryIntent:
     """[P2 §A] detect_query_intent: 4 类 intent + 默认 + 优先级."""
 
     def test_chinese_current_state_zai_nali(self):
         """[A1] 中文 '住在哪里' → current_state."""
         from memory import detect_query_intent
+
         assert detect_query_intent("我现在住在哪里") == "current_state"
 
     def test_english_current_state_now(self):
         """[A2] 英文 'where do i live now' → current_state."""
         from memory import detect_query_intent
+
         assert detect_query_intent("where do I live now") == "current_state"
 
     def test_chinese_historical_yiqian(self):
         """[A3] 中文 '以前住哪' → historical."""
         from memory import detect_query_intent
+
         assert detect_query_intent("我以前住在哪里") == "historical"
 
     def test_english_historical_last_year(self):
         """[A4] 英文 'last year' → historical."""
         from memory import detect_query_intent
+
         assert detect_query_intent("where did I live last year") == "historical"
 
     def test_chinese_upcoming_xia_geyue(self):
         """[A5] 中文 '下个月要' → upcoming."""
         from memory import detect_query_intent
+
         assert detect_query_intent("下个月我要去上海") == "upcoming"
 
     def test_english_upcoming_going_to(self):
         """[A6] 英文 'going to' → upcoming."""
         from memory import detect_query_intent
+
         assert detect_query_intent("I am going to move next month") == "upcoming"
 
     def test_chinese_soft_recency_zuijin(self):
         """[A7] 中文 '最近' → soft_recency."""
         from memory import detect_query_intent
+
         assert detect_query_intent("我最近读了什么书") == "soft_recency"
 
     def test_english_soft_recency_recent(self):
         """[A8] 英文 'recent' → soft_recency."""
         from memory import detect_query_intent
+
         assert detect_query_intent("what did I read recently") == "soft_recency"
 
     def test_default_no_marker_is_soft_recency(self):
         """[A9] 无 marker → 默认 soft_recency (跟默认 timestamp DESC 行为对齐)."""
         from memory import detect_query_intent
+
         assert detect_query_intent("我读过什么书") == "soft_recency"
 
     def test_case_insensitive_english(self):
         """[A10] 英文大小写不敏感."""
         from memory import detect_query_intent
+
         assert detect_query_intent("LAST YEAR I lived in NYC") == "historical"
         assert detect_query_intent("RECENTLY read") == "soft_recency"
 
     def test_priority_upcoming_over_historical(self):
         """[A11] 多 marker 时优先级: upcoming > historical."""
         from memory import detect_query_intent
+
         # "去年" 触发 historical, "下个月" 触发 upcoming → upcoming 赢
         assert detect_query_intent("去年计划下个月搬家") == "upcoming"
 
     def test_priority_historical_over_current(self):
         """[A11b] historical > current_state (default 时间窗口)."""
         from memory import detect_query_intent
+
         # "现在" 触发 current_state, "以前" 触发 historical → historical 赢
         assert detect_query_intent("现在对比以前住哪") == "historical"
 
@@ -184,6 +202,7 @@ class TestDetectQueryIntent:
 # ==========================================================
 # B. write-time signature (metadata_json.temporal_class 自动归类)
 # ==========================================================
+
 
 class TestWriteTimeSignature:
     """[P2 §B] write-time: 根据 timestamp/valid_until 自动标 temporal_class.
@@ -205,14 +224,10 @@ class TestWriteTimeSignature:
             timestamp=future_ts,
         )
         # 查 chunks 看 metadata_json 是否带 temporal_class
-        row = mem._conn.execute(
-            "SELECT metadata_json FROM chunks WHERE content LIKE '%下个月%'"
-        ).fetchone()
+        row = mem._conn.execute("SELECT metadata_json FROM chunks WHERE content LIKE '%下个月%'").fetchone()
         assert row is not None
         meta = json.loads(row[0]) if row[0] else {}
-        assert meta.get("temporal_class") == "upcoming", (
-            f"expected temporal_class=upcoming, got meta={meta}"
-        )
+        assert meta.get("temporal_class") == "upcoming", f"expected temporal_class=upcoming, got meta={meta}"
 
     def test_past_valid_until_marked_historical(self, mem):
         """[B14] valid_until 已设且 < now → temporal_class='historical'.
@@ -227,9 +242,7 @@ class TestWriteTimeSignature:
         # 2. 用 update() 触发 supersede → 老 chunk valid_until 自动 = now()
         mem.update(old_id=cid, reason="moved to Beijing")
         # 3. 查老 chunk 的 metadata_json (supersede 后 valid_until != NULL)
-        row = mem._conn.execute(
-            "SELECT valid_until, metadata_json FROM chunks WHERE id = ?", (cid,)
-        ).fetchone()
+        row = mem._conn.execute("SELECT valid_until, metadata_json FROM chunks WHERE id = ?", (cid,)).fetchone()
         assert row is not None
         valid_until = row[0]
         meta = json.loads(row[1]) if row[1] else {}
@@ -243,20 +256,17 @@ class TestWriteTimeSignature:
             content="我现在住在北京",
             memory_type="episode",
         )
-        row = mem._conn.execute(
-            "SELECT metadata_json FROM chunks WHERE content LIKE '%北京%'"
-        ).fetchone()
+        row = mem._conn.execute("SELECT metadata_json FROM chunks WHERE content LIKE '%北京%'").fetchone()
         assert row is not None
         meta = json.loads(row[0]) if row[0] else {}
         # 默认 current_state chunk 不写 temporal_class 字段 (避免 metadata 膨胀)
-        assert "temporal_class" not in meta, (
-            f"expected no temporal_class, got meta={meta}"
-        )
+        assert "temporal_class" not in meta, f"expected no temporal_class, got meta={meta}"
 
 
 # ==========================================================
 # C. recall 行为改变 (与现有 _meta_recall_with_conn 共存)
 # ==========================================================
+
 
 class TestMetaRecallIntentBehavior:
     """[P2 §C] detect_query_intent → _meta_recall_with_conn SQL 行为变化."""
@@ -290,12 +300,8 @@ class TestMetaRecallIntentBehavior:
         hits = mem._meta_recall("我现在", top_k=10, filters=None, asof=None)
         contents = [h["content"] for h in hits]
         # current_state 应该排除 historical (纽约), 只剩 北京
-        assert any("北京" in c for c in contents), (
-            f"current_state should include current (北京), got {contents}"
-        )
-        assert not any("纽约" in c for c in contents), (
-            f"current_state should exclude historical (纽约), got {contents}"
-        )
+        assert any("北京" in c for c in contents), f"current_state should include current (北京), got {contents}"
+        assert not any("纽约" in c for c in contents), f"current_state should exclude historical (纽约), got {contents}"
 
     def test_historical_intent_includes_superseded(self, mem):
         """[C17] historical intent → 不排斥 valid_until 已设的 (supersede 浮出)."""
@@ -336,9 +342,7 @@ class TestMetaRecallIntentBehavior:
         )
         mem._conn.commit()
         # current_state + agent_id=alpha
-        hits = mem._meta_recall(
-            "住", top_k=10, filters={"agent_id": "alpha"}, asof=None
-        )
+        hits = mem._meta_recall("住", top_k=10, filters={"agent_id": "alpha"}, asof=None)
         assert all(h.get("method") == "meta" for h in hits)
         assert any("北京" in h["content"] for h in hits)
 
@@ -346,19 +350,16 @@ class TestMetaRecallIntentBehavior:
         """[C21] historical intent + asof 共存 (P0 时间切片不冲突)."""
         self._seed_chunks(mem)
         # asof 回到 2020 → historical chunk 浮出
-        hits = mem._meta_recall(
-            "住", top_k=10, filters=None, asof="2020-06-01T00:00:00"
-        )
+        hits = mem._meta_recall("住", top_k=10, filters=None, asof="2020-06-01T00:00:00")
         contents = [h["content"] for h in hits]
         # asof=2020 时, NY valid (valid_from=2020 ≤ asof ≤ valid_until=2021) 浮出
-        assert any("纽约" in c for c in contents), (
-            f"asof=2020 should surface NY historical, got {contents}"
-        )
+        assert any("纽约" in c for c in contents), f"asof=2020 should surface NY historical, got {contents}"
 
 
 # ==========================================================
 # D. 与 P0/P1 共存 / 不破坏
 # ==========================================================
+
 
 class TestBackwardCompat:
     """[P2 §D] P2 不破坏 P0 scoping / P1 decay / asof 既有行为."""
@@ -382,25 +383,20 @@ class TestBackwardCompat:
         )
         new_cid = mem.update(old_id=old_cid, reason="supersede for test")
         # 验证 supersede 后老 chunk valid_until 已设
-        old_row = mem._conn.execute(
-            "SELECT valid_until FROM chunks WHERE id = ?", (old_cid,)
-        ).fetchone()
+        old_row = mem._conn.execute("SELECT valid_until FROM chunks WHERE id = ?", (old_cid,)).fetchone()
         assert old_row[0] is not None, "old chunk valid_until should be set after update"
         # asof=2099 → 老 chunk valid_until < 2099 → 不应召回
         # 新 chunk valid_until=NULL → 仍可召 (P0 既有行为)
-        hits = mem._meta_recall(
-            "NY", top_k=10, filters=None, asof="2099-06-01T00:00:00"
-        )
+        hits = mem._meta_recall("NY", top_k=10, filters=None, asof="2099-06-01T00:00:00")
         # 只应该召到 NEW chunk (valid_until=NULL)
         hit_ids = [h["chunk_id"] for h in hits]
         assert new_cid in hit_ids, f"new chunk should be recallable, got {hit_ids}"
-        assert old_cid not in hit_ids, (
-            f"old chunk should NOT be recallable (P0 supersede), got {hit_ids}"
-        )
+        assert old_cid not in hit_ids, f"old chunk should NOT be recallable (P0 supersede), got {hit_ids}"
 
     def test_classify_memory_type_unaffected(self):
         """[D24] classify.py classify_memory_type 独立模块, P2 不影响."""
         from classify import classify_memory_type
+
         # 这条 query 应该被 classify 为 preference (我偏好) — 不应被 P2 intent
         # detection 副作用影响
         result = classify_memory_type("我偏好用 Vim 编辑 Markdown")

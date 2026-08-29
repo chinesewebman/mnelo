@@ -9,6 +9,7 @@
 fake zvec 只实现 ZvecIndex 用到的 API 面 (含 iter_all, DataType.VECTOR_INT8),
 用于验证"代码按 zvec 0.6 API 写对"。
 """
+
 import math
 import sys
 import unittest
@@ -48,6 +49,7 @@ class _FakeCollection:
     def fetch(self, ids):
         """[8/6 fix] ZvecIndex.contains 调 fetch; 返 list of found docs (跟真 zvec API 对齐)."""
         from types import SimpleNamespace
+
         result = []
         for i in ids:
             if i in self.docs:
@@ -59,6 +61,7 @@ class _FakeCollection:
         """[8/6 plan §12] ZvecIndex.cleanup_orphans/contains 调 iter_all."""
         for doc_id in list(self.docs.keys()):
             from types import SimpleNamespace
+
             vec, fields = self.docs[doc_id]
             yield SimpleNamespace(id=doc_id, vectors={"embedding": vec}, fields=fields)
 
@@ -162,6 +165,7 @@ class _FakeZvec:
 
     class DataType:
         """[8/6 fix] zvec 0.6 全部 data_type, 实际用 VECTOR_FP32 + STRING."""
+
         VECTOR_FP16 = "VECTOR_FP16"
         VECTOR_FP32 = "VECTOR_FP32"
         VECTOR_FP64 = "VECTOR_FP64"
@@ -190,9 +194,7 @@ class TestZvecBackendWithFake(unittest.TestCase):
         # _cpu_has_avx2 mock 因此失效 → zvec_available 已被替换, 测的不是真逻辑).
         from unittest import mock
 
-        self._zva_patch = mock.patch.object(
-            search_index, "zvec_available", return_value=True
-        )
+        self._zva_patch = mock.patch.object(search_index, "zvec_available", return_value=True)
         self._zva_patch.start()
         self.module = search_index
 
@@ -238,13 +240,16 @@ class TestZvecBackendWithFake(unittest.TestCase):
         # cleanup_orphans: conn=None 防御性返回
         r0 = idx.cleanup_orphans(conn=None, dry_run=True)
         self.assertEqual(r0["truly_orphan_cleaned"], 0)
+
         # cleanup_orphans: 配 fake conn (返回空 → 全 orphan)
         class FakeConn:
             def execute(self, sql, params=()):
                 class _R:
                     def fetchone(self_inner):
                         return None  # chunk missing → orphan
+
                 return _R()
+
         r = idx.cleanup_orphans(conn=FakeConn(), dry_run=False)
         self.assertEqual(r["truly_orphan_cleaned"], 2)
         self.assertEqual(idx.size(), 0)
@@ -338,8 +343,7 @@ class TestZvecAvx2Gate(unittest.TestCase):
         from search_index import _cpu_has_avx2
 
         r = _cpu_has_avx2()
-        self.assertIn(r, (True, False, None),
-                      f"探测应返回 True/False/None, got {r!r}")
+        self.assertIn(r, (True, False, None), f"探测应返回 True/False/None, got {r!r}")
 
     def test_no_avx2_skips_zvec_import(self):
         """无 AVX2 → zvec_available 返回 False 且不 import (不注入 fake, 若走了
@@ -386,8 +390,7 @@ class TestFactory(unittest.TestCase):
     def test_01_auto_returns_usearch_or_zvec(self):
         """[8/6 plan §1] auto 必须返回 usearch 或 zvec (sqlite_vec 已出局)."""
         idx = self.module.build_search_index("auto", self.db_path, 512)
-        self.assertIn(idx.name, ("usearch", "zvec"),
-                      f"auto 应二选一, got {idx.name}")
+        self.assertIn(idx.name, ("usearch", "zvec"), f"auto 应二选一, got {idx.name}")
         idx.close()
 
     def test_02_usearch_explicit_returns_usearch(self):

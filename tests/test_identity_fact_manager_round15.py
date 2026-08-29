@@ -61,12 +61,7 @@ def cleanup_test_facts():
     def cleanup():
         """Soft-delete test facts + cascade relations + remove test chunks."""
         # 1. Find all test facts (by name)
-        test_fact_ids = [
-            r[0]
-            for r in m._conn.execute(
-                "SELECT id FROM entities WHERE kind = 'identity_fact' AND name = 'pytest_test_value'"
-            ).fetchall()
-        ]
+        test_fact_ids = [r[0] for r in m._conn.execute("SELECT id FROM entities WHERE kind = 'identity_fact' AND name = 'pytest_test_value'").fetchall()]
         # 2. Soft-delete the entities
         for fid in test_fact_ids:
             m._conn.execute(
@@ -76,12 +71,12 @@ def cleanup_test_facts():
         # 3. Cascade-soft-delete relations involving these entities
         for fid in test_fact_ids:
             m._conn.execute(
-                "UPDATE relations SET valid_until = datetime('now') "
-                "WHERE (source_id = ? OR target_id = ?) AND valid_until IS NULL",
+                "UPDATE relations SET valid_until = datetime('now') WHERE (source_id = ? OR target_id = ?) AND valid_until IS NULL",
                 (fid, fid),
             )
         # 4. [8/6 plan §10] 后端感知清理 (helper 先 _index.remove 再 DELETE chunks)
         from helpers import cleanup_chunks
+
         cleanup_chunks(m, source=TEST_SOURCE)
         m._conn.commit()
 
@@ -149,11 +144,17 @@ class TestShow:
     def test_show_existing_fact(self, cleanup_test_facts):
         # [8/9 P1 follow-up] 大盒有 github_handle=chinesewebman, fresh DB 没有.
         # 加 fact 先 (用 unique test value), 再 show 验证.
-        _run([
-            "add", "--predicate", "github_handle",
-            "--value", "pytest_test_value",
-            "--importance", "0.85",
-        ])
+        _run(
+            [
+                "add",
+                "--predicate",
+                "github_handle",
+                "--value",
+                "pytest_test_value",
+                "--importance",
+                "0.85",
+            ]
+        )
         result = _run(["show", "--predicate", "github_handle"])
         assert result.returncode == 0
         assert "github_handle" in result.stdout
@@ -270,9 +271,7 @@ class TestRemove:
         from memory import Memory
 
         m = Memory()
-        m._conn.execute(
-            "UPDATE entities SET valid_until = datetime('now') WHERE id = 'identity:profession:pytest_test_value'"
-        )
+        m._conn.execute("UPDATE entities SET valid_until = datetime('now') WHERE id = 'identity:profession:pytest_test_value'")
         m._conn.execute(
             "UPDATE relations SET valid_until = datetime('now') "
             "WHERE (source_id = 'identity:profession:pytest_test_value' "
@@ -374,8 +373,7 @@ class TestCascade:
             (test_fact,),
         )
         m._conn.execute(
-            "UPDATE relations SET valid_until = datetime('now') "
-            "WHERE (source_id = ? OR target_id = ?) AND valid_until IS NULL",
+            "UPDATE relations SET valid_until = datetime('now') WHERE (source_id = ? OR target_id = ?) AND valid_until IS NULL",
             (test_fact, test_fact),
         )
         m._conn.commit()
@@ -387,6 +385,7 @@ class TestCascade:
         # [8/9] Verify a relation exists。如果没, 可能是 fresh DB 无 master_2077_ling
         # (add 不会建 master entity). skip 这个 test in fresh DB.
         import os as _os
+
         if _os.environ.get("MNELO_TEST_FRESH"):
             # Skip cascade check in fresh DB - master_2077_ling 不存在
             return

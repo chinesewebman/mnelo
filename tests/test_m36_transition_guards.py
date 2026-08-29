@@ -7,6 +7,7 @@
   M36.4 evidence_chunk_id 非 str 抛 InvalidInputError
   M36.5 完整成功链路 (reason='valid' + valid transition)
 """
+
 import sys
 import sqlite3
 from pathlib import Path
@@ -41,42 +42,35 @@ def _assert_isolated_db():
             _m.close()
         except Exception as _e:
             import pytest as _pytest
+
             _pytest.skip(
-                f"[test_m36] Memory() 自建隔离库失败 ({type(_e).__name__}: {_e}). "
-                f"CI 缺 enable_load_extension 常见. 本地 venv python 3.11+ + sqlite-vec 装好时跑全套.",
+                f"[test_m36] Memory() 自建隔离库失败 ({type(_e).__name__}: {_e}). CI 缺 enable_load_extension 常见. 本地 venv python 3.11+ + sqlite-vec 装好时跑全套.",
                 allow_module_level=True,
             )
     conn = sqlite3.connect(str(db))
     # [8/10 fix] 验证 init_db 必要表存在, 而不是靠 chunk 数推断
-    cur = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('task_states','entities','chunks')"
-    )
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('task_states','entities','chunks')")
     tables = {r[0] for r in cur.fetchall()}
     conn.close()
     required = {"task_states", "entities", "chunks"}
     missing = required - tables
     if missing:
         import pytest as _pytest
+
         _pytest.skip(
-            f"[test_m36] DB {db} 缺 schema 表: {sorted(missing)}. "
-            f"Memory() 自建后应全有, 如缺说明 schema.sql 漂移. "
-            f"本地: MNELO_MEMORY_DIR=$(mktemp -d) && python scripts/init_db.py.",
+            f"[test_m36] DB {db} 缺 schema 表: {sorted(missing)}. Memory() 自建后应全有, 如缺说明 schema.sql 漂移. 本地: MNELO_MEMORY_DIR=$(mktemp -d) && python scripts/init_db.py.",
             allow_module_level=True,
         )
     # [8/10 fix] 仍走 n_total + n_live 阈值 (防连到真 live 库)
     conn = sqlite3.connect(str(db))
     n_total = conn.execute("SELECT COUNT(*) FROM chunks WHERE valid_until IS NULL").fetchone()[0]
-    n_live = conn.execute(
-        "SELECT COUNT(*) FROM chunks "
-        "WHERE (source IS NULL OR source NOT IN ('manual', 'init', 'test', 'audit')) "
-        "AND valid_until IS NULL"
-    ).fetchone()[0]
+    n_live = conn.execute("SELECT COUNT(*) FROM chunks WHERE (source IS NULL OR source NOT IN ('manual', 'init', 'test', 'audit')) AND valid_until IS NULL").fetchone()[0]
     conn.close()
     if n_total > 50 or n_live > 5:
         import pytest as _pytest
+
         _pytest.skip(
-            f"[test_m36] 拒绝运行: {db} 含 {n_total} 个 chunk ({n_live} 非种子, 疑似 live 库). "
-            f"用隔离临时库: MNELO_MEMORY_DIR=$(mktemp -d) && python scripts/init_db.py",
+            f"[test_m36] 拒绝运行: {db} 含 {n_total} 个 chunk ({n_live} 非种子, 疑似 live 库). 用隔离临时库: MNELO_MEMORY_DIR=$(mktemp -d) && python scripts/init_db.py",
             allow_module_level=True,
         )
 
@@ -87,15 +81,9 @@ _assert_isolated_db()
 def _setup():
     c = sqlite3.connect(str(memory.DB_PATH))
     c.execute("PRAGMA foreign_keys = OFF")
-    c.execute(
-        "DELETE FROM task_states WHERE task_id LIKE 'task:%m36-%' OR task_id LIKE 'loop:%m36-%'"
-    )
-    c.execute(
-        "DELETE FROM entities WHERE id LIKE 'task:%m36-%' OR id LIKE 'loop:%m36-%'"
-    )
-    c.execute(
-        "DELETE FROM audit_log WHERE ref_id LIKE 'task:%m36-%' OR ref_id LIKE 'loop:%m36-%'"
-    )
+    c.execute("DELETE FROM task_states WHERE task_id LIKE 'task:%m36-%' OR task_id LIKE 'loop:%m36-%'")
+    c.execute("DELETE FROM entities WHERE id LIKE 'task:%m36-%' OR id LIKE 'loop:%m36-%'")
+    c.execute("DELETE FROM audit_log WHERE ref_id LIKE 'task:%m36-%' OR ref_id LIKE 'loop:%m36-%'")
     c.execute("PRAGMA foreign_keys = ON")
     c.commit()
     c.close()
@@ -112,6 +100,7 @@ def _create_task(name: str) -> str:
 
 # ===== M36.1 reason required always =====
 
+
 def test_m36_1_transition_empty_reason_without_force_rejected():
     """[M36.1] force=False 时 reason='' 也抛 ReasonRequiredError (docstring 契约).
 
@@ -123,9 +112,7 @@ def test_m36_1_transition_empty_reason_without_force_rejected():
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
         try:
-            task_states.transition(
-                c, task_id=tid, to_state="in_progress", reason="", force=False
-            )
+            task_states.transition(c, task_id=tid, to_state="in_progress", reason="", force=False)
             raise AssertionError("应抛 ReasonRequiredError (reason='' + force=False)")
         except task_states.ReasonRequiredError:
             pass  # 期望
@@ -140,9 +127,7 @@ def test_m36_1b_transition_whitespace_only_reason_rejected():
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
         try:
-            task_states.transition(
-                c, task_id=tid, to_state="in_progress", reason="   ", force=False
-            )
+            task_states.transition(c, task_id=tid, to_state="in_progress", reason="   ", force=False)
             raise AssertionError()
         except task_states.ReasonRequiredError:
             pass
@@ -152,6 +137,7 @@ def test_m36_1b_transition_whitespace_only_reason_rejected():
 
 # ===== M36.2 reason type guard =====
 
+
 def test_m36_2_transition_reason_int_rejected():
     """[M36.2a] reason=12345 (int) 抛 ReasonRequiredError (含类型名)."""
     _setup()
@@ -159,9 +145,7 @@ def test_m36_2_transition_reason_int_rejected():
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
         try:
-            task_states.transition(
-                c, task_id=tid, to_state="in_progress", reason=12345, force=False
-            )
+            task_states.transition(c, task_id=tid, to_state="in_progress", reason=12345, force=False)
             raise AssertionError()
         except task_states.ReasonRequiredError as e:
             assert "int" in str(e), f"应含 'int', got: {e}"
@@ -176,9 +160,7 @@ def test_m36_2b_transition_reason_none_rejected():
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
         try:
-            task_states.transition(
-                c, task_id=tid, to_state="in_progress", reason=None, force=False
-            )
+            task_states.transition(c, task_id=tid, to_state="in_progress", reason=None, force=False)
             raise AssertionError()
         except task_states.ReasonRequiredError:
             pass
@@ -193,9 +175,7 @@ def test_m36_2c_transition_reason_list_rejected():
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
         try:
-            task_states.transition(
-                c, task_id=tid, to_state="in_progress", reason=["x"], force=False
-            )
+            task_states.transition(c, task_id=tid, to_state="in_progress", reason=["x"], force=False)
             raise AssertionError()
         except task_states.ReasonRequiredError as e:
             assert "list" in str(e)
@@ -205,15 +185,14 @@ def test_m36_2c_transition_reason_list_rejected():
 
 # ===== M36.3 task_id / to_state guards =====
 
+
 def test_m36_3a_transition_task_id_int_rejected():
     """[M36.3a] task_id=12345 (int) 抛 InvalidInputError."""
     _setup()
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
         try:
-            task_states.transition(
-                c, task_id=12345, to_state="in_progress", reason="test_reason"
-            )
+            task_states.transition(c, task_id=12345, to_state="in_progress", reason="test_reason")
             raise AssertionError()
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidInputError", f"got {e.code}"
@@ -229,9 +208,7 @@ def test_m36_3b_transition_to_state_int_rejected():
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
         try:
-            task_states.transition(
-                c, task_id=tid, to_state=99, reason="test_reason"
-            )
+            task_states.transition(c, task_id=tid, to_state=99, reason="test_reason")
             raise AssertionError()
         except task_states.TaskLoopError as e:
             assert e.code == "InvalidInputError", f"got {e.code}"
@@ -242,6 +219,7 @@ def test_m36_3b_transition_to_state_int_rejected():
 
 # ===== M36.4 evidence_chunk_id guard =====
 
+
 def test_m36_4_transition_evidence_int_rejected():
     """[M36.4] evidence_chunk_id=99999 (int) 抛 InvalidInputError."""
     _setup()
@@ -250,8 +228,11 @@ def test_m36_4_transition_evidence_int_rejected():
     try:
         try:
             task_states.transition(
-                c, task_id=tid, to_state="in_progress",
-                reason="test_reason", evidence_chunk_id=99999,
+                c,
+                task_id=tid,
+                to_state="in_progress",
+                reason="test_reason",
+                evidence_chunk_id=99999,
             )
             raise AssertionError()
         except task_states.TaskLoopError as e:
@@ -268,8 +249,11 @@ def test_m36_4b_transition_evidence_none_allowed():
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
         result = task_states.transition(
-            c, task_id=tid, to_state="in_progress",
-            reason="test_reason", evidence_chunk_id=None,
+            c,
+            task_id=tid,
+            to_state="in_progress",
+            reason="test_reason",
+            evidence_chunk_id=None,
         )
         assert result["to_state"] == "in_progress"
     finally:
@@ -278,15 +262,14 @@ def test_m36_4b_transition_evidence_none_allowed():
 
 # ===== M36.5 happy path =====
 
+
 def test_m36_5_transition_valid_reason_succeeds():
     """[M36.5 正向] 完整成功链路 - reason='valid' + valid transition 成功."""
     _setup()
     tid = _create_task("m36-happy-path")
     c = sqlite3.connect(str(memory.DB_PATH))
     try:
-        result = task_states.transition(
-            c, task_id=tid, to_state="in_progress", reason="valid_reason_audit"
-        )
+        result = task_states.transition(c, task_id=tid, to_state="in_progress", reason="valid_reason_audit")
         assert result["from_state"] == "open"
         assert result["to_state"] == "in_progress"
     finally:

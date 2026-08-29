@@ -13,6 +13,7 @@
 本文件用真实 usearch 后端 + 无模型假 embedder (确定性 4 维向量), 验证预检
 逻辑与自动重建行为, 不 load bge 模型.
 """
+
 import importlib.util as _ilu
 import sqlite3
 import struct

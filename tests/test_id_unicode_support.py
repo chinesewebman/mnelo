@@ -93,6 +93,7 @@ class TestIdUnicodeSupport:
     def test_too_long_id_rejected(self):
         """长度超 MAX_ID_LEN 仍拒."""
         from validation import MAX_ID_LEN
+
         long_id = "主" * (MAX_ID_LEN + 1)
         with pytest.raises(validation_mod.ValidationError, match="format mismatch"):
             validation_mod.validate_id(long_id)

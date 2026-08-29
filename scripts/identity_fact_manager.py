@@ -363,7 +363,7 @@ class IdentityFactManager:
             return {"error": f"not found or already deleted: {target_id}"}
 
         if not yes:
-            print(f"=== identity_fact remove ===")
+            print("=== identity_fact remove ===")
             print(f"  id    : {row[0]}")
             print(f"  name  : {row[1]}")
             print(f"  reason: {reason}")
@@ -446,7 +446,7 @@ def cmd_show(args) -> int:
             if "allowed" in result:
                 print(f"  allowed predicates: {', '.join(result['allowed'])}")
             return 2
-        print(f"=== identity_fact ===")
+        print("=== identity_fact ===")
         print(f"  id        : {result['id']}")
         print(f"  predicate : {result['predicate']}")
         print(f"  value     : {result['value']}")
@@ -483,7 +483,7 @@ def cmd_add(args) -> int:
             print(f"  predicate  : {result['predicate']}")
             print(f"  value      : {result['value']}")
             if result.get("would_supersede"):
-                print(f"  ⚠️  would supersede existing active fact")
+                print("  ⚠️  would supersede existing active fact")
             return 0
         print(f"✓ identity_fact {result['action']}")
         print(f"  id         : {result['id']}")

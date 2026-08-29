@@ -7,6 +7,7 @@
 
 测试用 live DB + 严格 cleanup, 跟 tests/test_digest.py 同策略.
 """
+
 import sys
 from pathlib import Path
 
@@ -27,13 +28,12 @@ def _new_mem():
 def _cleanup(mem, ids, purged_target_ids=()):
     # [8/6 plan §10] 后端感知清理 (helper 先 _index.remove 再 DELETE chunks)
     from helpers import cleanup_chunks
+
     cleanup_chunks(mem, chunk_ids=list(set(ids)))
     # 清掉测试产生的 audit_log 行 (按 content/source 锚定)
     for cid in purged_target_ids:
         mem._conn.execute("DELETE FROM purged_queue WHERE target_id = ?", (cid,))
-    mem._conn.execute(
-        "DELETE FROM audit_log WHERE after_json LIKE '%\"H4-test-old-ephemeral\"%'"
-    )
+    mem._conn.execute("DELETE FROM audit_log WHERE after_json LIKE '%\"H4-test-old-ephemeral\"%'")
     mem._conn.commit()
 
 
@@ -60,10 +60,7 @@ def test_h4_dry_run_emits_purge_candidates_list():
         result = mem.run_maintenance(passes=["hygiene"], dry_run=True, confirm_destructive=False)
         assert "purge_candidates" in result, "顶层结果必须含 purge_candidates 聚合字段"
         assert isinstance(result["purge_candidates"], list)
-        assert any(
-            c.get("ref_id") == cid
-            for c in result["purge_candidates"]
-        ), f"TTL 过期 ephemeral {cid} 应进入 purge_candidates 报告"
+        assert any(c.get("ref_id") == cid for c in result["purge_candidates"]), f"TTL 过期 ephemeral {cid} 应进入 purge_candidates 报告"
     finally:
         _cleanup(mem, [cid], [cid])
         mem.close()
@@ -73,18 +70,12 @@ def test_h4_dry_run_does_not_physically_delete():
     mem = _new_mem()
     cid = _insert_old_ephemeral(mem)
     try:
-        before = mem._conn.execute(
-            "SELECT valid_until FROM chunks WHERE id = ?", (cid,)
-        ).fetchone()
+        before = mem._conn.execute("SELECT valid_until FROM chunks WHERE id = ?", (cid,)).fetchone()
         assert before["valid_until"] is None
         mem.run_maintenance(passes=["hygiene"], dry_run=True, confirm_destructive=False)
-        after = mem._conn.execute(
-            "SELECT valid_until FROM chunks WHERE id = ?", (cid,)
-        ).fetchone()
+        after = mem._conn.execute("SELECT valid_until FROM chunks WHERE id = ?", (cid,)).fetchone()
         assert after["valid_until"] is None, "dry-run 不能改 valid_until"
-        queue_rows = mem._conn.execute(
-            "SELECT COUNT(*) FROM purged_queue WHERE target_id = ?", (cid,)
-        ).fetchone()[0]
+        queue_rows = mem._conn.execute("SELECT COUNT(*) FROM purged_queue WHERE target_id = ?", (cid,)).fetchone()[0]
         assert queue_rows == 0, "dry-run 不能入 purged_queue"
     finally:
         _cleanup(mem, [cid], [cid])

@@ -48,6 +48,7 @@ def _resolve_python() -> str:
     venv), 否则回落 venv 子路径. 不动 mcp_server.py 应用代码, 修 test 适配 venv 拓扑.
     """
     import sys
+
     candidates = [
         sys.executable,
         "/tmp/mnelo-test/.venv/bin/python3",
@@ -206,12 +207,7 @@ class TestEchoCanBeDisabled:
             + "\n"
         )
         payload += json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n"
-        payload += (
-            json.dumps(
-                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "memory_stats", "arguments": {}}}
-            )
-            + "\n"
-        )
+        payload += json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "memory_stats", "arguments": {}}}) + "\n"
         r = subprocess.run(
             [sys.executable, str(SCRIPT), "--transport", "stdio"],
             input=payload,

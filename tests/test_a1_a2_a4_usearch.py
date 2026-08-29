@@ -11,6 +11,7 @@
   A4: backend='usearch' 且装了 → name='usearch'; backend='usearch' 且未装 → RuntimeError;
       backend='auto' → zvec 不可用 → usearch (本机 Ivy Bridge 实测); 双不可用 → RuntimeError
 """
+
 import importlib.util as _ilu
 import os
 import sqlite3
@@ -75,9 +76,7 @@ def _insert_chunk(db_path, chunk_id):
 
 def test_a1_usearch_available():
     """[A1] usearch_available() 本机 True (8/5 已 pip install usearch>=2.26)."""
-    assert _si.usearch_available() is True, (
-        "本机已装 usearch 2.26, usearch_available() 应返 True"
-    )
+    assert _si.usearch_available() is True, "本机已装 usearch 2.26, usearch_available() 应返 True"
 
 
 def test_a2_usearch_index_basic_init():
@@ -96,6 +95,7 @@ def test_a2_usearch_index_knn_after_add(tmp_path):
     idx = _si.UsearchIndex(db, dim=4)
     try:
         import numpy as np
+
         cid_a = "test_chunk_a"
         cid_b = "test_chunk_b"
         cid_c = "test_chunk_c"
@@ -129,6 +129,7 @@ def test_a2_usearch_index_remove_idempotent(tmp_path):
         cid = "test_remove_existing"
         _insert_chunk(db, cid)
         import numpy as np
+
         idx.add(cid, np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32).tobytes())
         idx.remove(cid)
         idx.remove("nonexistent_again")
@@ -144,6 +145,7 @@ def test_a2_usearch_index_persistence(tmp_path):
 
     idx1 = _si.UsearchIndex(db, dim=4)
     import numpy as np
+
     vec = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32).tobytes()
     idx1.add(cid, vec)
     idx1.close()
@@ -181,9 +183,7 @@ def test_a4_factory_auto_falls_back_from_zvec_to_usearch(monkeypatch):
     idx = _si.build_search_index("auto", _DEFAULT_DB_PATH, dim=512)
     try:
         # 本机 Ivy Bridge zvec 不可用, usearch 已装 → 应选 usearch
-        assert idx.name == "usearch", (
-            f"auto: zvec 不可用应降级 usearch, got {idx.name}"
-        )
+        assert idx.name == "usearch", f"auto: zvec 不可用应降级 usearch, got {idx.name}"
     finally:
         idx.close()
 
@@ -213,8 +213,6 @@ def test_a4_factory_explicit_sqlite_vec_warns_and_falls_back_to_auto(monkeypatch
     monkeypatch.setattr(_si, "zvec_available", lambda: False)
     idx = _si.build_search_index("sqlite_vec", _DEFAULT_DB_PATH, dim=512)
     try:
-        assert idx.name == "usearch", (
-            f"sqlite_vec 显式应 coerce auto → usearch, got {idx.name}"
-        )
+        assert idx.name == "usearch", f"sqlite_vec 显式应 coerce auto → usearch, got {idx.name}"
     finally:
         idx.close()

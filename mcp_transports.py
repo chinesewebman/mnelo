@@ -212,6 +212,7 @@ def _parse_ipfilter_cidrs(cidr_strings) -> list:
     Raises ValueError on invalid CIDR (fail loud — silent accept-all is dangerous).
     """
     import ipaddress as _ip
+
     if not cidr_strings:
         return []
     return [_ip.ip_network(str(c), strict=False) for c in cidr_strings]
@@ -231,6 +232,7 @@ def _resolve_ipfilter_from_config() -> tuple[list, bool]:
     must opt in (any client can spoof XFF without a trusted proxy chain).
     """
     import config
+
     cidrs = getattr(config.config, "server_ipfilter_cidrs", []) or []
     trust_xff = bool(getattr(config.config, "server_trust_xff", False))
     return cidrs, trust_xff
@@ -323,23 +325,21 @@ async def _ipfilter_middleware(scope, receive, send, app, allowed_ips, trust_xff
         return
 
     # Block: 403 Forbidden
-    logger.warning(
-        f"[ipfilter] blocked {raw_ip} (not in ipfilter_cidrs {allowed_ips}); "
-        f"path={scope.get('path', '?')} method={scope.get('method', '?')}"
+    logger.warning(f"[ipfilter] blocked {raw_ip} (not in ipfilter_cidrs {allowed_ips}); path={scope.get('path', '?')} method={scope.get('method', '?')}")
+    response_body = (f"403 Forbidden: ip {raw_ip} not in ipfilter_cidrs allowlist. Contact admin to add your IP CIDR.").encode("utf-8")
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 403,
+            "headers": [(b"content-type", b"text/plain; charset=utf-8")],
+        }
     )
-    response_body = (
-        f"403 Forbidden: ip {raw_ip} not in ipfilter_cidrs allowlist. "
-        f"Contact admin to add your IP CIDR."
-    ).encode("utf-8")
-    await send({
-        "type": "http.response.start",
-        "status": 403,
-        "headers": [(b"content-type", b"text/plain; charset=utf-8")],
-    })
-    await send({
-        "type": "http.response.body",
-        "body": response_body,
-    })
+    await send(
+        {
+            "type": "http.response.body",
+            "body": response_body,
+        }
+    )
 
 
 def _build_ipfilter_wrapper(app, allowed_ips, trust_xff: bool = False):
@@ -360,9 +360,8 @@ def _build_ipfilter_wrapper(app, allowed_ips, trust_xff: bool = False):
 
     async def wrapped_app(scope, receive, send):
         await _ipfilter_middleware(scope, receive, send, app, allowed_ips, trust_xff=trust_xff)
+
     return wrapped_app
-
-
 
 
 def _len_cidrs_msg(cidrs) -> str:

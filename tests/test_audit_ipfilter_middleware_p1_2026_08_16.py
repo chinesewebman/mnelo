@@ -14,6 +14,7 @@ Tests cover:
   - multiple CIDRs → any match allows
   - IPv4 + IPv6 mixed CIDRs
 """
+
 import ipaddress
 import sys
 from pathlib import Path

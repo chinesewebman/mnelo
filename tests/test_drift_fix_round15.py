@@ -36,7 +36,7 @@ def mem():
     m = Memory()
 
     def cleanup():
-        cleanup_chunks(m, source_pattern='v05_6_drift_test:%')
+        cleanup_chunks(m, source_pattern="v05_6_drift_test:%")
         m._conn.commit()
 
     cleanup()
@@ -51,12 +51,8 @@ class TestCleanupOrphanVectors:
     def test_dry_run_returns_counts_without_deleting(self, mem):
         # Add a chunk + soft-delete (plan §11: 直接 UPDATE valid_until 制造软删)
         cid = mem.remember(content="drift dryrun test", source="v05_6_drift_test:dryrun")
-        rowid = mem._conn.execute(
-            "SELECT rowid FROM chunks WHERE id = ?", (cid,)
-        ).fetchone()[0]
-        mem._conn.execute(
-            "UPDATE chunks SET valid_until = '2099-01-01' WHERE rowid = ?", (rowid,)
-        )
+        rowid = mem._conn.execute("SELECT rowid FROM chunks WHERE id = ?", (cid,)).fetchone()[0]
+        mem._conn.execute("UPDATE chunks SET valid_until = '2099-01-01' WHERE rowid = ?", (rowid,))
         mem._conn.commit()
 
         before_size = mem._index.size()
@@ -78,9 +74,7 @@ class TestCleanupOrphanVectors:
         assert mem._index.contains(cid) is True
 
         # Soft-delete chunk (without using forget() — bypass write-time cleanup)
-        mem._conn.execute(
-            "UPDATE chunks SET valid_until = '2099-01-01' WHERE id = ?", (cid,)
-        )
+        mem._conn.execute("UPDATE chunks SET valid_until = '2099-01-01' WHERE id = ?", (cid,))
         mem._conn.commit()
 
         # Run cleanup
@@ -95,7 +89,8 @@ class TestCleanupOrphanVectors:
         """If no orphans, dry_run should return 0 + dry_run=True."""
         # 先清理, 确保 clean
         from helpers import cleanup_chunks
-        cleanup_chunks(mem, source_pattern='v05_6_drift_test:%')
+
+        cleanup_chunks(mem, source_pattern="v05_6_drift_test:%")
         mem._conn.commit()
         result = mem.cleanup_orphan_vectors(dry_run=True)
         assert result["dry_run"] is True
@@ -105,7 +100,8 @@ class TestCleanupOrphanVectors:
     def test_actual_run_on_clean_db(self, mem):
         """If no orphans, actual run is a no-op."""
         from helpers import cleanup_chunks
-        cleanup_chunks(mem, source_pattern='v05_6_drift_test:%')
+
+        cleanup_chunks(mem, source_pattern="v05_6_drift_test:%")
         mem._conn.commit()
         before = mem._index.size()
         result = mem.cleanup_orphan_vectors()
@@ -146,8 +142,7 @@ class TestUpdateDeletesOldIndexEntry:
         new_id = mem.update(old_id, reason="drift_test", new_content="version 2")
 
         # Old index entry should be gone
-        assert mem._index.contains(old_id) is False, \
-            "expected old index entry deleted"
+        assert mem._index.contains(old_id) is False, "expected old index entry deleted"
 
         # New chunk should have its own index entry
         assert mem._index.contains(new_id) is True

@@ -21,6 +21,7 @@ try:
         TextContent,
         Tool,
     )
+
     # mcp 1.27+ removed AnyUrl from mcp.types (moved to pydantic).
     # Re-export from pydantic so downstream `from mcp_guard import AnyUrl` works.
     # [v0.81.7 P1-2 review fix v2] pydantic missing 时 raise 让外层 except 接管

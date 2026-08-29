@@ -82,6 +82,7 @@ def _default_now() -> str:
     # explicit `now=...` parameter (e.g. line 278: +1ms offset for
     # back-to-back transitions).
     from memory import now as _memory_now  # lazy import — avoid circular
+
     return _memory_now()
 
 

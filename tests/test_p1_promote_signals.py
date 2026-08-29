@@ -7,6 +7,7 @@
 
 候选按信号强度排序.
 """
+
 import sys
 from pathlib import Path
 
@@ -53,6 +54,7 @@ def _make_high_ref_chunk(mem, source="p1_test", suffix="b", target_refs=12):
     )
     # relations.id 是 INTEGER AUTOINCREMENT — 用 hash 转 int
     import hashlib as _hl
+
     for i in range(target_refs):
         rel_id_src = f"{entity_id}|{cid}|{i}"
         rel_id = int.from_bytes(_hl.md5(rel_id_src.encode()).digest()[:4], "big", signed=False) % (2**31)
@@ -84,13 +86,10 @@ def _make_long_high_imp_chunk(mem, source="p1_test", suffix="c"):
 def _cleanup_p1(mem, cids):
     # [8/6 plan §10] 后端感知清理 (helper 先 _index.remove 再 DELETE chunks)
     from helpers import cleanup_chunks
+
     cleanup_chunks(mem, chunk_ids=list(set(cids)))
-    mem._conn.execute(
-        "DELETE FROM relations WHERE id LIKE 'rel_c_%' OR id LIKE 'rel_b_%' OR id LIKE 'rel_a_%'"
-    )
-    mem._conn.execute(
-        "DELETE FROM entities WHERE id LIKE 'p1_test_entity_%'"
-    )
+    mem._conn.execute("DELETE FROM relations WHERE id LIKE 'rel_c_%' OR id LIKE 'rel_b_%' OR id LIKE 'rel_a_%'")
+    mem._conn.execute("DELETE FROM entities WHERE id LIKE 'p1_test_entity_%'")
     mem._conn.commit()
 
 
@@ -101,9 +100,7 @@ def test_p1_scan_returns_candidate_for_high_recall_count():
     try:
         result = mem._run_promote_pass(run_id="test_p1_recall")
         candidates = result["candidates"]
-        assert any(c["chunk_id"] == cid for c in candidates), (
-            f"recall_count=25 应入选, got {candidates}"
-        )
+        assert any(c["chunk_id"] == cid for c in candidates), f"recall_count=25 应入选, got {candidates}"
     finally:
         _cleanup_p1(mem, [cid])
         mem.close()
@@ -116,9 +113,7 @@ def test_p1_scan_returns_candidate_for_high_ref_degree():
     try:
         result = mem._run_promote_pass(run_id="test_p1_ref")
         candidates = result["candidates"]
-        assert any(c["chunk_id"] == cid for c in candidates), (
-            f"ref_degree=12 应入选, got {candidates}"
-        )
+        assert any(c["chunk_id"] == cid for c in candidates), f"ref_degree=12 应入选, got {candidates}"
     finally:
         _cleanup_p1(mem, [cid])
         mem.close()
@@ -131,9 +126,7 @@ def test_p1_scan_returns_candidate_for_long_high_importance():
     try:
         result = mem._run_promote_pass(run_id="test_p1_long_imp")
         candidates = result["candidates"]
-        assert any(c["chunk_id"] == cid for c in candidates), (
-            f"长期 importance=0.9 应入选, got {candidates}"
-        )
+        assert any(c["chunk_id"] == cid for c in candidates), f"长期 importance=0.9 应入选, got {candidates}"
     finally:
         _cleanup_p1(mem, [cid])
         mem.close()
@@ -156,9 +149,7 @@ def test_p1_scan_excludes_non_fact_chunks():
     try:
         result = mem._run_promote_pass(run_id="test_p1_preference")
         candidates = result["candidates"]
-        assert not any(c["chunk_id"] == cid_pref for c in candidates), (
-            f"preference 不应晋升, got {candidates}"
-        )
+        assert not any(c["chunk_id"] == cid_pref for c in candidates), f"preference 不应晋升, got {candidates}"
     finally:
         _cleanup_p1(mem, [cid_pref])
         mem.close()

@@ -28,16 +28,11 @@ def test_default_exposes_13_tools():
     exposed_names = {t["name"] for t in exposed}
 
     expected = set()
-    expected.update(["memory_remember", "memory_recall", "memory_relate", "memory_get_all",
-                     "memory_update", "memory_get_digest", "memory_forget"])
-    expected.update(["memory_recall_stats", "memory_list_entities",
-                     "memory_search_relations", "memory_entity_resolve"])
+    expected.update(["memory_remember", "memory_recall", "memory_relate", "memory_get_all", "memory_update", "memory_get_digest", "memory_forget"])
+    expected.update(["memory_recall_stats", "memory_list_entities", "memory_search_relations", "memory_entity_resolve"])
     expected.update(["memory_graph_query", "memory_stats"])
 
-    assert exposed_names == expected, (
-        f"\u9ed8\u8ba4\u66b4\u9732\u5e94\u4e3a 13 tools. \u5b9e\u9645 {len(exposed_names)}.\n"
-        f"\u5dee\u5f02: {exposed_names.symmetric_difference(expected)}"
-    )
+    assert exposed_names == expected, f"\u9ed8\u8ba4\u66b4\u9732\u5e94\u4e3a 13 tools. \u5b9e\u9645 {len(exposed_names)}.\n\u5dee\u5f02: {exposed_names.symmetric_difference(expected)}"
 
 
 def test_audit_tools_exposes_16():
@@ -95,9 +90,7 @@ def test_tool_tier_metadata():
     tool_names = {t["name"] for t in TOOLS}
     meta_names = set(TOOL_METADATA.keys())
 
-    assert meta_names >= tool_names, (
-        f"\u6240\u6709 tool \u90fd\u9700 metadata. \u7f3a\u5931: {tool_names - meta_names}"
-    )
+    assert meta_names >= tool_names, f"\u6240\u6709 tool \u90fd\u9700 metadata. \u7f3a\u5931: {tool_names - meta_names}"
 
     tiers = {}
     for name, meta in TOOL_METADATA.items():
@@ -151,16 +144,14 @@ def test_destructive_metadata():
     assert TOOL_METADATA["memory_audit_undo"].get("destructive") is True
     assert TOOL_METADATA["memory_maintenance"].get("long_running") is True
 
-    for name in ["memory_remember", "memory_recall", "memory_relate",
-                 "memory_update", "memory_forget"]:
-        assert not TOOL_METADATA[name].get("destructive", False), (
-            f"{name} \u4e0d\u5e94\u6807 destructive"
-        )
+    for name in ["memory_remember", "memory_recall", "memory_relate", "memory_update", "memory_forget"]:
+        assert not TOOL_METADATA[name].get("destructive", False), f"{name} \u4e0d\u5e94\u6807 destructive"
 
 
 def test_default_dispatcher_flags():
     """[A3.9] _TOOL_VIS_FLAGS \u9ed8\u8ba4 3 flag = False."""
     from mcp_tool_dispatcher import _TOOL_VIS_FLAGS
+
     assert _TOOL_VIS_FLAGS == {
         "audit_tools": False,
         "l2_tools": False,
@@ -173,7 +164,9 @@ def test_call_tool_hidden_returns_informative_error():
     import mcp_tool_dispatcher as disp
 
     disp._TOOL_VIS_FLAGS = {
-        "audit_tools": False, "l2_tools": False, "all_tools": False,
+        "audit_tools": False,
+        "l2_tools": False,
+        "all_tools": False,
     }
     result = disp._call_tool("memory_audit_undo", {})
     parsed = _json.loads(result)
@@ -194,7 +187,9 @@ def test_call_tool_visible_executes():
     import mcp_tool_dispatcher as disp
 
     disp._TOOL_VIS_FLAGS = {
-        "audit_tools": False, "l2_tools": False, "all_tools": False,
+        "audit_tools": False,
+        "l2_tools": False,
+        "all_tools": False,
     }
     try:
         result = disp._call_tool("memory_recall", {"query": "test", "top_k": 1})

@@ -70,14 +70,19 @@ def mem(tmp_path, monkeypatch):
         sql,
         flags=re.IGNORECASE | re.DOTALL,
     )
+
     # [bug fix D1 2026-08-16] Register iso_now() function before running schema.sql
     # (schema.sql uses iso_now() for column defaults)
     def _iso_now_local() -> str:
         from datetime import datetime
+
         return datetime.now().isoformat(timespec="seconds")
+
     def _iso_now_offset(days: int) -> str:
         from datetime import datetime, timedelta
+
         return (datetime.now() + timedelta(days=days)).isoformat(timespec="seconds")
+
     conn.create_function("iso_now", 0, _iso_now_local)
     conn.create_function("iso_now_offset", 1, _iso_now_offset)
     try:

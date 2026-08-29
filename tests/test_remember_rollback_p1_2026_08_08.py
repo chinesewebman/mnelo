@@ -16,6 +16,7 @@ ValidationError → 抛异常 → SQLite 事务自动 rollback (因为 commit �
   4. 多个 entity, 第 2 个坏 → chunk 不入库
   5. entity validation 失败不污染 audit_log
 """
+
 import importlib.util as _ilu
 import sys
 from pathlib import Path
@@ -27,9 +28,9 @@ sys.path.insert(0, str(_REPO))
 
 
 def _load_from_repo(mod_name: str):
-    target = str(_REPO / f'{mod_name}.py')
+    target = str(_REPO / f"{mod_name}.py")
     existing = sys.modules.get(mod_name)
-    if existing is not None and getattr(existing, '__file__', None) == target:
+    if existing is not None and getattr(existing, "__file__", None) == target:
         return existing
     spec = _ilu.spec_from_file_location(mod_name, target)
     mod = _ilu.module_from_spec(spec)  # type: ignore[arg-type]
@@ -38,8 +39,8 @@ def _load_from_repo(mod_name: str):
     return mod
 
 
-_validation_repo = _load_from_repo('validation')
-_memory_repo = _load_from_repo('memory')
+_validation_repo = _load_from_repo("validation")
+_memory_repo = _load_from_repo("memory")
 _memory_repo.ValidationError = _validation_repo.ValidationError  # type: ignore[attr-defined]
 
 from validation import ValidationError  # noqa: E402
@@ -49,30 +50,35 @@ from validation import ValidationError  # noqa: E402
 def mem(tmp_path, monkeypatch):
     """Fresh REPO Memory with tmp_path db + usearch backend (no zvec LOCK)."""
     import config as _cfg_mod
-    monkeypatch.setattr(_cfg_mod.config, 'search_backend', 'usearch', raising=True)
-    db_path = tmp_path / 'test.db'
-    monkeypatch.setattr(_cfg_mod.config, 'db_path', db_path, raising=False)
 
-    schema_path = _REPO / 'schema.sql'
+    monkeypatch.setattr(_cfg_mod.config, "search_backend", "usearch", raising=True)
+    db_path = tmp_path / "test.db"
+    monkeypatch.setattr(_cfg_mod.config, "db_path", db_path, raising=False)
+
+    schema_path = _REPO / "schema.sql"
     import sqlite3 as _sqlite
     import re
+
     conn = _sqlite.connect(str(db_path))
     sql = schema_path.read_text()
-    sql = re.sub(r'PRAGMA[^;]*;', '', sql, flags=re.IGNORECASE)
-    sql = re.sub(r'INSTALL[^;]*;', '', sql, flags=re.IGNORECASE)
-    sql = re.sub(r'LOAD[^;]*;', '', sql, flags=re.IGNORECASE)
+    sql = re.sub(r"PRAGMA[^;]*;", "", sql, flags=re.IGNORECASE)
+    sql = re.sub(r"INSTALL[^;]*;", "", sql, flags=re.IGNORECASE)
+    sql = re.sub(r"LOAD[^;]*;", "", sql, flags=re.IGNORECASE)
     sql = re.sub(
-        r'CREATE VIRTUAL TABLE[^;]*USING vec0[^)]*\)',
-        '', sql, flags=re.IGNORECASE | re.DOTALL,
+        r"CREATE VIRTUAL TABLE[^;]*USING vec0[^)]*\)",
+        "",
+        sql,
+        flags=re.IGNORECASE | re.DOTALL,
     )
     try:
         # [bug fix D1 2026-08-16] Register iso_now() function before running schema.sql
         from datetime import datetime, timedelta as _td
+
         conn.create_function("iso_now", 0, lambda: datetime.now().isoformat(timespec="seconds"))
         conn.create_function("iso_now_offset", 1, lambda d: (datetime.now() + _td(days=d)).isoformat(timespec="seconds"))
         conn.executescript(sql)
     except Exception as e:
-        if 'already exists' not in str(e):
+        if "already exists" not in str(e):
             raise
     conn.commit()
     conn.close()
@@ -80,28 +86,19 @@ def mem(tmp_path, monkeypatch):
     m = _memory_repo.Memory(db_path=db_path)
     yield m
     try:
-        m._conn.execute(
-            "DELETE FROM chunks WHERE source LIKE 'test_rollback_%'"
-        )
-        m._conn.execute(
-            "DELETE FROM entities WHERE id LIKE 'test_rollback_%' "
-            "AND valid_until IS NULL"
-        )
+        m._conn.execute("DELETE FROM chunks WHERE source LIKE 'test_rollback_%'")
+        m._conn.execute("DELETE FROM entities WHERE id LIKE 'test_rollback_%' AND valid_until IS NULL")
         m._conn.commit()
     finally:
         m.close()
 
 
 def _count_chunks(mem, source: str) -> int:
-    return mem._conn.execute(
-        "SELECT COUNT(*) FROM chunks WHERE source = ?", (source,)
-    ).fetchone()[0]
+    return mem._conn.execute("SELECT COUNT(*) FROM chunks WHERE source = ?", (source,)).fetchone()[0]
 
 
 def _count_audit(mem, source_marker: str) -> int:
-    return mem._conn.execute(
-        "SELECT COUNT(*) FROM audit_log WHERE ref_id LIKE ?", (f"%{source_marker}%",)
-    ).fetchone()[0]
+    return mem._conn.execute("SELECT COUNT(*) FROM audit_log WHERE ref_id LIKE ?", (f"%{source_marker}%",)).fetchone()[0]
 
 
 class TestRememberRollback:
@@ -113,11 +110,13 @@ class TestRememberRollback:
                 content="anno guard test content",
                 source=source,
                 importance=0.7,
-                entities=[{
-                    "id": "anno:mentions:Python",
-                    "kind": "concept",
-                    "name": "Python",
-                }],
+                entities=[
+                    {
+                        "id": "anno:mentions:Python",
+                        "kind": "concept",
+                        "name": "Python",
+                    }
+                ],
             )
         assert "anno:*" in str(exc_info.value)
         # 关键: chunk 没入库
@@ -131,11 +130,13 @@ class TestRememberRollback:
                 content="long concept name test content",
                 source=source,
                 importance=0.7,
-                entities=[{
-                    "id": "test_rollback_long_concept",
-                    "kind": "concept",
-                    "name": "imported sleep runs at Beijing time 02:00 to avoid daytime CPU contention",
-                }],
+                entities=[
+                    {
+                        "id": "test_rollback_long_concept",
+                        "kind": "concept",
+                        "name": "imported sleep runs at Beijing time 02:00 to avoid daytime CPU contention",
+                    }
+                ],
             )
         assert _count_chunks(mem, source) == 0
 
@@ -153,11 +154,13 @@ class TestRememberRollback:
             content="unknown kind test content (A1 open taxonomy)",
             source=source,
             importance=0.7,
-            entities=[{
-                "id": "test_rollback_unknown_kind_a1",
-                "kind": "garbage_kind",  # A1 后任何 kind 都接受
-                "name": "x",
-            }],
+            entities=[
+                {
+                    "id": "test_rollback_unknown_kind_a1",
+                    "kind": "garbage_kind",  # A1 后任何 kind 都接受
+                    "name": "x",
+                }
+            ],
         )
         assert isinstance(cid, str) and cid.startswith("chunk_")
         assert _count_chunks(mem, source) == 1
@@ -199,11 +202,13 @@ class TestRememberRollback:
             content="clean entity test content",
             source=source,
             importance=0.7,
-            entities=[{
-                "id": "test_rollback_clean_concept",
-                "kind": "concept",
-                "name": "正常 concept",
-            }],
+            entities=[
+                {
+                    "id": "test_rollback_clean_concept",
+                    "kind": "concept",
+                    "name": "正常 concept",
+                }
+            ],
         )
         assert cid is not None
         assert _count_chunks(mem, source) == 1
@@ -227,11 +232,13 @@ class TestRememberRollback:
                 content="audit pollution test",
                 source=source,
                 importance=0.7,
-                entities=[{
-                    "id": "anno:audit_test",
-                    "kind": "concept",
-                    "name": "x",
-                }],
+                entities=[
+                    {
+                        "id": "anno:audit_test",
+                        "kind": "concept",
+                        "name": "x",
+                    }
+                ],
             )
         audit_after = _count_audit(mem, source)
         assert audit_after == audit_before, "ValidationError 不应污染 audit_log"

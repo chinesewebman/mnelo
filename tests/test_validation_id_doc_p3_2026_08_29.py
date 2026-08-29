@@ -13,6 +13,7 @@ Tests:
   - error msg also includes rejected-chars desc (actionable feedback)
   - regression: unicode + / + space + colons still accepted
   - '+' rejected with descriptive msg referencing MAX_ID_LEN"""
+
 import pytest
 
 from validation import (
@@ -39,8 +40,7 @@ def test_id_rejected_desc_lists_dangerous_chars():
     """Security boundary: rejected chars must include SQL/shell/HTTP injection
     primitives — backslash, single-quote, double-quote, semicolon, backquote,
     NUL, newline, CR, tab."""
-    for ch in ["backslash", "single-quote", "double-quote", "semicolon",
-               "backquote", "NUL", "newline"]:
+    for ch in ["backslash", "single-quote", "double-quote", "semicolon", "backquote", "NUL", "newline"]:
         assert ch in _ID_REJECTED_DESC, f"missing rejected char {ch!r}"
 
 
@@ -75,6 +75,4 @@ def test_validate_id_rejects_plus_with_actionable_msg():
     # MAX_ID_LEN must appear (so user knows the length cap).
     assert str(MAX_ID_LEN) in msg
     # Both "allowed" and "rejected" sections must appear for actionability.
-    assert "allowed:" in msg and "rejected:" in msg, (
-        f"msg missing allowed/rejected sections: {msg!r}"
-    )
+    assert "allowed:" in msg and "rejected:" in msg, f"msg missing allowed/rejected sections: {msg!r}"

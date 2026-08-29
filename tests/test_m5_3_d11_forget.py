@@ -13,6 +13,7 @@
   M5.3.9 forget 后 task_states 当前行被关闭 (valid_until IS NOT NULL)
   M5.3.10 chunk/entity/relation kind 不变 — 仍走原 L2 decay 路径
 """
+
 import sqlite3
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ from pathlib import Path
 REPO = Path("/Users/apple/.hermes/memory")
 sys.path.insert(0, str(REPO))
 import os
+
 os.environ.setdefault("MNELO_MEMORY_SEARCH_BACKEND", "usearch")
 
 import memory
@@ -62,6 +64,7 @@ def _create_loop(name: str, now: str = "2026-08-06T15:00") -> str:
 
 # ===== M5.3.1 D11 forget(task) 抛 ValueError =====
 
+
 def test_m5_3_1_d11_forget_task_blocked():
     """[D11] memory.forget(target_kind='task') 必须抛 ValueError, 防止 L2 自动删任务."""
     _setup()
@@ -83,6 +86,7 @@ def test_m5_3_1_d11_forget_task_blocked():
 
 # ===== M5.3.2 D11 forget(loop) 抛 ValueError =====
 
+
 def test_m5_3_2_d11_forget_loop_blocked():
     """[D11] memory.forget(target_kind='loop') 必须抛 ValueError."""
     _setup()
@@ -102,6 +106,7 @@ def test_m5_3_2_d11_forget_loop_blocked():
 
 # ===== M5.3.3 forget_task 显式路径 =====
 
+
 def test_m5_3_3_forget_task_explicit_softdelete():
     """[M5.3.3] forget_task 软删 entity + 关 task_states + 写 audit_log."""
     _setup()
@@ -109,7 +114,9 @@ def test_m5_3_3_forget_task_explicit_softdelete():
     m = memory.Memory()
     try:
         result = task_states.forget_task(
-            m._conn, tid, reason="user_requested_cleanup",
+            m._conn,
+            tid,
+            reason="user_requested_cleanup",
         )
         assert result["task_id"] == tid
         assert "forgotten_at" in result
@@ -143,6 +150,7 @@ def test_m5_3_3_forget_task_explicit_softdelete():
 
 # ===== M5.3.4 forget_task 缺失 reason =====
 
+
 def test_m5_3_4_forget_task_requires_reason():
     """[D8] forget_task 缺 reason / 空 reason 都抛 ReasonRequiredError.
 
@@ -172,6 +180,7 @@ def test_m5_3_4_forget_task_requires_reason():
 
 # ===== M5.3.5 forget_task 不存在 =====
 
+
 def test_m5_3_5_forget_task_not_found():
     """[M5.3.5] forget_task 不存在的 task_id 抛 TaskNotFoundError."""
     _setup()
@@ -188,6 +197,7 @@ def test_m5_3_5_forget_task_not_found():
 
 # ===== M5.3.6 forget_loop 显式路径 =====
 
+
 def test_m5_3_6_forget_loop_explicit():
     """[M5.3.6] forget_loop 软删 loop entity + 关 task_states + 写 audit_log."""
     _setup()
@@ -195,7 +205,9 @@ def test_m5_3_6_forget_loop_explicit():
     m = memory.Memory()
     try:
         result = task_states.forget_loop(
-            m._conn, lid, reason="loop_no_longer_relevant",
+            m._conn,
+            lid,
+            reason="loop_no_longer_relevant",
         )
         assert result["loop_id"] == lid
         assert "forgotten_at" in result
@@ -222,6 +234,7 @@ def test_m5_3_6_forget_loop_explicit():
 
 # ===== M5.3.7 forget_loop 缺 reason =====
 
+
 def test_m5_3_7_forget_loop_requires_reason():
     _setup()
     lid = _create_loop("m5-forget-loop-noreason")
@@ -238,6 +251,7 @@ def test_m5_3_7_forget_loop_requires_reason():
 
 # ===== M5.3.8 audit_log 内容 =====
 
+
 def test_m5_3_8_audit_log_records_forced_forget():
     """[M5.3.8] audit_log before_json + after_json 含 reason + forgotten_at."""
     _setup()
@@ -245,7 +259,9 @@ def test_m5_3_8_audit_log_records_forced_forget():
     m = memory.Memory()
     try:
         task_states.forget_task(
-            m._conn, tid, reason="test_reason_text",
+            m._conn,
+            tid,
+            reason="test_reason_text",
             now="2026-08-06T15:30",
         )
         row = m._conn.execute(
@@ -255,6 +271,7 @@ def test_m5_3_8_audit_log_records_forced_forget():
         ).fetchone()
         assert row is not None
         import json as _json
+
         before = _json.loads(row[0])
         after = _json.loads(row[1])
         assert before["status_before"] == "active"
@@ -265,6 +282,7 @@ def test_m5_3_8_audit_log_records_forced_forget():
 
 
 # ===== M5.3.9 forget 后 task_states 当前行被关闭 =====
+
 
 def test_m5_3_9_forget_closes_task_states_window():
     """[M5.3.9] forget_task 后 task_states valid_until IS NOT NULL."""
@@ -293,6 +311,7 @@ def test_m5_3_9_forget_closes_task_states_window():
 
 # ===== M5.3.10 chunk/entity/relation kind 路径不变 =====
 
+
 def test_m5_3_10_unknown_kind_does_not_hit_d11():
     """[M5.3.10 静态契约] 未知 kind 应报 unknown kind, 不是 D11.
 
@@ -301,6 +320,7 @@ def test_m5_3_10_unknown_kind_does_not_hit_d11():
     路径 (含 unknown kind 报 unknown kind 错).
     """
     import inspect as _inspect
+
     src = _inspect.getsource(memory.Memory.forget)
     assert "D11 TTL 豁免" in src
     assert "task_states.forget_task" in src
@@ -309,5 +329,4 @@ def test_m5_3_10_unknown_kind_does_not_hit_d11():
     for kind in ("chunk", "entity", "relation"):
         assert kind in src, f"missing {kind} branch"
         # 校验是 target_kind 比较, 不是注释
-        assert f'target_kind == "{kind}"' in src or f"target_kind == '{kind}'" in src, \
-            f"missing target_kind == '{kind}' literal"
+        assert f'target_kind == "{kind}"' in src or f"target_kind == '{kind}'" in src, f"missing target_kind == '{kind}' literal"

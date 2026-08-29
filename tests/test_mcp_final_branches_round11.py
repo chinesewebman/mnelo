@@ -158,6 +158,7 @@ class TestCallToolHandler:
         if not _mcp_repo._MCP_AVAILABLE:
             pytest.skip("MCP not available")
         from mcp.types import CallToolRequestParams
+
         params = CallToolRequestParams(name="memory_stats", arguments={})
         result = asyncio.run(_mcp_repo._call_tool_handler(None, params))
         assert hasattr(result, "content"), "CallToolResult must expose .content"

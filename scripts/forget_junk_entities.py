@@ -29,7 +29,6 @@ undo 端到端 (隔离 DB + forget_one + audit_undo + 验证 valid_until=NULL).
 """
 
 import argparse
-import os
 import sqlite3
 import sys
 import time

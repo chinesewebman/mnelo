@@ -21,6 +21,7 @@
    14. mcp_server memory_remember schema 接受 3 字段
    15. mcp_server memory_recall filters schema 接受 agent_id
 """
+
 from __future__ import annotations
 
 import importlib.util as _ilu
@@ -56,6 +57,7 @@ _mcp_server = _load_from_repo("mcp_server")
 def mem(tmp_path, monkeypatch):
     """Fresh REPO Memory with tmp_path db + usearch backend (no zvec LOCK)."""
     import config as _cfg_mod
+
     monkeypatch.setattr(_cfg_mod.config, "search_backend", "usearch", raising=True)
     db_path = tmp_path / "test_scoping.db"
     monkeypatch.setattr(_cfg_mod.config, "db_path", db_path, raising=False)
@@ -63,6 +65,7 @@ def mem(tmp_path, monkeypatch):
     schema_path = _REPO / "schema.sql"
     import sqlite3 as _sqlite
     import re
+
     conn = _sqlite.connect(str(db_path))
     sql = schema_path.read_text()
     sql = re.sub(r"PRAGMA[^;]*;", "", sql, flags=re.IGNORECASE)
@@ -76,6 +79,7 @@ def mem(tmp_path, monkeypatch):
     )
     # [bug fix D1 2026-08-16] Register iso_now() function before running schema.sql
     from datetime import datetime, timedelta as _td
+
     conn.create_function("iso_now", 0, lambda: datetime.now().isoformat(timespec="seconds"))
     conn.create_function("iso_now_offset", 1, lambda d: (datetime.now() + _td(days=d)).isoformat(timespec="seconds"))
     try:
@@ -89,13 +93,8 @@ def mem(tmp_path, monkeypatch):
     m = _memory_repo.Memory(db_path=db_path)
     yield m
     try:
-        m._conn.execute(
-            "DELETE FROM chunks WHERE source LIKE 'test_scoping_%'"
-        )
-        m._conn.execute(
-            "DELETE FROM entities WHERE id LIKE 'test_scoping_%' "
-            "AND valid_until IS NULL"
-        )
+        m._conn.execute("DELETE FROM chunks WHERE source LIKE 'test_scoping_%'")
+        m._conn.execute("DELETE FROM entities WHERE id LIKE 'test_scoping_%' AND valid_until IS NULL")
         m._conn.commit()
     finally:
         m.close()
@@ -103,9 +102,7 @@ def mem(tmp_path, monkeypatch):
 
 def _meta_of(mem, chunk_id: str) -> dict:
     """读 chunk 的 metadata_json (decoded dict)."""
-    row = mem._conn.execute(
-        "SELECT metadata_json FROM chunks WHERE id = ?", (chunk_id,)
-    ).fetchone()
+    row = mem._conn.execute("SELECT metadata_json FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
     assert row is not None, f"chunk {chunk_id} not found"
     raw = row["metadata_json"]
     if raw is None:
@@ -159,9 +156,7 @@ class TestRememberScopingIds:
         )
         meta = _meta_of(mem, cid)
         for k in ("agent_id", "user_id", "run_id"):
-            assert k not in meta, (
-                f"未传 {k} 时不应写入 metadata_json (旧数据兼容); got meta={meta}"
-            )
+            assert k not in meta, f"未传 {k} 时不应写入 metadata_json (旧数据兼容); got meta={meta}"
         # tags 仍存在 (现有 K-V 不动)
         assert meta["tags"] == ["x"]
 
@@ -261,18 +256,10 @@ class TestRecallAgentIdFilter:
         assert results, "应召回 alpha 2 条"
         # 召回 chunk_a1 (content 'apple') + chunk_a2 (content 'banana')
         contents = " | ".join(r["content"] for r in results)
-        assert "apple red fruit" in contents, (
-            f"chunk_a1 (alpha) 应该在; got: {contents}"
-        )
-        assert "banana yellow fruit" in contents, (
-            f"chunk_a2 (alpha) 应该在; got: {contents}"
-        )
-        assert "apple green fruit" not in contents, (
-            f"chunk_b1 (beta) 必须被过滤; got: {contents}"
-        )
-        assert "apple legacy fruit" not in contents, (
-            f"chunk_old (无 agent_id) 必须被过滤 — 不当 alpha match; got: {contents}"
-        )
+        assert "apple red fruit" in contents, f"chunk_a1 (alpha) 应该在; got: {contents}"
+        assert "banana yellow fruit" in contents, f"chunk_a2 (alpha) 应该在; got: {contents}"
+        assert "apple green fruit" not in contents, f"chunk_b1 (beta) 必须被过滤; got: {contents}"
+        assert "apple legacy fruit" not in contents, f"chunk_old (无 agent_id) 必须被过滤 — 不当 alpha match; got: {contents}"
 
     def test_vector_only_strategy_filters_by_agent_id(self, seeded):
         """vector_only → 走 _vector_recall_with_conn, 必须按 agent_id 过滤."""
@@ -283,15 +270,9 @@ class TestRecallAgentIdFilter:
             strategy="vector_only",
         )
         contents = " | ".join(r["content"] for r in results)
-        assert "apple red fruit" in contents, (
-            f"alpha 应该被召回; got: {contents}"
-        )
-        assert "apple green fruit" not in contents, (
-            f"beta 必须被过滤; got: {contents}"
-        )
-        assert "apple legacy fruit" not in contents, (
-            f"legacy (无 agent_id) 必须被过滤 — 不当 alpha match; got: {contents}"
-        )
+        assert "apple red fruit" in contents, f"alpha 应该被召回; got: {contents}"
+        assert "apple green fruit" not in contents, f"beta 必须被过滤; got: {contents}"
+        assert "apple legacy fruit" not in contents, f"legacy (无 agent_id) 必须被过滤 — 不当 alpha match; got: {contents}"
 
     def test_meta_only_strategy_filters_by_agent_id(self, seeded):
         """meta_only → 走 _meta_recall (1300 行) + 我们加的 agent_id filter."""
@@ -302,15 +283,9 @@ class TestRecallAgentIdFilter:
             strategy="meta_only",
         )
         contents = " | ".join(r["content"] for r in results)
-        assert "apple red fruit" in contents, (
-            f"meta_only 召回 alpha 应含 a1; got: {contents}"
-        )
-        assert "apple green fruit" not in contents, (
-            f"meta_only 必须过滤 beta; got: {contents}"
-        )
-        assert "apple legacy fruit" not in contents, (
-            f"meta_only 必须过滤 legacy (无 agent_id); got: {contents}"
-        )
+        assert "apple red fruit" in contents, f"meta_only 召回 alpha 应含 a1; got: {contents}"
+        assert "apple green fruit" not in contents, f"meta_only 必须过滤 beta; got: {contents}"
+        assert "apple legacy fruit" not in contents, f"meta_only 必须过滤 legacy (无 agent_id); got: {contents}"
 
     def test_entity_only_strategy_filters_by_agent_id(self, seeded):
         """entity_only → 走 _entity_recall (1321 行) + 我们加的 agent_id filter.
@@ -331,22 +306,26 @@ class TestRecallAgentIdFilter:
             source="test_scoping_with_ent",
             importance=0.7,
             agent_id="alpha",
-            entities=[{
-                "id": "test_scoping_apple_entity",
-                "kind": "concept",
-                "name": "apple_kind",
-            }],
+            entities=[
+                {
+                    "id": "test_scoping_apple_entity",
+                    "kind": "concept",
+                    "name": "apple_kind",
+                }
+            ],
         )
         seeded.remember(
             content="banana with entity banana_kind",
             source="test_scoping_with_ent_beta",
             importance=0.7,
             agent_id="beta",
-            entities=[{
-                "id": "test_scoping_banana_entity",
-                "kind": "concept",
-                "name": "banana_kind",
-            }],
+            entities=[
+                {
+                    "id": "test_scoping_banana_entity",
+                    "kind": "concept",
+                    "name": "banana_kind",
+                }
+            ],
         )
         seeded._conn.commit()
         results = seeded.recall(
@@ -359,9 +338,7 @@ class TestRecallAgentIdFilter:
         for r in results:
             # entity_intent method 也算 entity 召回
             method = r.get("method", "")
-            assert method.startswith("entity"), (
-                f"method 应是 entity_*; got {method}"
-            )
+            assert method.startswith("entity"), f"method 应是 entity_*; got {method}"
 
     def test_no_filters_means_no_filtering(self, seeded):
         """不传 filters → 不应过滤 (backward compat)."""
@@ -405,9 +382,7 @@ class TestRecallAgentIdFilter:
         )
         # legacy (无 agent_id) 必须不被召回当 alpha match
         contents = " | ".join(r["content"] for r in results)
-        assert "apple legacy fruit" not in contents, (
-            f"旧数据 (无 agent_id) 必须被过滤 — 不能当 alpha match; got: {contents}"
-        )
+        assert "apple legacy fruit" not in contents, f"旧数据 (无 agent_id) 必须被过滤 — 不能当 alpha match; got: {contents}"
         # 但 alpha 2 条必须召回
         assert "apple red fruit" in contents
         assert "banana yellow fruit" in contents
@@ -422,9 +397,7 @@ class TestRecallAgentIdFilter:
             strategy="rrf",
         )
         contents = " | ".join(r["content"] for r in results)
-        assert "apple legacy fruit" in contents, (
-            f"无 agent_id filter 时 legacy 必须保留; got: {contents}"
-        )
+        assert "apple legacy fruit" in contents, f"无 agent_id filter 时 legacy 必须保留; got: {contents}"
 
     def test_special_chars_in_agent_id(self, mem):
         """agent_id 含特殊字符 (含 SQL injection 风险字符) → filter 仍正确.
@@ -477,9 +450,7 @@ class TestMcpServerScopingSchema:
         # 不应是 required (可选字段)
         required = entries[0]["inputSchema"].get("required", [])
         for f in ("agent_id", "user_id", "run_id"):
-            assert f not in required, (
-                f"{f} 是 optional; 不应在 required: {required}"
-            )
+            assert f not in required, f"{f} 是 optional; 不应在 required: {required}"
 
     def test_memory_recall_filters_schema_has_agent_id(self):
         """memory_recall filters schema 含 agent_id."""
@@ -491,9 +462,7 @@ class TestMcpServerScopingSchema:
         # JSON schema 通常不约束 nested object property, 但 TOOLS 里 description
         # 提到了 agent_id; 检查 description 至少提及
         desc = props["filters"].get("description", "")
-        assert "agent_id" in desc, (
-            f"filters.description 应提及 agent_id (文档可读性); got: {desc}"
-        )
+        assert "agent_id" in desc, f"filters.description 应提及 agent_id (文档可读性); got: {desc}"
 
     def test_memory_recall_dispatcher_accepts_agent_id_filter(self, mem, monkeypatch):
         """走 _handle_simple 内部 dispatcher: memory_recall filters.agent_id 端到端工作.
@@ -517,20 +486,18 @@ class TestMcpServerScopingSchema:
         mem._conn.commit()
         # 走 mcp_server._handle_simple 内部 dispatcher (8/6 skill pattern, 绕开 singleton)
         result_json = _mcp_server._handle_simple(
-            mem, "memory_recall", {
+            mem,
+            "memory_recall",
+            {
                 "query": "dispatcher",
                 "top_k": 10,
                 "filters": {"agent_id": "alpha"},
                 "strategy": "rrf",
-            }
+            },
         )
         data = json.loads(result_json)
         # data 是 list (results) 或 dict (wrap)
         hits = data if isinstance(data, list) else data.get("candidates", data.get("results", []))
         contents = " | ".join(h.get("content", "") for h in hits)
-        assert "dispatcher agent test" in contents, (
-            f"dispatcher alpha 应召回; got: {contents}"
-        )
-        assert "dispatcher beta test" not in contents, (
-            f"dispatcher beta 必须被过滤; got: {contents}"
-        )
+        assert "dispatcher agent test" in contents, f"dispatcher alpha 应召回; got: {contents}"
+        assert "dispatcher beta test" not in contents, f"dispatcher beta 必须被过滤; got: {contents}"

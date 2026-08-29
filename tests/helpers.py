@@ -5,6 +5,7 @@
   - 再 DELETE chunks 行
 顺序关键: remove 内部要查 chunks 表拿 rowid → 必须先 remove 再 DELETE.
 """
+
 from __future__ import annotations
 
 
@@ -19,11 +20,9 @@ def cleanup_chunks(mem, chunk_ids=None, source=None, source_pattern=None):
     """
     ids = set(chunk_ids or [])
     if source:
-        ids.update(r[0] for r in mem._conn.execute(
-            "SELECT id FROM chunks WHERE source = ?", (source,)).fetchall())
+        ids.update(r[0] for r in mem._conn.execute("SELECT id FROM chunks WHERE source = ?", (source,)).fetchall())
     if source_pattern:
-        ids.update(r[0] for r in mem._conn.execute(
-            "SELECT id FROM chunks WHERE source LIKE ?", (source_pattern,)).fetchall())
+        ids.update(r[0] for r in mem._conn.execute("SELECT id FROM chunks WHERE source LIKE ?", (source_pattern,)).fetchall())
     for cid in ids:
         try:
             mem._index.remove(cid, conn=mem._conn)

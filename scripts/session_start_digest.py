@@ -70,7 +70,7 @@ def main() -> int:
     if _bootstrap_venv():
         return 0  # 已 re-exec, 不会到这
     try:
-        from mnelo_client import MneloClient, DEFAULT_MCP_URL
+        from mnelo_client import DEFAULT_MCP_URL, MneloClient
 
         # [8/8] 默认走 streamable-http /mcp (新 transport)。覆盖优先级:
         # MNELO_MEMORY_URL (新) > MNELO_MEMORY_SSE_URL (旧, 测试注入死端口用)。

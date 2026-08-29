@@ -15,6 +15,7 @@
   - [实际] ephemeral chunk 真 soft-delete + purged_queue 入队
   - [实际] decay_importance 真 UPDATE chunks.importance
 """
+
 import json
 import unittest
 
@@ -49,6 +50,7 @@ class _H3Fixture:
         # [fix 8/4] chunks.timestamp 是 read-only (created_at)? 看 schema
         # 实际: created_at 是 INSERT 时, 改 8 天前需要 UPDATE timestamp
         from datetime import datetime, timedelta
+
         eight_days_ago = (datetime.now() - timedelta(days=8)).strftime("%Y-%m-%dT%H:%M:%S")
         self.mem._exec_clean(
             "UPDATE chunks SET timestamp = ? WHERE id = ?",
@@ -58,14 +60,11 @@ class _H3Fixture:
 
     def tearDown(self):
         # 清 fixture + meta flag
-        self.mem._exec_clean("DELETE FROM chunks WHERE id IN (?, ?)",
-                              (self.fact_chunk_id, self.ephemeral_chunk_id))
+        self.mem._exec_clean("DELETE FROM chunks WHERE id IN (?, ?)", (self.fact_chunk_id, self.ephemeral_chunk_id))
         # 也清 audit_log 跟 fixture 关联的行
-        self.mem._exec_clean("DELETE FROM audit_log WHERE ref_id IN (?, ?)",
-                              (self.fact_chunk_id, self.ephemeral_chunk_id))
+        self.mem._exec_clean("DELETE FROM audit_log WHERE ref_id IN (?, ?)", (self.fact_chunk_id, self.ephemeral_chunk_id))
         # 清 purged_queue
-        self.mem._exec_clean("DELETE FROM purged_queue WHERE target_id IN (?, ?)",
-                              (self.fact_chunk_id, self.ephemeral_chunk_id))
+        self.mem._exec_clean("DELETE FROM purged_queue WHERE target_id IN (?, ?)", (self.fact_chunk_id, self.ephemeral_chunk_id))
         self.mem._l2_set("l2.enabled", "0")
         self.mem._l2_set("l2.dry_run", "0")
         self.mem._l2_set("l2.running", "0")
@@ -89,10 +88,7 @@ class TestH3DecayApply(_H3Fixture, unittest.TestCase):
         ts = self.mem._l2_get("l2.last_run.hygiene") or "2026-01-01T00:00:00"
         after_dict = {"importance": before_imp - 0.05, "memory_type": "fact"}
         before_dict = {"importance": before_imp, "memory_type": "fact"}
-        revert_sql = (
-            f"UPDATE chunks SET importance = {before_imp:.6f} "
-            f"WHERE id = '{self.fact_chunk_id}' AND valid_until IS NULL"
-        )
+        revert_sql = f"UPDATE chunks SET importance = {before_imp:.6f} WHERE id = '{self.fact_chunk_id}' AND valid_until IS NULL"
 
         # 1. 写 proposed (为 UNIQUE 满足)
         self.mem._exec_clean(
@@ -102,8 +98,7 @@ class TestH3DecayApply(_H3Fixture, unittest.TestCase):
                     created_at, revert_sql)
                VALUES (?, 'hygiene', 'decay_importance', 'chunk', ?,
                        ?, ?, 1.0, 0, 'proposed', ?, NULL)""",
-            (run_id, self.fact_chunk_id,
-             json.dumps(before_dict), json.dumps(after_dict), ts),
+            (run_id, self.fact_chunk_id, json.dumps(before_dict), json.dumps(after_dict), ts),
         )
         self.mem._conn.commit()
 
@@ -124,7 +119,9 @@ class TestH3DecayApply(_H3Fixture, unittest.TestCase):
             (self.fact_chunk_id,),
         ).fetchone()["importance"]
         self.assertAlmostEqual(
-            after_imp, before_imp - 0.05, places=4,
+            after_imp,
+            before_imp - 0.05,
+            places=4,
             msg=f"importance 应减 0.05: before={before_imp}, after={after_imp}",
         )
 
@@ -146,16 +143,18 @@ class TestH3DecayApply(_H3Fixture, unittest.TestCase):
                     created_at, revert_sql)
                VALUES (?, 'hygiene', 'decay_importance', 'chunk', ?,
                        ?, ?, 1.0, 0, 'proposed', ?, NULL)""",
-            (run_id, self.fact_chunk_id,
-             json.dumps(before_dict), json.dumps(after_dict), ts),
+            (run_id, self.fact_chunk_id, json.dumps(before_dict), json.dumps(after_dict), ts),
         )
         self.mem._conn.commit()
 
         # 调 apply
         self.mem._apply_decay_importance(
-            run_id=run_id, chunk_id=self.fact_chunk_id,
-            before=before_dict, after=after_dict,
-            revert_sql=revert_sql, ts=ts,
+            run_id=run_id,
+            chunk_id=self.fact_chunk_id,
+            before=before_dict,
+            after=after_dict,
+            revert_sql=revert_sql,
+            ts=ts,
         )
 
         # 验证 2 行 audit_log (proposed + applied)
@@ -188,14 +187,16 @@ class TestH3DecayApply(_H3Fixture, unittest.TestCase):
                     created_at, revert_sql)
                VALUES (?, 'hygiene', 'decay_importance', 'chunk', ?,
                        ?, ?, 1.0, 0, 'proposed', ?, NULL)""",
-            (run_id, self.fact_chunk_id,
-             json.dumps(before_dict), json.dumps(after_dict), ts),
+            (run_id, self.fact_chunk_id, json.dumps(before_dict), json.dumps(after_dict), ts),
         )
         self.mem._conn.commit()
         self.mem._apply_decay_importance(
-            run_id=run_id, chunk_id=self.fact_chunk_id,
-            before=before_dict, after=after_dict,
-            revert_sql=revert_sql, ts=ts,
+            run_id=run_id,
+            chunk_id=self.fact_chunk_id,
+            before=before_dict,
+            after=after_dict,
+            revert_sql=revert_sql,
+            ts=ts,
         )
 
         # 验证 revert_sql
@@ -227,29 +228,33 @@ class TestH3TTLApply(_H3Fixture, unittest.TestCase):
         """[§5.9.2] confirm_destructive=False → ephemeral TTL proposal 标 skipped"""
         # 跑前 fixture ephemeral 是 timestamp 8 天前
         r = self.mem.run_maintenance(
-            passes=["hygiene"], dry_run=False, confirm_destructive=False,
+            passes=["hygiene"],
+            dry_run=False,
+            confirm_destructive=False,
         )
         # failed > 0 (TTL confirm_destructive=False 跳过)
-        self.assertGreater(r["failed"], 0,
-            f"没 confirm_destructive 应有 failed: {r['failed']}")
+        self.assertGreater(r["failed"], 0, f"没 confirm_destructive 应有 failed: {r['failed']}")
 
     def test_02_ttl_with_confirm_destructive_actually_soft_deletes(self):
         """[实际 8/4] confirm_destructive=True → ephemeral > 7d 真 soft-delete (fixture)"""
         self.mem.run_maintenance(
-            passes=["hygiene"], dry_run=False, confirm_destructive=True,
+            passes=["hygiene"],
+            dry_run=False,
+            confirm_destructive=True,
         )
         # 验证 fixture ephemeral 被软删 (valid_until != NULL)
         row = self.mem._exec_clean(
             "SELECT valid_until FROM chunks WHERE id = ?",
             (self.ephemeral_chunk_id,),
         ).fetchone()
-        self.assertIsNotNone(row["valid_until"],
-            "fixture ephemeral 应被软删 (valid_until != NULL)")
+        self.assertIsNotNone(row["valid_until"], "fixture ephemeral 应被软删 (valid_until != NULL)")
 
     def test_03_soft_deleted_chunks_go_to_purged_queue(self):
         """[实际 8/4] TTL soft-delete → purged_queue 入队 (30 天延迟清, 跟 §3.8 一致)"""
         self.mem.run_maintenance(
-            passes=["hygiene"], dry_run=False, confirm_destructive=True,
+            passes=["hygiene"],
+            dry_run=False,
+            confirm_destructive=True,
         )
         # purged_queue 应有 fixture ephemeral 入队
         row = self.mem._exec_clean(
@@ -260,19 +265,19 @@ class TestH3TTLApply(_H3Fixture, unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertEqual(row["target_kind"], "chunk")
         self.assertEqual(row["done"], 0)
-        self.assertGreater(row["purged_at"], "2026-08-04",
-            "purged_at 应在未来 30 天 (实际 8/4 + 30d)")
+        self.assertGreater(row["purged_at"], "2026-08-04", "purged_at 应在未来 30 天 (实际 8/4 + 30d)")
 
     def test_04_watermark_does_not_advance_on_failed(self):
         """[§5.9.2] failed > 0 → l2.last_run.hygiene 不推进"""
         before = self.mem._l2_get("l2.last_run.hygiene")
         # confirm_destructive=False → TTL failed > 0
         self.mem.run_maintenance(
-            passes=["hygiene"], dry_run=False, confirm_destructive=False,
+            passes=["hygiene"],
+            dry_run=False,
+            confirm_destructive=False,
         )
         after = self.mem._l2_get("l2.last_run.hygiene")
-        self.assertEqual(before, after,
-            "failed > 0 时 watermark 不推进")
+        self.assertEqual(before, after, "failed > 0 时 watermark 不推进")
 
 
 class TestH3PureDryRun(_H3Fixture, unittest.TestCase):
@@ -289,18 +294,13 @@ class TestH3PureDryRun(_H3Fixture, unittest.TestCase):
             "SELECT importance FROM chunks WHERE id = ?",
             (self.fact_chunk_id,),
         ).fetchone()["importance"]
-        self.assertEqual(before_imp, after_imp,
-            "dry_run 不动 importance")
+        self.assertEqual(before_imp, after_imp, "dry_run 不动 importance")
 
     def test_02_dry_run_does_not_insert_to_purged_queue(self):
         """dry_run=True 不写 purged_queue"""
-        before_count = self.mem._exec_clean(
-            "SELECT COUNT(*) FROM purged_queue"
-        ).fetchone()[0]
+        before_count = self.mem._exec_clean("SELECT COUNT(*) FROM purged_queue").fetchone()[0]
         self.mem.run_maintenance(passes=["hygiene"], dry_run=True)
-        after_count = self.mem._exec_clean(
-            "SELECT COUNT(*) FROM purged_queue"
-        ).fetchone()[0]
+        after_count = self.mem._exec_clean("SELECT COUNT(*) FROM purged_queue").fetchone()[0]
         self.assertEqual(before_count, after_count)
 
 

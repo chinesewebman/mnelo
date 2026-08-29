@@ -5,6 +5,7 @@
   P3: 降级后实体 kind 变更 + 历史保留; 上限触发腾位
   P4: dry-run 只报不改; apply 后 audit_log 有 applied 行 + revert_sql
 """
+
 import sys
 from pathlib import Path
 
@@ -37,15 +38,11 @@ def _make_high_recall_chunk(mem, suffix="x"):
 def _cleanup_p2(mem, cids):
     # [8/6 plan §10] 后端感知清理
     from helpers import cleanup_chunks
+
     cleanup_chunks(mem, chunk_ids=list(set(cids)))
-    mem._conn.execute(
-        "DELETE FROM relations WHERE relation='canonical_evidence_of' "
-        "AND source_id LIKE 'canonical:%'"
-    )
+    mem._conn.execute("DELETE FROM relations WHERE relation='canonical_evidence_of' AND source_id LIKE 'canonical:%'")
     mem._conn.execute("DELETE FROM entities WHERE id LIKE 'canonical:%'")
-    mem._conn.execute(
-        "DELETE FROM audit_log WHERE run_id LIKE 'test_p%' OR run_id LIKE 'test_2_%'"
-    )
+    mem._conn.execute("DELETE FROM audit_log WHERE run_id LIKE 'test_p%' OR run_id LIKE 'test_2_%'")
     mem._conn.commit()
 
 
@@ -64,12 +61,8 @@ def test_p2_apply_promote_creates_canonical_fact_entity():
         assert ok, "_apply_promote_to_canonical 应成功"
 
         # 验证 entity 创建
-        entities = mem._conn.execute(
-            "SELECT id, kind FROM entities WHERE id LIKE 'canonical:%' AND kind='canonical_fact'"
-        ).fetchall()
-        assert any(e["kind"] == "canonical_fact" for e in entities), (
-            f"canonical_fact entity 应存在, got {len(entities)} 个"
-        )
+        entities = mem._conn.execute("SELECT id, kind FROM entities WHERE id LIKE 'canonical:%' AND kind='canonical_fact'").fetchall()
+        assert any(e["kind"] == "canonical_fact" for e in entities), f"canonical_fact entity 应存在, got {len(entities)} 个"
     finally:
         _cleanup_p2(mem, [cid])
         mem.close()
@@ -140,17 +133,14 @@ def test_p2_idempotent_promote_same_chunk_twice():
             ts="2026-08-05T15:00:04",
         )
         # 验证 entity 唯一 (同 chunk → 同 entity id)
-        canonical_entities = mem._conn.execute(
-            "SELECT id FROM entities WHERE id LIKE 'canonical:%' AND kind='canonical_fact'"
-        ).fetchall()
+        canonical_entities = mem._conn.execute("SELECT id FROM entities WHERE id LIKE 'canonical:%' AND kind='canonical_fact'").fetchall()
         # 同 chunk 的所有 promote 共享同一 entity_id (slug 含 chunk_id hash)
         canonical_ids = [e["id"] for e in canonical_entities]
         # 期望 chunk 对应 1 个 entity
         from collections import Counter
+
         entity_counts = Counter(canonical_ids)
-        assert all(c == 1 for c in entity_counts.values()), (
-            f"每个 entity_id 应只出现 1 次, counts={dict(entity_counts)}"
-        )
+        assert all(c == 1 for c in entity_counts.values()), f"每个 entity_id 应只出现 1 次, counts={dict(entity_counts)}"
     finally:
         _cleanup_p2(mem, [cid])
         mem.close()
@@ -168,9 +158,7 @@ def test_p4_dry_run_does_not_apply_or_write_audit():
         )
         assert result["applied"] == 0, f"dry_run 必须 applied=0, got {result['applied']}"
         # 验证 audit_log 无对应 applied 行
-        audit_count = mem._conn.execute(
-            "SELECT COUNT(*) FROM audit_log WHERE run_id='test_p2_dryrun' AND status='applied'"
-        ).fetchone()[0]
+        audit_count = mem._conn.execute("SELECT COUNT(*) FROM audit_log WHERE run_id='test_p2_dryrun' AND status='applied'").fetchone()[0]
         assert audit_count == 0, f"dry_run 不应有 audit_log applied, got {audit_count}"
         # 但 proposals 应有
         assert len(result["proposals"]) >= 1, "dry_run 应有 proposals (报告)"
@@ -199,9 +187,7 @@ def test_p3_demote_90d_unused_changes_kind_to_concept():
         )
         assert ok, "_apply_demote_canonical 应成功"
         # 验证 kind 已变更
-        row = mem._conn.execute(
-            "SELECT kind FROM entities WHERE id = ?", (entity_id,)
-        ).fetchone()
+        row = mem._conn.execute("SELECT kind FROM entities WHERE id = ?", (entity_id,)).fetchone()
         assert row["kind"] == "concept", f"应 kind=concept, got {row['kind']}"
     finally:
         mem._conn.execute("DELETE FROM entities WHERE id = ?", (entity_id,))
@@ -238,9 +224,7 @@ def test_p3_max_canonical_eviction_by_lowest_importance():
             "SELECT kind FROM entities WHERE id = ?",
             ("canonical:test_p3_evict_000",),
         ).fetchone()
-        assert kind_row["kind"] == "concept", (
-            f"最低 importance 应降级 kind=concept, got {kind_row['kind']}"
-        )
+        assert kind_row["kind"] == "concept", f"最低 importance 应降级 kind=concept, got {kind_row['kind']}"
         # 验证 audit_log applied 行
         audit = mem._conn.execute(
             """SELECT action_type, status, revert_sql FROM audit_log
@@ -253,9 +237,7 @@ def test_p3_max_canonical_eviction_by_lowest_importance():
     finally:
         for eid in test_ids:
             mem._conn.execute("DELETE FROM entities WHERE id = ?", (eid,))
-        mem._conn.execute(
-            "DELETE FROM audit_log WHERE run_id='test_p3_evict_single'"
-        )
+        mem._conn.execute("DELETE FROM audit_log WHERE run_id='test_p3_evict_single'")
         mem._conn.commit()
         mem.close()
 
@@ -268,6 +250,7 @@ def test_p4_promote_pass_advances_watermark_on_clean_run():
         before = mem._l2_get("l2.last_run.promote")
         # 用 sleep 1.05 确保 ts ms 精度前进
         import time as _t
+
         _t.sleep(1.05)
         ok = mem._apply_promote_to_canonical(
             run_id="test_p4_wm",
@@ -291,14 +274,12 @@ def test_run_maintenance_dispatches_promote_pass():
     cid = _make_high_recall_chunk(mem, suffix="dispatch")
     try:
         result = mem.run_maintenance(
-            passes=["promote"], dry_run=False, confirm_destructive=True,
+            passes=["promote"],
+            dry_run=False,
+            confirm_destructive=True,
         )
-        assert "promote" in result["passes_run"], (
-            f"promote 应在 passes_run, got {result['passes_run']}"
-        )
-        assert "promote" in result["proposals"], (
-            f"proposals 应含 promote key, got {list(result['proposals'])}"
-        )
+        assert "promote" in result["passes_run"], f"promote 应在 passes_run, got {result['passes_run']}"
+        assert "promote" in result["proposals"], f"proposals 应含 promote key, got {list(result['proposals'])}"
     finally:
         _cleanup_p2(mem, [cid])
         mem.close()
@@ -339,26 +320,19 @@ def test_p2_slug_collision_two_chunks_get_distinct_entities():
             ts="2026-08-05T15:30:01",
         )
         # 验两个独立 entity (slug hash 后缀不同)
-        canonical_ids = mem._conn.execute(
-            "SELECT id FROM entities WHERE id LIKE 'canonical:%' AND kind='canonical_fact'"
-        ).fetchall()
+        canonical_ids = mem._conn.execute("SELECT id FROM entities WHERE id LIKE 'canonical:%' AND kind='canonical_fact'").fetchall()
         entity_ids = [e["id"] for e in canonical_ids]
         # 两个 cid 各对应一个 entity (slug 含不同 hash 后缀)
         # 找 chunk-a 来源 entity: slug 应含 cid_a hash 前缀 (md5[:6] first 2)
         from hashlib import md5
+
         suffix_a = md5(cid_a.encode()).hexdigest()[:6]
         suffix_b = md5(cid_b.encode()).hexdigest()[:6]
         cid_a_entity = next((eid for eid in entity_ids if suffix_a in eid), None)
         cid_b_entity = next((eid for eid in entity_ids if suffix_b in eid), None)
-        assert cid_a_entity is not None, (
-            f"cid_a 应有自己的 entity (含 hash {suffix_a}), got {entity_ids}"
-        )
-        assert cid_b_entity is not None, (
-            f"cid_b 应有自己的 entity (含 hash {suffix_b}), got {entity_ids}"
-        )
-        assert cid_a_entity != cid_b_entity, (
-            f"两个 chunk 应得不同 entity, 但都映射到 {cid_a_entity}"
-        )
+        assert cid_a_entity is not None, f"cid_a 应有自己的 entity (含 hash {suffix_a}), got {entity_ids}"
+        assert cid_b_entity is not None, f"cid_b 应有自己的 entity (含 hash {suffix_b}), got {entity_ids}"
+        assert cid_a_entity != cid_b_entity, f"两个 chunk 应得不同 entity, 但都映射到 {cid_a_entity}"
     finally:
         _cleanup_p2(mem, [cid_a, cid_b])
         mem.close()
