@@ -138,35 +138,43 @@ class TestMCPServerHandlers:
     """[Round 3] mcp_server sub-handler functions"""
 
     def test_handle_list_entities(self, mem, clean_prefix):
-        """P1 92 fix: route list_entities via _call_tool."""
-        from mcp_server import _mcp_repo
+        """P1 92 fix: route list_entities via _call_tool.
+
+        [8/29 PR fix Bundle 3] _mcp_repo 在 8/12 refactor 删了, _call_tool 直接走 PEP 562
+        facade (from mcp_server import _call_tool → 转发到 mcp_tool_dispatcher._call_tool).
+        """
+        from mcp_server import _call_tool
         for i in range(3):
             mem._conn.execute(
                 "INSERT INTO entities (id, kind, name, summary, importance, source, valid_from, valid_until) VALUES (?, 'test_kind', ?, 'summary', ?, 'test_cov', ?, NULL)",
                 (f"{clean_prefix}_{i}", f"entity_{i}", 0.5 + i * 0.1, "2026-07-19T00:00:00"),
             )
         mem._conn.commit()
-        result = _mcp_repo._call_tool("memory_list_entities", {"kind": "test_kind", "limit": 10})
+        result = _call_tool("memory_list_entities", {"kind": "test_kind", "limit": 10})
         data = json.loads(result)
         assert "entities" in data
         assert data["count"] >= 3
 
     def test_handle_list_entities_with_min_importance(self, mem, clean_prefix):
-        from mcp_server import _mcp_repo
+        # [8/29 PR fix Bundle 3] _mcp_repo 删了, 走 PEP 562 facade
+        from mcp_server import _call_tool
         for imp in (0.3, 0.7):
             mem._conn.execute(
                 "INSERT INTO entities (id, kind, name, importance, source, valid_from, valid_until) VALUES (?, 'test_imp', ?, ?, 'test_cov', ?, NULL)",
                 (f"{clean_prefix}_imp_{int(imp * 10)}", f"name_{int(imp * 10)}", imp, "2026-07-19T00:00:00"),
             )
         mem._conn.commit()
-        result = _mcp_repo._call_tool("memory_list_entities", {"kind": "test_imp", "min_importance": 0.5, "limit": 10})
+        result = _call_tool("memory_list_entities", {"kind": "test_imp", "min_importance": 0.5, "limit": 10})
         data = json.loads(result)
         for ent in data["entities"]:
             assert ent["importance"] >= 0.5
 
     def test_handle_search_relations(self, mem, clean_prefix):
-        """P1 92 fix: route via _call_tool"""
-        from mcp_server import _mcp_repo
+        """P1 92 fix: route via _call_tool
+
+        [8/29 PR fix Bundle 3] _mcp_repo 删了, 走 PEP 562 facade
+        """
+        from mcp_server import _call_tool
 
         # 建一个 relation
         mem._conn.execute(
@@ -180,7 +188,7 @@ class TestMCPServerHandlers:
         mem.relate(f"{clean_prefix}_src", f"{clean_prefix}_tgt", "owns_relation", weight=0.9)
         mem._conn.commit()
 
-        result = _mcp_repo._call_tool("memory_search_relations", {"relation": "owns_relation", "limit": 5})
+        result = _call_tool("memory_search_relations", {"relation": "owns_relation", "limit": 5})
         data = json.loads(result)
         assert "relations" in data
         assert data["count"] >= 1

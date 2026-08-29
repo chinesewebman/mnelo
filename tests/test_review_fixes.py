@@ -69,17 +69,19 @@ def _setup():
     mem.close()
 
 
-# === RF1: 零长状态窗 — 毫秒级 timestamp ===
+# === RF1: 零长状态窗 — second precision ===
+# [8/29 PR fix Bundle 4] D1 patch (2026-08-16) 把 _default_now 改回 second precision
+# (跟 memory.now() 一致, 避免 lex compare 撞 SQLite shorter-string-sorts-first 行为
+# 静默破坏 asof / valid_until / supersede cascade). 原 "millisecond to avoid zero-length
+# windows" 理由保留: callers 需要 sub-second 可传 `now=...` 显式参数
+# (e.g. line 278: +1ms offset). RF1 期望相应更新 → 跟 prod 行为一致.
 
-def test_rf1_now_is_millisecond_precision():
-    """_default_now() 返回 ISO 8601 毫秒级 (>= 23 chars)."""
+def test_rf1_now_is_second_precision():
+    """_default_now() 返回 ISO 8601 second precision (19 chars, no millisecond)."""
     ts = ts_mod._default_now()
-    # ISO8601 milliseconds: 'YYYY-MM-DDTHH:MM:SS.sss' (23 chars)
-    assert "." in ts, f"millisecond separator missing: {ts}"
-    # 毫秒部分 3 位
-    ms = ts.split(".")[1]
-    assert len(ms) == 3, f"millisecond part should be 3 digits, got '{ms}'"
-    # 验证整改前 (timespec='seconds') 至少 19 chars
+    # ISO8601 seconds: 'YYYY-MM-DDTHH:MM:SS' (19 chars), 不含 '.' millisecond
+    assert "." not in ts, f"millisecond separator should NOT be present (D1 patch): {ts}"
+    assert len(ts) == 19, f"second-precision ISO 8601 should be 19 chars, got {len(ts)}: {ts}"
 
 
 def test_rf1_repeated_transition_creates_non_zero_window():

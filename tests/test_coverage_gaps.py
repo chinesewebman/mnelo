@@ -481,10 +481,17 @@ class TestValidateId:
         for valid in ['chunk_20260719_123', 'entity:user:1', 'x.y-z_w']:
             assert validate_id(valid) == valid
 
-    def test_slash_rejected(self):
+    def test_slash_accepted(self):
+        """[8/29 PR fix Bundle 5] 8/16 PR #1 _ID_RE 扩 unicode + / + 空格 (主人清 137 fixture 时
+        4 entity 撞限制). slash 仍拒: 反斜杠 \\\\ 单引号 ' 双引号 " 分号 ; 反引号 ` NUL \\n \\r \\t.
+        slash 已从禁单扩到允单.
+        """
         from validation import validate_id
+        # slash 已受 (8/16 PR #1 _ID_RE 扩展)
+        assert validate_id('a/b') == 'a/b'
+        # 反斜杠仍拒
         with pytest.raises(ValidationError):
-            validate_id('a/b')
+            validate_id('a\\b')
 
     def test_backslash_rejected(self):
         from validation import validate_id
@@ -635,13 +642,23 @@ class TestMCPServerHelpers:
         _validate_loopback_host('127.0.0.5')  # 不抛 (127.x 全 loopback)
 
     def test_validate_loopback_rejects_lan(self):
-        from mcp_server import _validate_loopback_host
-        with pytest.raises(ValueError, match='loopback-only'):
-            _validate_loopback_host('0.0.0.0')
-        with pytest.raises(ValueError, match='loopback-only'):
+        """[8/29 PR fix Bundle 6] 8/8 主人拍板 mnelo 改 multi-agent 远程调用. _validate_loopback_host
+        接受 loopback (127.x) + Tailscale CGNAT (100.64-127.x.x), 拒绝 LAN / 公网. '0.0.0.0' / '::'
+        走 "bind 任意" 单独路径 (stderr warn + 启动后由 ipfilter/OS firewall 限来源).
+        函数位置 mcp_transports.py (不在 mcp_server.py — 8/12 facade refactor 后).
+        """
+        from mcp_transports import _validate_loopback_host
+        # 0.0.0.0 / :: 不抛 (bind 任意, 网络层另管)
+        _validate_loopback_host('0.0.0.0')  # 不抛
+        _validate_loopback_host('::')  # 不抛
+        # LAN IP 仍抛
+        with pytest.raises(ValueError, match='not allowed'):
             _validate_loopback_host('192.168.1.10')
-        with pytest.raises(ValueError, match='loopback-only'):
+        with pytest.raises(ValueError, match='not allowed'):
             _validate_loopback_host('10.0.0.1')
+        # Tailscale CGNAT (100.64-127.x) 接受
+        _validate_loopback_host('100.64.0.1')  # 不抛
+        _validate_loopback_host('100.127.255.254')  # 不抛
 
     def test_check_port_available_returns_true_when_free(self):
         from mcp_server import _check_port_available
