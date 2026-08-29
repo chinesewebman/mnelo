@@ -1,5 +1,50 @@
 # Changelog
 
+## Unreleased — 2026-08-29
+
+feat(P1): Memory decay — recall-time recency scaling (cherry-pick from 082a7f8)
+
+[cherry-pick 2026-08-29] 把 dirty `memory.py` 上的 P1 memory-decay 4件套 + 调点搬到 5-mixin
+架构后的 `recall_engine.py`, 跟 main 82ce284 同步. 只动排序权重 (`rrf_score` 缩放),
+不改 chunk content / 不写 audit_log, 跟 `_apply_decay_importance` (L2 hygiene 真 UPDATE
+importance) 完全独立.
+
+**核心改动:**
+- `recall_engine.py` 顶部 import 加 `datetime, Optional`
+- `recall_engine.py:335` `RecallEngine.recall()` 末尾 (4-lane RRF 融合之后, `_log_recall`
+  之前) 插入 `results = self._apply_decay_to_hits(results, now_iso=now())` — 在 audit 落盘
+  前确定排序权重, 跟主人 8/29 拍板的 "decay call site 必须在 RecallEngine.recall()" 一致.
+- `RecallEngine` 类新增 4 件套:
+  - `_MEMORY_TYPE_DECAY_HALF_LIFE_HOURS` (Dict): ephemeral 24h / episode 336h / fact 720h /
+    preference 2160h / decision 2160h / procedure inf
+  - `_DEFAULT_DECAY_HALF_LIFE_HOURS = 168.0` (未知 mtype fallback)
+  - `_recency_decay_factor(idle_hours, memory_type)` (staticmethod):
+    `factor = 1 + 0.5 * exp(-idle_hours / half_life)`, 值域 [1.0, 1.5]
+    - idle=0 → 1.5 (浮顶)
+    - idle=∞ → 1.0 (基线)
+    - half_life=inf → 1.5 (procedure 不衰减)
+    - 负 idle clamp 到 0
+  - `_apply_decay_to_hits(results, now_iso)`: 实体 hit (`entity:<id>`) 不衰减,
+    chunk hit 走 decay; `last_recalled` NULL fallback 到 `timestamp`; vector_only 路
+    `distance` 翻转成 score 再乘; timestamp 解析失败 → factor=1.5 (不抛)
+
+**为什么挂 `RecallEngine` 而不是 `Memory`?** 跟 `_apply_decay_importance` 挂
+`L2MaintenanceMixin` 同理 — 跟该方法同一调用域 (recall pipeline) 的 mixin 拥有自己
+的 constants, 避免 `recall_engine.py` → `memory.py` 的循环 import, 也让 mixin 自包含.
+`_recency_decay_factor` 从 `Memory.xxx` 改为 `RecallEngine.xxx` (本次唯一非 verbatim
+移植).
+
+**测试:** `tests/test_p1_memory_decay.py` 16 个 case, 全过:
+- 7 个 `_recency_decay_factor` 公式 (idle=0 ceiling, procedure inf, idle→∞ baseline,
+  负 idle clamp, 未知 mtype fallback, ephemeral / preference 不同半衰期对比)
+- 7 个 `_apply_decay_to_hits` 集成 (空 results, 无效 now_iso, 实体 hit, chunk 找不到,
+  新老 chunk 重排, last_recalled→timestamp fallback, vector_only distance 翻转)
+- 2 个 `TestRecallIntegration` 静态 contract 验证 (decay 必须在 `_log_recall` 之前,
+  decay constants 挂在 `RecallEngine`)
+
+**不在本 PR 范围内:** `pyproject.toml` + `README.md` 版本号 bump (按主人"bump 时三处一致"
+规范本应 v1.7.1 → v1.8.0, 但主人未拍板, 等独立 commit 决定).
+
 ## v1.7.1 — 2026-08-29
 
 fix: vector index drift + test fixture cleanup + zvec launchd probe doc (8/29 maintenance)

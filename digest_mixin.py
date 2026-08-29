@@ -82,9 +82,11 @@ class DigestMixin:
             # the vector lane so recall actually surfaces recent digest content.
             try:
                 from embedder import embed_bytes
+
                 v_bytes = embed_bytes(text)
                 self._index.add(
-                    new_id, v_bytes,
+                    new_id,
+                    v_bytes,
                     conn=self._conn,
                     content=text,
                     memory_type="fact",

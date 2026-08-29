@@ -38,6 +38,7 @@ Exit codes:
   1 = rebuild error (see stderr)
   2 = server still running (refused to avoid index corruption)
 """
+
 import argparse
 import json
 import sys
@@ -51,6 +52,7 @@ sys.path.insert(0, str(REPO))
 def check_server_running(port: int = 8086) -> bool:
     """Refuse to run if MCP server is alive (would corrupt the index)."""
     import socket
+
     try:
         s = socket.socket()
         s.settimeout(1)
@@ -81,11 +83,18 @@ def find_missing_chunks(conn, backend: str, dry_run: bool = False) -> list:
         ORDER BY timestamp DESC
     """).fetchall()
 
-    all_active = [{
-        "chunk_id": r[0], "rowid": int(r[1]), "content": r[2],
-        "source": r[3] or "", "memory_type": r[4] or "fact",
-        "importance": r[5], "timestamp": r[6],
-    } for r in rows]
+    all_active = [
+        {
+            "chunk_id": r[0],
+            "rowid": int(r[1]),
+            "content": r[2],
+            "source": r[3] or "",
+            "memory_type": r[4] or "fact",
+            "importance": r[5],
+            "timestamp": r[6],
+        }
+        for r in rows
+    ]
     total_active = len(all_active)
 
     # Get current doc count from the index (no ID enumeration possible)
@@ -93,6 +102,7 @@ def find_missing_chunks(conn, backend: str, dry_run: bool = False) -> list:
     if backend == "zvec":
         try:
             import zvec
+
             col_path = REPO / "memory.search_index.zv"
             col = zvec.open(str(col_path))
             indexed_count = int(col.stats.doc_count)
@@ -121,6 +131,7 @@ def find_missing_chunks(conn, backend: str, dry_run: bool = False) -> list:
         # usearch has Index.keys() — list of rowids
         try:
             from usearch.index import Index
+
             idx = Index(ndim=512, metric="cosine")
             idx_path = REPO / "memory.usearch.index"
             if idx_path.exists():
@@ -129,6 +140,7 @@ def find_missing_chunks(conn, backend: str, dry_run: bool = False) -> list:
         except Exception:
             # Can't read usearch directly; fall back to Memory init
             from memory import Memory
+
             mem = Memory()
             for row in rows:
                 if mem._index.contains(row[0], conn=conn):
@@ -149,13 +161,11 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="show what would be added (no changes)")
     parser.add_argument("--yes", "-y", action="store_true", help="skip confirmation prompt")
     parser.add_argument("--limit", type=int, default=None, help="only process first N chunks (testing)")
-    parser.add_argument("--skip-contains", action="store_true",
-                        help="re-add ALL active chunks (overwrite existing vectors)")
-    parser.add_argument("--json", dest="as_json", action="store_true",
-                        help="output JSON instead of human-readable table")
-    parser.add_argument("--wipe-and-rebuild", action="store_true",
-                        help="⚠ DESTRUCTIVE: wipe zvec collection entirely, then rebuild from scratch. "
-                             "Removes orphan vectors (referencing deleted chunks). Requires --yes.")
+    parser.add_argument("--skip-contains", action="store_true", help="re-add ALL active chunks (overwrite existing vectors)")
+    parser.add_argument("--json", dest="as_json", action="store_true", help="output JSON instead of human-readable table")
+    parser.add_argument(
+        "--wipe-and-rebuild", action="store_true", help="⚠ DESTRUCTIVE: wipe zvec collection entirely, then rebuild from scratch. Removes orphan vectors (referencing deleted chunks). Requires --yes."
+    )
     args = parser.parse_args()
 
     if not args.dry_run and not args.yes:
@@ -175,14 +185,17 @@ def main() -> int:
     import sqlite3
 
     from config import config as _cfg
+
     DB_PATH = Path(_cfg.db_path)
 
     def iso_now_local():
         from datetime import datetime, timezone
+
         return datetime.now(timezone.utc).isoformat()
 
     def iso_now_offset(days):
         from datetime import datetime, timedelta, timezone
+
         return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
 
     conn = sqlite3.connect(str(DB_PATH))
@@ -194,6 +207,7 @@ def main() -> int:
     if backend == "auto":
         # Resolve auto
         from search_index import usearch_available, zvec_available
+
         if zvec_available():
             backend = "zvec"
         elif usearch_available():
@@ -216,6 +230,7 @@ def main() -> int:
         if args.skip_contains:
             # Re-add everything (covers --skip-contains case)
             from config import config as _cfg
+
             conn2 = sqlite3.connect(str(_cfg.db_path))
             conn2.create_function("iso_now", 0, iso_now_local)
             conn2.create_function("iso_now_offset", 1, iso_now_offset)
@@ -225,11 +240,18 @@ def main() -> int:
                 ORDER BY timestamp DESC
             """).fetchall()
             conn2.close()
-            all_active = [{
-                "chunk_id": r[0], "rowid": int(r[1]), "content": r[2],
-                "source": r[3] or "", "memory_type": r[4] or "fact",
-                "importance": r[5], "timestamp": r[6],
-            } for r in rows]
+            all_active = [
+                {
+                    "chunk_id": r[0],
+                    "rowid": int(r[1]),
+                    "content": r[2],
+                    "source": r[3] or "",
+                    "memory_type": r[4] or "fact",
+                    "importance": r[5],
+                    "timestamp": r[6],
+                }
+                for r in rows
+            ]
             if args.dry_run:
                 missing = all_active  # dry-run with skip-contains = show all
             else:
@@ -297,6 +319,7 @@ def main() -> int:
             return 2
         print("⚠ --wipe-and-rebuild: removing entire zvec collection...")
         import shutil
+
         col_path = REPO / "memory.search_index.zv"
         if col_path.exists():
             shutil.rmtree(col_path)
