@@ -147,17 +147,28 @@ class TestF1BaseScorePriority:
         assert out[0]["rrf_score"] == pytest.approx(2.25)
 
     def test_orphan_fallback_uses_one(self):
-        """兜底: 4 种字段全没 → base_score = 1.0 (不挂)."""
+        """[P1 2026-08-29 C1] 兜底: 入口注入后, hit 一定拿到 base_score/rrf_score/distance 之一.
+
+        C1 方案 A: graph_only/meta_only/entity_only 的 base_score 注入下沉到
+        _apply_decay_to_hits 入口, 不再依赖 strategy 分支. 因此'orphan hit'
+        (4 种字段全没) 在真实 recall 出口不会存在 — 入口兜底会注入 base_score=importance.
+
+        这个测试验证入口兜底注入生效 (而不是验证 'orphan 走 1.0 兜底' — 那个分支
+        现在是 _apply_decay_to_hits 内部的防御性死代码).
+        """
         conn = _make_test_db()
         now = "2026-08-29T12:00:00"
         cid = "orphan_chunk"
         _insert_chunk(conn, cid, now)
 
-        # orphan hit: 啥都没有
+        # orphan hit: 啥都没有 (模拟 mock 测试场景, 不是真实 recall 出口)
         results = [{"chunk_id": cid, "importance": 0.7, "method": "orphan"}]
         out = _call_decay(results, conn=conn, now_iso=now)
-        # base_score=1.0 × factor=1.5 = 1.5
-        assert out[0]["rrf_score"] == pytest.approx(1.5)
+        # C1 方案 A 行为: 入口兜底注入 base_score=importance=0.7, factor=1.5
+        # → rrf_score = 0.7 × 1.5 = 1.05
+        assert out[0]["rrf_score"] == pytest.approx(1.05)
+        # 入口注入留下了 base_score 痕迹 (确认下沉生效)
+        assert out[0].get("base_score") == 0.7
 
     def test_base_score_overrides_distance(self):
         """优先级: base_score 存在时, 即使有 distance 也用 base_score (不会误用 distance)."""
@@ -231,24 +242,30 @@ class TestF1SortNotDegraded:
 
 
 class TestF1StrategyDispatchInjection:
-    """[F1] 静态验证 recall() 在 3 个 strategy 分支出口处都注入了 base_score."""
+    """[F1 C1 方案 A] 静态验证 base_score 兜底注入下沉到 _apply_decay_to_hits 入口.
 
-    def test_graph_only_injects_base_score(self):
-        """graph_only 分支: 给没 rrf_score/distance 的 hits 注入 base_score=importance."""
+    C1 方案 A 把 base_score 注入从 3 个 strategy 分支出口合并到 _apply_decay_to_hits 入口.
+    验证:
+      1. recall() 的 3 个 strategy 分支 (graph_only/meta_only/entity_only) 不再
+         各自注入 base_score — DRY 干净
+      2. _apply_decay_to_hits 入口有兜底注入逻辑, 处理没 rrf_score/distance 的 hit
+      3. _apply_decay_to_hits 入口的注入使用 importance 作 fallback
+    """
+
+    def test_graph_only_branch_no_longer_injects(self):
+        """[C1] graph_only 分支不再注入 base_score (下沉到 _apply_decay_to_hits)."""
         import inspect
 
         src = inspect.getsource(RecallEngine.recall)
-        # 找 graph_only elif 分支
         g_start = src.find('elif strategy == "graph_only":')
         assert g_start > 0, "graph_only branch missing"
         g_end = src.find('elif strategy == "meta_only":', g_start)
         assert g_end > 0
         branch = src[g_start:g_end]
-        assert "base_score" in branch, "graph_only branch missing base_score injection"
-        assert "importance" in branch, "graph_only branch should use importance as base_score"
+        assert "base_score" not in branch, "C1: graph_only branch should NOT inject base_score — moved to _apply_decay_to_hits entry"
 
-    def test_meta_only_injects_base_score(self):
-        """meta_only 分支: 注入 base_score=importance."""
+    def test_meta_only_branch_no_longer_injects(self):
+        """[C1] meta_only 分支不再注入 base_score."""
         import inspect
 
         src = inspect.getsource(RecallEngine.recall)
@@ -257,10 +274,10 @@ class TestF1StrategyDispatchInjection:
         m_end = src.find('elif strategy == "entity_only":', m_start)
         assert m_end > 0
         branch = src[m_start:m_end]
-        assert "base_score" in branch, "meta_only branch missing base_score injection"
+        assert "base_score" not in branch, "C1: meta_only branch should NOT inject base_score — moved to _apply_decay_to_hits entry"
 
-    def test_entity_only_injects_base_score(self):
-        """entity_only 分支: 注入 base_score=importance."""
+    def test_entity_only_branch_no_longer_injects(self):
+        """[C1] entity_only 分支不再注入 base_score."""
         import inspect
 
         src = inspect.getsource(RecallEngine.recall)
@@ -269,7 +286,20 @@ class TestF1StrategyDispatchInjection:
         e_end = src.find('raise ValueError(f"unknown strategy', e_start)
         assert e_end > 0
         branch = src[e_start:e_end]
-        assert "base_score" in branch, "entity_only branch missing base_score injection"
+        assert "base_score" not in branch, "C1: entity_only branch should NOT inject base_score — moved to _apply_decay_to_hits entry"
+
+    def test_apply_decay_entry_injects_base_score(self):
+        """[C1] _apply_decay_to_hits 入口兜底注入 base_score=importance (DRY)."""
+        import inspect
+
+        src = inspect.getsource(RecallEngine._apply_decay_to_hits)
+        # 找入口位置 (now_iso 解析后, scored 循环前)
+        # 检查 base_score 注入逻辑存在
+        assert "base_score" in src, "_apply_decay_to_hits missing base_score"
+        # 检查防御性条件: 三种字段都没才注入
+        assert "rrf_score" in src and "distance" in src, "_apply_decay_to_hits entry should check rrf_score/distance to avoid overwriting"
+        # 检查使用 importance 作 fallback
+        assert "importance" in src, "_apply_decay_to_hits entry should use importance as base_score fallback"
 
 
 # ============================================================

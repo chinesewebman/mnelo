@@ -298,12 +298,6 @@ class RecallEngine:
             vector_hits = self._vector_recall(query, top_k, filters, asof)
             graph_hits = self._graph_recall(vector_hits, graph_hops, asof)
             results = graph_hits[:top_k]
-            # [P1 2026-08-29] F1 fix: graph_only hits 没 rrf_score/distance →
-            # decay 拿不到 base → 排序失效. 显式注入 base_score=importance
-            # (entity hit 也走同一字段, 因为 _graph_recall 已 inline 含 importance).
-            for r in results:
-                if "rrf_score" not in r and "distance" not in r:
-                    r["base_score"] = float(r.get("importance", 0.5))
             lane_latencies = {
                 "vector": (time.time() - t0) * 1000,
                 "graph": 0.0,
@@ -311,20 +305,10 @@ class RecallEngine:
         elif strategy == "meta_only":
             t0 = time.time()
             results = self._meta_recall(query, top_k, filters, asof)
-            # [P1 2026-08-29] F1 fix: meta_only hits 没 rrf_score/distance →
-            # 注入 base_score=importance (跟 graph_only 同模式).
-            for r in results:
-                if "rrf_score" not in r and "distance" not in r:
-                    r["base_score"] = float(r.get("importance", 0.5))
             lane_latencies = {"meta": (time.time() - t0) * 1000}
         elif strategy == "entity_only":
             t0 = time.time()
             results = self._entity_recall(query, top_k, filters, asof)
-            # [P1 2026-08-29] F1 fix: entity_only hits 没 rrf_score/distance →
-            # 注入 base_score=importance (entity hit inline 已含 importance).
-            for r in results:
-                if "rrf_score" not in r and "distance" not in r:
-                    r["base_score"] = float(r.get("importance", 0.5))
             lane_latencies = {"entity": (time.time() - t0) * 1000}
         else:
             raise ValueError(f"unknown strategy: {strategy}")
@@ -1262,6 +1246,16 @@ class RecallEngine:
             # 防御性: now_iso 解析失败 → 不衰减, 直接返回原序
             return results
 
+        # [P1 2026-08-29] F1 fix: graph_only / meta_only / entity_only strategy
+        # 的 hit dict 不走 _rrf_fuse, 既无 rrf_score 也无 distance.
+        # 显式注入 base_score=importance, 让 decay 拿得到 base. 优先级:
+        # base_score > rrf_score > distance > 兜底 1.0 (见下方).
+        # vector_only 走 _vector_recall 注入 distance, rrf 走 _rrf_fuse 注入 rrf_score,
+        # 命中相应分支不需要再补 — 防御性 if 判断避免覆盖已有字段.
+        for r in results:
+            if "base_score" not in r and "rrf_score" not in r and "distance" not in r:
+                r["base_score"] = float(r.get("importance", 0.5))
+
         scored = []
         for r in results:
             cid = r.get("chunk_id", "")
@@ -1300,8 +1294,8 @@ class RecallEngine:
                 # vector_only: distance ∈ [0, 2], 0 最好. 转成 score = 2 - distance, 然后缩放
                 base_score = max(0.0, 2.0 - float(r["distance"]))
             else:
-                # 兜底: 理论上 recall() 入口已注入, 此处不应触发.
-                # 设 1.0 保持原序, 不让 sort 退化.
+                # 兜底: 入口已兜底注入 base_score=importance, 此处不应触发.
+                # 保留 1.0 作为防御性 (单元测试可构造 mock hit, 漏注入时让 sort 不退化).
                 base_score = 1.0
             r["_decay_factor"] = factor
             r["rrf_score"] = base_score * factor
