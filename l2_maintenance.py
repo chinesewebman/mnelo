@@ -1363,7 +1363,7 @@ class L2MaintenanceMixin:
         audit_log_total = self._exec_clean("SELECT COUNT(*) FROM audit_log").fetchone()[0]  # type: ignore[arg-type]
         freshness = self._exec_clean(
             """SELECT COALESCE(
-                 CAST(SUM(CASE WHEN datetime(timestamp) >= datetime('now', '-30 days') THEN 1 ELSE 0 END) AS REAL)
+                 CAST(SUM(CASE WHEN timestamp >= iso_now_offset(-30) THEN 1 ELSE 0 END) AS REAL)
                  / NULLIF(COUNT(*), 0), 0.0) AS freshness
                FROM chunks WHERE valid_until IS NULL"""
         ).fetchone()["freshness"]
@@ -1371,13 +1371,19 @@ class L2MaintenanceMixin:
         # 跟 purge_backlog (已在 purged_queue, 等 30 天延迟) 区分 — 这是待入队的候选.
         # 每个 memory_type 用自己的 TTL 下界 (memory.py:1612 _MEMORY_TYPE_TTL_DAYS) —
         # 聚合求和, 跟 run_maintenance Phase 2 报告数严格对齐 (reviewer P1-1).
+        #
+        # [bug fix P1 2026-08-29] Replace `datetime('now', ?)` (space-sep) cutoff
+        # with `iso_now_offset(-N)` (T-sep) — same format as `chunks.timestamp`
+        # (written by iso_now()). Pre-fix lex order at same-date boundary was
+        # broken: T-sep timestamp always >= space-sep cutoff (T > space), so
+        # expired chunks near the boundary were under-counted → purge lag.
         per_type = []
         params = []
         for _mtype, _ttl in self._MEMORY_TYPE_TTL_DAYS.items():
             if _ttl is None:
                 continue  # procedure 永久
-            per_type.append(f"SELECT COUNT(*) AS n FROM chunks WHERE valid_until IS NULL AND memory_type = '{_mtype}' AND timestamp < datetime('now', ?)")
-            params.append(f"-{_ttl} days")
+            per_type.append(f"SELECT COUNT(*) AS n FROM chunks WHERE valid_until IS NULL AND memory_type = '{_mtype}' AND timestamp < iso_now_offset(?)")
+            params.append(-_ttl)
         if per_type:
             union_sql = " UNION ALL ".join(per_type)
             row = self._conn.execute(f"SELECT COALESCE(SUM(n), 0) FROM ({union_sql})", params).fetchone()

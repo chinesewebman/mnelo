@@ -111,8 +111,15 @@ async def _mnelo_health_endpoint(request):
             ]
         # [8/6 E 路线] PII advisory 24h count (audit_log, pass_name=pii_audit).
         # 不 block, 仅 surface 提醒调用方. 阈值高于 0 → 推荐用户自检.
+        #
+        # [bug fix P1 2026-08-29] Use `iso_now_offset(-1)` (T-sep) instead of
+        # `datetime('now', '-1 day')` (space-sep) for cutoff. Pre-fix lex
+        # compare at same-date boundary was broken: T-sep `created_at` always
+        # lex-orders >= space-sep cutoff (T > space), so audit entries that
+        # are actually >24h old were incorrectly counted as recent →
+        # pii_warnings_last_24h over-counted → spurious pii_recommendation noise.
         pii_24h = target._conn.execute(  # noqa: SLF001 (intentional private access for /health)
-            "SELECT COUNT(*) FROM audit_log WHERE pass_name='pii_audit' AND created_at >= datetime('now', '-1 day')"
+            "SELECT COUNT(*) FROM audit_log WHERE pass_name='pii_audit' AND created_at >= iso_now_offset(-1)"
         ).fetchone()[0]
         pii_recommendation = None
         if pii_24h > 0:
