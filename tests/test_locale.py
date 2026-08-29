@@ -84,6 +84,24 @@ class TestNormalize:
     def test_uppercase_normalized(self, fresh_locale):
         assert fresh_locale._normalize("EN_us") == "en"
 
+    def test_single_char_c_posix_locale_falls_back_to_en(self, fresh_locale):
+        """[8/29 P1 fix] When LANG/LC_ALL are unset, Python's
+        _syslocale.getlocale() returns ('c', 'UTF-8') on POSIX systems.
+        The bare 'c' is the C-locale placeholder (1 char) and must NOT
+        be returned as the language code — it would make i18n return a
+        single-character string that callers can't index. Fall back to
+        'en' like the empty-string case.
+        """
+        assert fresh_locale._normalize("c") == "en"
+        assert fresh_locale._normalize("C") == "en"
+        assert fresh_locale._normalize("c.UTF-8") == "en"
+
+    def test_short_garbage_normalized_to_en(self, fresh_locale):
+        """Any 1-char or 0-char value should normalize to 'en' rather
+        than propagating to i18n consumers as a useless language code."""
+        assert fresh_locale._normalize("a") == "en"
+        assert fresh_locale._normalize("x.UTF-8") == "en"
+
 
 class TestCurrentLocale:
     """current_locale() — cached lookup."""

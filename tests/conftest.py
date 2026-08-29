@@ -54,32 +54,23 @@ def _load_from_repo(mod_name: str):
 _load_from_repo("config")
 _load_from_repo("embedder")
 _load_from_repo("search_index")
+# [8/29 P0 fix] Load validation BEFORE memory so memory_core.py's
+# `from validation import ValidationError` captures the SAME class object
+# that later `from validation import ValidationError` in tests references.
+# The previous order loaded memory first (capturing one ValidationError)
+# then _force_repo_validation() created a second class instance via
+# importlib — breaking `isinstance()` checks inside `with pytest.raises(...)`
+# blocks (the test's class != the one captured in memory._upsert_entity's
+# function closure). See test_coverage_gaps.py for the matching fix.
+_load_from_repo("validation")
 _load_from_repo("memory")
 
-# [Round 3 fix] conftest 也 force repo validation rebind — 防
-# test_more_coverage 把 sys.modules['validation'] 覆盖后,
-# test_coverage_gaps 后续 import 继承 live validation 造成类 identity 不一致
-import importlib.util as _ilu
-
+# Drop live /Users/apple/.hermes/memory from sys.path so any subsequent
+# repo module import that does `from validation import` resolves to our
+# repo copy (not the live one in ~/.hermes/memory).
 _LIVE_ROOT = "/Users/apple/.hermes/memory"
 if _LIVE_ROOT in sys.path:
     sys.path.remove(_LIVE_ROOT)
-
-
-def _force_repo_validation():
-    """[Round 3 fix] 强制把 sys.modules['validation'] 绑回 repo 版本, 同时
-    rebind 'memory' module 的 ValidationError attr 指向新 class."""
-    spec = _ilu.spec_from_file_location("validation", _REPO_ROOT / "validation.py")
-    mod = _ilu.module_from_spec(spec)
-    sys.modules["validation"] = mod
-    spec.loader.exec_module(mod)
-    # 关键: rebind memory module 的 ValidationError 引用 (它 'from validation import')
-    if "memory" in sys.modules:
-        sys.modules["memory"].ValidationError = mod.ValidationError
-    return mod
-
-
-_force_repo_validation()
 
 
 # [8/6 plan §9] 让 from helpers import cleanup_chunks 可用

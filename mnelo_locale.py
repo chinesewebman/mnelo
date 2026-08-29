@@ -61,9 +61,19 @@ def _normalize(lang: str) -> str:
     if not lang:
         return "en"
     lang = lang.strip().replace("-", "_")
-    # zh_CN.UTF-8 → zh_CN
+    # zh_CN.UTF-8 → zh_CN. Strip the charset suffix (.UTF-8, .utf8, etc.)
+    # before splitting on _ so single-char language codes don't get hidden
+    # behind a .UTF-8 suffix.
+    lang = lang.split(".")[0]
     parts = lang.split("_")
     primary = parts[0].lower()
+    # [8/29 P1 fix] Python's _syslocale.getlocale() returns ('c', 'UTF-8')
+    # when no LANG/LC_ALL is set — the bare 'c' is the POSIX C locale
+    # placeholder (a single char), not a real language. Treat it (and any
+    # other < 2 char garbage) as the default fallback so i18n doesn't
+    # return a 1-char string that callers can't meaningfully use.
+    if len(primary) < 2:
+        return "en"
     # 简化: zh_CN/zh_TW 都归 'zh' (主用户 zh)
     if primary == "zh":
         return "zh"
