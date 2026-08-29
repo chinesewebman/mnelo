@@ -751,9 +751,10 @@ from audit_mixin import AuditMixin  # noqa: E402
 from digest_mixin import DigestMixin  # noqa: E402
 from l2_maintenance import L2MaintenanceMixin  # noqa: E402
 from memory_core import MemoryCore  # noqa: E402
+from recall_engine import RecallEngine  # noqa: E402
 
 
-class Memory(MemoryCore, DigestMixin, AuditMixin, L2MaintenanceMixin):
+class Memory(MemoryCore, RecallEngine, DigestMixin, AuditMixin, L2MaintenanceMixin):
     """[refactor 2026-08-12] Mixin composition. 公共 API 100% 不变.
 
     MRO: Memory -> MemoryCore -> DigestMixin -> AuditMixin -> L2MaintenanceMixin -> object
