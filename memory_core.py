@@ -2055,7 +2055,7 @@ class MemoryCore:
         # 两轮: 高优先级 (强 fact), 后补 concept
         high_priority_kinds = ("identity_fact", "canonical_fact", "user")
 
-        for kind_filter, take in (
+        for kind_filter, _take in (
             (high_priority_kinds, top_k),
             (("concept",), top_k),  # 补足
         ):
@@ -2063,6 +2063,10 @@ class MemoryCore:
             # [P0 2026-08-11] scoping: LEFT JOIN chunks via relations.evidence_chunk_id
             # (entity → chunk 关联在 relations 表). LEFT JOIN 让老 entity 保留 —
             # c_meta NULL → post-filter 保留 (旧数据兼容).
+            # [8/29 PR-B fix] production bug: phase 2 sql + cur_params 构造后未 execute,
+            # rows 保留 phase 1 的值 (is_identity_query=True 时是 identity_fact/canonical_fact/user
+            # 结果, False 时是 []). 导致 kind='concept' 的 entity 永远不进 candidate set.
+            # 跟 phase 1 pattern (line 1974) 对比可知漏了 execute + fetchall.
             sql = f"""
                 SELECT e.id, e.kind, e.name, e.summary, e.importance, e.recall_count, c.metadata_json AS c_meta
                 FROM entities e
@@ -2077,6 +2081,7 @@ class MemoryCore:
             if filters and "type" in filters:
                 sql += " AND e.memory_type = ?"
                 cur_params.append(norm_memory_type(filters["type"]))
+            rows = self._conn.execute(sql, cur_params).fetchall()
             # [P0 2026-08-11] agent_id filter — SQL 不直接 json_extract (entity
             # 可能没关联 chunk); 改 Python 侧 post-filter 同第一阶段.
             # [audit fix #7 2026-08-16] user_id / run_id 同款 post-filter
