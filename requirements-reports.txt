@@ -1,0 +1,15 @@
+# mnelo reports-only requirements (add on top of requirements.txt)
+#
+# 用法:
+#   uv pip install -r requirements.txt -r requirements-reports.txt
+#
+# 与 requirements-dev.txt (test/lint/ci) / requirements-usearch.txt /
+# requirements-zvec.txt 同一分层模式 — 报告生成脚本不污染 prod server dep.
+#
+# 当前唯一 dep:
+#   - jinja2: scripts/recall_daily_report.py 渲染召回日报模板 (PoC #3).
+#     历史原因: 8/29 装 jinja2 时未 pin, 主人重建 venv 会丢. 此文件为该 pin
+#     的 source of truth. aliyun 镜像可装 (uv pip install -i
+#     https://mirrors.aliyun.com/pypi/simple/ jinja2).
+
+jinja2>=3.1,<4.0
