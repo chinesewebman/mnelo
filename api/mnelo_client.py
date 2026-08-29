@@ -278,6 +278,58 @@ class MneloClient:
         """: 统计."""
         return self._call("memory_stats", {})
 
+    def health(self) -> Dict:
+        """: GET /health — public endpoint, 无 MCP 调用."""
+        import urllib.request
+        base = self.url.split("/mcp")[0] if self.url.endswith("/mcp") else self.url.split("/sse")[0]
+        with urllib.request.urlopen(f"{base}/health", timeout=self.timeout) as r:
+            return json.loads(r.read())
+
+    def metrics(self) -> str:
+        """: GET /metrics — Prometheus text, 无 MCP 调用."""
+        import urllib.request
+        base = self.url.split("/mcp")[0] if self.url.endswith("/mcp") else self.url.split("/sse")[0]
+        with urllib.request.urlopen(f"{base}/metrics", timeout=self.timeout) as r:
+            return r.read().decode()
+
+    def list_tools(self) -> List[Dict]:
+        """: MCP tools/list → [{name, description, inputSchema}, ...]."""
+        ClientSession, client_factory = self._ensure_mcp()
+        return asyncio.run(self._async_list_tools(ClientSession, client_factory))
+
+    async def _async_list_tools(self, ClientSession, client_factory):
+        headers = {"Authorization": f"Bearer {self._auth_token}"} if self._auth_token else None
+        if self.transport == "streamable-http":
+            # mcp 2.x streamable_http_client(url, http_client=...) — 不收 headers kwarg, 走 httpx.
+            import httpx
+            async with httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(self.timeout)) as http_client:
+                async with client_factory(self.url, http_client=http_client) as (r, w):
+                    async with ClientSession(r, w) as session:
+                        await session.initialize()
+                        result = await session.list_tools()
+                        return [self._tool_to_dict(t) for t in result.tools]
+        # legacy SSE 路径
+        async with client_factory(self.url, headers=headers or None, timeout=self.timeout) as (r, w):
+            async with ClientSession(r, w) as session:
+                await session.initialize()
+                result = await session.list_tools()
+                return [self._tool_to_dict(t) for t in result.tools]
+
+    @staticmethod
+    def _tool_to_dict(t) -> Dict:
+        """mcp 2.x SDK Tool 对象 → dict. 兼容 input_schema (snake, 新) / inputSchema (camel, 旧)."""
+        schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", None)
+        return {"name": t.name, "description": t.description, "inputSchema": schema}
+
+    def call_tool(self, name: str, arguments: Optional[Dict] = None) -> Any:
+        """: 通用 MCP 工具调用 — CLI wrapper / 调试用.
+
+        薄 alias 转发到 _call(), 由 _run_session() 解析 TextContent blocks (返回 dict/list, 失败时返原始字符串).
+
+        业务代码请优先用专用方法 (stats/recall/get_digest/...), 避免魔法字符串.
+        """
+        return self._call(name, arguments or {})
+
     def get_digest(self, ref: Optional[str] = None) -> Dict:
         """[S2 8/5] TASKS_L2_SESSION_STATE §1.3A — 常驻摘要双模式.
 
