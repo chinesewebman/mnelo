@@ -115,7 +115,7 @@ class TestF1BaseScorePriority:
         results = [{"chunk_id": cid, "importance": 0.7, "method": "meta", "base_score": 0.5}]
         out = _call_decay(results, conn=conn, now_iso=now)
         # base_score=0.5, factor=1.5 → rrf_score = 0.75
-        assert out[0]["rrf_score"] == pytest.approx(0.75)
+        assert out[0]["decay_score"] == pytest.approx(0.75)
         assert out[0]["_decay_factor"] == pytest.approx(1.5)
 
     def test_rrf_score_used_when_no_base(self):
@@ -130,7 +130,7 @@ class TestF1BaseScorePriority:
         results = [{"chunk_id": cid, "importance": 0.7, "method": "rrf", "rrf_score": 0.4}]
         out = _call_decay(results, conn=conn, now_iso=now)
         # rrf_score=0.4 × factor=1.5 = 0.6
-        assert out[0]["rrf_score"] == pytest.approx(0.6)
+        assert out[0]["decay_score"] == pytest.approx(0.6)
 
     def test_distance_used_when_no_base_no_rrf(self):
         """vector_only 路径: hit 有 distance, 没 base_score/rrf_score → 翻转 distance."""
@@ -144,7 +144,7 @@ class TestF1BaseScorePriority:
         results = [{"chunk_id": cid, "importance": 0.7, "method": "vector", "distance": 0.5}]
         out = _call_decay(results, conn=conn, now_iso=now)
         # base_score = (2 - 0.5) = 1.5, factor = 1.5 → 2.25
-        assert out[0]["rrf_score"] == pytest.approx(2.25)
+        assert out[0]["decay_score"] == pytest.approx(2.25)
 
     def test_orphan_fallback_uses_one(self):
         """[P1 2026-08-29 C1] 兜底: 入口注入后, hit 一定拿到 base_score/rrf_score/distance 之一.
@@ -166,7 +166,7 @@ class TestF1BaseScorePriority:
         out = _call_decay(results, conn=conn, now_iso=now)
         # C1 方案 A 行为: 入口兜底注入 base_score=importance=0.7, factor=1.5
         # → rrf_score = 0.7 × 1.5 = 1.05
-        assert out[0]["rrf_score"] == pytest.approx(1.05)
+        assert out[0]["decay_score"] == pytest.approx(1.05)
         # 入口注入留下了 base_score 痕迹 (确认下沉生效)
         assert out[0].get("base_score") == 0.7
 
@@ -189,7 +189,7 @@ class TestF1BaseScorePriority:
         ]
         out = _call_decay(results, conn=conn, now_iso=now)
         # base_score=0.3 × factor=1.5 = 0.45 (不是 1.5 × 1.5 = 2.25)
-        assert out[0]["rrf_score"] == pytest.approx(0.45)
+        assert out[0]["decay_score"] == pytest.approx(0.45)
 
 
 class TestF1SortNotDegraded:
@@ -217,7 +217,7 @@ class TestF1SortNotDegraded:
         assert out[0]["chunk_id"] == "new"
         assert out[1]["chunk_id"] == "old"
         # 排序确实生效 (不是退化)
-        assert out[0]["rrf_score"] > out[1]["rrf_score"]
+        assert out[0]["decay_score"] > out[1]["decay_score"]
         assert out[0]["_decay_factor"] > out[1]["_decay_factor"]
 
     def test_graph_only_entity_hits_decay_via_importance(self):
@@ -238,7 +238,7 @@ class TestF1SortNotDegraded:
         out = _call_decay(results, conn=conn, now_iso=now)
         # entity 不衰减: factor=1.0, base_score=0.9 × 1.0 = 0.9
         assert out[0]["_decay_factor"] == 1.0
-        assert out[0]["rrf_score"] == pytest.approx(0.9)
+        assert out[0]["decay_score"] == pytest.approx(0.9)
 
 
 class TestF1StrategyDispatchInjection:
@@ -300,6 +300,122 @@ class TestF1StrategyDispatchInjection:
         assert "rrf_score" in src and "distance" in src, "_apply_decay_to_hits entry should check rrf_score/distance to avoid overwriting"
         # 检查使用 importance 作 fallback
         assert "importance" in src, "_apply_decay_to_hits entry should use importance as base_score fallback"
+
+
+# ============================================================
+# C2-A tests — split rrf_score / decay_score fields
+#   - rrf_score 保留 decay 前值 (向后兼容 PR #23 audit log)
+#   - decay_score 新增, 是 decay 后实际排序分
+#   - _decay_factor 仍是 debug 字段 (F2 pop 掉)
+# ============================================================
+
+
+class TestC2ASplitFields:
+    """[P1 2026-08-30 C2-A] rrf_score 与 decay_score 字段分离, audit log 双向可见."""
+
+    def test_rrf_score_preserved_as_pre_decay(self):
+        """rrf_score 字段保留 decay 前的值 (不被覆写)."""
+        conn = _make_test_db()
+        now = "2026-08-29T12:00:00"
+        cid = "rrf_chunk"
+        _insert_chunk(conn, cid, now)
+        # rrf 路径: hit 自带 rrf_score=0.4 (decay 前)
+        results = [{"chunk_id": cid, "importance": 0.7, "method": "rrf", "rrf_score": 0.4}]
+        out = _call_decay(results, conn=conn, now_iso=now)
+        # rrf_score 应是原始 0.4 (decay 前) — C2-A 不再覆写
+        assert out[0]["rrf_score"] == pytest.approx(0.4)
+        # decay_score 才是 decay 后: 0.4 × 1.5 = 0.6
+        assert out[0]["decay_score"] == pytest.approx(0.6)
+
+    def test_decay_score_is_sort_key(self):
+        """_apply_decay_to_hits 末尾 sort 用 decay_score (而不是 rrf_score)."""
+        conn = _make_test_db()
+        now = "2026-08-29T12:00:00"
+        # 老 chunk (150 天前) + 新 chunk (1 分钟前)
+        old_ts = (datetime.fromisoformat(now) - timedelta(days=150)).isoformat()
+        new_ts = (datetime.fromisoformat(now) - timedelta(minutes=1)).isoformat()
+        _insert_chunk(conn, "old", old_ts, importance=0.7)
+        _insert_chunk(conn, "new", new_ts, importance=0.7)
+        # 两个 hit rrf_score 都 0.5 (按 rrf_score 排不出区别); decay_score 才能排
+        results = [
+            {"chunk_id": "old", "importance": 0.7, "method": "rrf", "rrf_score": 0.5},
+            {"chunk_id": "new", "importance": 0.7, "method": "rrf", "rrf_score": 0.5},
+        ]
+        out = _call_decay(results, conn=conn, now_iso=now)
+        # new 排前面 (decay_score 更高)
+        assert out[0]["chunk_id"] == "new"
+        assert out[1]["chunk_id"] == "old"
+        # 两个字段对比
+        assert out[0]["decay_score"] > out[1]["decay_score"]
+        # rrf_score 仍相等 (没被覆写)
+        assert out[0]["rrf_score"] == pytest.approx(0.5)
+        assert out[1]["rrf_score"] == pytest.approx(0.5)
+
+    def test_decay_score_for_base_score_path(self):
+        """meta/graph/entity 路径 (有 base_score, 没 rrf_score): decay_score = base × factor."""
+        conn = _make_test_db()
+        now = "2026-08-29T12:00:00"
+        cid = "meta_chunk"
+        _insert_chunk(conn, cid, now)
+        # meta_only 形态: 只有 base_score (由 recall() 入口兜底注入)
+        results = [{"chunk_id": cid, "importance": 0.7, "method": "meta", "base_score": 0.5}]
+        out = _call_decay(results, conn=conn, now_iso=now)
+        # base_score=0.5, factor=1.5 → decay_score = 0.75
+        assert out[0]["decay_score"] == pytest.approx(0.75)
+        # rrf_score 没被注入 (保持不存在的状态)
+        assert "rrf_score" not in out[0]
+
+    def test_log_recall_writes_both_pre_and_post_decay(self):
+        """_log_recall 在 audit detail 里同时记录 rrf_score (decay 前) + decay_score (decay 后)."""
+        conn = _make_test_db()
+        now = "2026-08-29T12:00:00"
+        cid = "test_chunk"
+        _insert_chunk(conn, cid, now)
+
+        host = _DecayHost(conn=conn)
+        results = [
+            {
+                "chunk_id": cid,
+                "content": "x",
+                "importance": 0.7,
+                "method": "rrf",
+                "rrf_score": 0.4,  # decay 前
+                "decay_score": 0.6,  # decay 后 (假设已算)
+                "_decay_factor": 1.5,
+            }
+        ]
+        host._log_recall("test", results, hops=0, latency_ms=1.0)
+        row = conn.execute("SELECT recall_details_json FROM recall_log ORDER BY created_at DESC LIMIT 1").fetchone()
+        details = json.loads(row["recall_details_json"])
+        assert details[0]["rrf_score"] == 0.4
+        assert details[0]["decay_score"] == 0.6
+        assert details[0]["_decay_factor"] == 1.5
+
+    def test_decay_score_not_popped_external_field(self):
+        """decay_score 是 user-facing 字段 (无下划线), F2 pop 不该动它."""
+        conn = _make_test_db()
+        now = "2026-08-29T12:00:00"
+        cid = "test_chunk"
+        _insert_chunk(conn, cid, now)
+        host = _DecayHost(conn=conn)
+        results = [
+            {
+                "chunk_id": cid,
+                "content": "x",
+                "importance": 0.7,
+                "method": "rrf",
+                "rrf_score": 0.4,
+                "decay_score": 0.6,
+                "_decay_factor": 1.5,  # 有下划线, F2 pop 该 pop 掉
+            }
+        ]
+        host._log_recall("test", results, hops=0, latency_ms=1.0)
+        # _decay_factor 被 pop (F2 fix)
+        assert "_decay_factor" not in results[0]
+        # decay_score 保留 (client-facing 字段)
+        assert results[0]["decay_score"] == 0.6
+        # rrf_score 也保留 (向后兼容 PR #23 audit log)
+        assert results[0]["rrf_score"] == 0.4
 
 
 # ============================================================
@@ -413,7 +529,7 @@ class TestF1F2Integration:
             assert "_decay_factor" not in r, f"F2 fix: _decay_factor leaked in hit {r['chunk_id'][:20]}"
         # F1 fix: meta_only 注入 base_score, decay 后 rrf_score > 0 (排序有效)
         for r in results:
-            assert r.get("rrf_score", 0) > 0, f"F1 fix: meta_only hit {r['chunk_id'][:20]} has rrf_score=0, decay didn't sort"
+            assert r.get("decay_score", 0) > 0, f"F1 fix: meta_only hit {r['chunk_id'][:20]} has rrf_score=0, decay didn't sort"
             assert r.get("base_score") is not None, f"F1 fix: meta_only hit {r['chunk_id'][:20]} missing base_score"
 
         # F2 fix: audit log 拿到 _decay_factor
@@ -453,6 +569,6 @@ class TestF1F2Integration:
             # vector_only 没被注入 base_score (F1 fix 只动 graph/meta/entity)
             assert "base_score" not in r, "F1 fix should only inject base_score in graph_only/meta_only/entity_only"
             # rrf_score 应由 distance 翻转 + factor 算出来 (>0)
-            assert r.get("rrf_score", 0) > 0
+            assert r.get("decay_score", 0) > 0
 
         m.close()

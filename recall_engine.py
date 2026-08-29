@@ -1113,7 +1113,10 @@ class RecallEngine:
                 "method": r.get("method"),  # backward-compat: 第一路
                 "methods": r.get("methods", [r.get("method")] if r.get("method") else []),
                 "distance": r.get("distance"),  # 0.0-2.0 越小越相似 (vector_only)
-                "rrf_score": r.get("rrf_score"),  # RRF 融合分数 (rrf strategy), P1 decay 后是 recency-scaled
+                "rrf_score": r.get("rrf_score"),  # RRF 融合分数 (decay 前, 来自 _rrf_fuse)
+                # [P1 2026-08-30 C2-A] decay_score: decay 后实际排序分 (base × _decay_factor).
+                # 跟 rrf_score 并存: analytics 可对比 'decay 前后' 变化.
+                "decay_score": r.get("decay_score"),
                 "importance": r.get("importance"),
                 # [P1 2026-08-29] F2 fix: decay 缩放因子写入 audit log, 让 analytics
                 # 能分析 '老记忆被衰减多少'. 配合下方 pop, hit dict 出 recall 时干净.
@@ -1121,9 +1124,10 @@ class RecallEngine:
             }
             for i, r in enumerate(results[:5])  # top-5
         ]
-        # [P1 2026-08-29] F2 fix: pop 所有下划线前缀 debug 字段, 避免泄漏到
+        # [P1 2026-08-30 C2-A] F2 fix: pop 所有下划线前缀 debug 字段, 避免泄漏到
         # MCP client / REST API 响应体. _decay_factor 是 _apply_decay_to_hits
         # 注入的诊断字段, 仅 audit log 需要, hit dict 本身对外应干净.
+        # 注: decay_score 是 client-facing 字段 (无下划线), 不 pop.
         for r in results:
             r.pop("_decay_factor", None)
         self._conn.execute(
@@ -1230,7 +1234,12 @@ class RecallEngine:
             now_iso: 当前时间 ISO 字符串 (用于算 idle_hours); 测试可注入 fake now.
 
         Returns:
-            重排后的 hits (decay_score 写回 rrf_score 字段; 添加 _decay_factor 调试字段).
+            重排后的 hits (新加 decay_score 字段; 不覆写 rrf_score; 添加 _decay_factor 调试字段).
+            hit dict 字段语义:
+              - rrf_score: RRF 融合的原始分数 (decay 前), 来自 _rrf_fuse.
+                          没经过 decay 的 rrf_score 也保留 (向后兼容).
+              - decay_score: base_score * _recency_decay_factor(...), decay 后的实际排序分.
+              - _decay_factor: 缩放因子 [1.0, 1.5], 仅 audit log, F2 fix 会 pop.
 
         边界:
           - results 空 → 直接返回 []
@@ -1298,8 +1307,13 @@ class RecallEngine:
                 # 保留 1.0 作为防御性 (单元测试可构造 mock hit, 漏注入时让 sort 不退化).
                 base_score = 1.0
             r["_decay_factor"] = factor
-            r["rrf_score"] = base_score * factor
+            # [P1 2026-08-30 C2-A] 不再覆写 rrf_score — 保留原始 RRF 融合分 (decay 前),
+            # 写 decay_score 字段 decay 后的实际排序分. 这样:
+            #   (1) audit log 可以对比 rrf_score (前) vs decay_score (后)
+            #   (2) rrf_score 字段语义不变 (向前兼容 PR #23)
+            #   (3) sort key 用 decay_score
+            r["decay_score"] = base_score * factor
             scored.append(r)
-        # 重新按 rrf_score 降序排
-        scored.sort(key=lambda x: -x["rrf_score"])
+        # 重新按 decay_score 降序排 (decay 后的实际排名)
+        scored.sort(key=lambda x: -x["decay_score"])
         return scored

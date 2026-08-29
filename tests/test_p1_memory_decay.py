@@ -131,12 +131,13 @@ class TestApplyDecayToHits:
         assert out == []
 
     def test_invalid_now_iso_returns_unchanged(self):
-        """now_iso 解析失败 → 不衰减, 保持原序."""
+        """now_iso 解析失败 → 不衰减, 保持原序, 不注入 decay_score 字段."""
         results = [{"chunk_id": "c1", "rrf_score": 0.5}]
         out = _call_decay(results, conn=_make_test_db(), now_iso="not-a-date")
         assert out == results
-        # rrf_score 没被改 (没衰减也没乘 factor)
-        assert out[0]["rrf_score"] == 0.5
+        # rrf_score 没被改 (没衰减也没乘 factor), decay_score 也不存在
+        assert out[0].get("rrf_score") == 0.5
+        assert "decay_score" not in out[0]
 
     def test_entity_hit_no_decay(self):
         """entity:<id> — 无 timestamp 概念, 不衰减 (factor=1.0)."""
@@ -144,7 +145,7 @@ class TestApplyDecayToHits:
         results = [{"chunk_id": "entity:e1", "rrf_score": 0.8}]
         out = _call_decay(results, conn=conn, now_iso="2026-08-29T12:00:00")
         assert out[0]["_decay_factor"] == 1.0
-        assert out[0]["rrf_score"] == 0.8  # 没乘 factor
+        assert out[0]["decay_score"] == 0.8  # 没乘 factor
 
     def test_chunk_not_found_no_decay(self):
         """chunk_id 在 DB 里查不到 (RRF 残留) → factor=1.0."""
@@ -221,7 +222,7 @@ class TestApplyDecayToHits:
         # 字段 _decay_factor 应该接近 1.5
         assert out[0]["_decay_factor"] > 1.4
         # rrf_score 应该是 base_score * factor
-        assert out[0]["rrf_score"] > 2.0
+        assert out[0]["decay_score"] > 2.0
 
 
 class TestRecallIntegration:
