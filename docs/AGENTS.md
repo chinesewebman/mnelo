@@ -205,7 +205,7 @@ Pick an id in one of these shapes:
 Validation rules enforced regardless of `kind` choice:
 
 - `kind` is a non-empty string, ≤ 64 chars (`validation.py:147-152`).
-- `id` matches `^[a-zA-Z0-9_:.\-]{1,256}$` (`validation.py:58`).
+- `id` matches `_ID_RE.pattern` (post-8/16 whitelist: unicode + `/` + space; see `_ID_ALLOWED_DESC` / `_ID_REJECTED_DESC` in `validation.py`).
 - `concept` kind's `name` ≤ 50 chars (prevents "imported sleep runs at
   midnight" being smuggled in as an entity name; use chunk content for
   sentences).

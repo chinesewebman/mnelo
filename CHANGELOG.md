@@ -1,5 +1,50 @@
 # Changelog
 
+## v1.7.0 — 2026-08-29
+
+fix: PR-D P1 follow-up (validation error message sync + CHANGELOG gap) + 5 PR chain (#14-#17)
+
+PR-D (this PR):
+- **P1-1** `validation.py:137` stale error message: 单 source of truth (`_ID_ALLOWED_DESC` + `_ID_REJECTED_DESC`)
+  update hard-code `[a-zA-Z0-9_:.\\-]`. 8/16 PR #1 扩 ID whitelist (unicode + `/` + space) 后, 用户 hit
+  实际拒字符 (e.g. `;`, `\n`) 时拿到误导信息. 修后: 错误信息 actionable, 列允许 + 显式列仍拒字符.
+- **P1-2** CHANGELOG gap: 覆盖 8/8-8/29 fix + 新功能.
+
+PR 链 fix (本轮, 已 merged at #14-#17):
+- **PR #14** (mcp pin 1.x → 2.1.1) at f207bfd: PR #13 改 dispatcher 用 2.x API 但漏 bump `requirements.txt` pin
+  (1.26.0,<2.0.0 → 2.1.1,<3.0.0). fix 18 TypeError 全消.
+- **PR #15** (iso_now fixture) at 69cf3d0: `tests/conftest.py` autouse fixture 自动注册 `iso_now` for
+  raw `sqlite3.connect`. fix 24 个 test fail (`OperationalError: unknown function: iso_now()`).
+- **PR #16** (`_entity_recall` phase 2 漏 execute) at f30a0ef: **production bug fix** — concept entity
+  在 `_entity_recall` phase 2 只 `fetchall` 但漏 `execute`, 导致 vector 召回的 concept entity 直接漏
+  召回 (e.g. chunk 关联的 `kind="concept"` entity). fix 1 test fail + B007 lint (`zip()` without
+  `strict=`).
+- **PR #17** (4 stale test bundles) at 7d7c05c: Bundle 3 (`_mcp_repo` → `_call_tool` PEP 562 facade,
+  fix 3 tests) + Bundle 4 (`_default_now` second precision, fix 1 test) + Bundle 5 (`validate_id`
+  接受 `/`, fix 1 test) + Bundle 6 (`_validate_loopback_host` 在 `mcp_transports.py` + Tailscale
+  multi-agent, fix 1 test). production code 零修改, 全是 test 同步 prod 行为.
+
+8/8 (主人拍板) + 8/12 (facade refactor) + 8/16 (PR #1) 历史背景:
+- 8/8: 主人决定 mnelo 改 multi-agent 远程调用. `_validate_loopback_host` 接受 loopback (127.x)
+  + Tailscale CGNAT (100.64-127.x), 拒 LAN (192.168.x/10.x). 0.0.0.0/:: stderr warn 不抛 (bind 任意).
+- 8/12: facade refactor — `mcp_server.py` PEP 562 `__getattr__` 把 `_call_tool` 等从
+  `mcp_tool_dispatcher.py` re-export. `_mcp_repo` 类已删. 见 `mcp_server.py:88-100`.
+- 8/16 PR #1 (fa2516e): `_ID_RE` 扩接受 unicode (中日韩 4 ranges) + `/` + ` `. 仍拒反斜杠 /
+  单引号 / 双引号 / 分号 / 反引号 / NUL / `\n` / `\r` / `\t` (SQL/shell/HTTP injection 防).
+- 8/16 D1 patch: `_default_now` 改回 second precision 跟 `memory.now()` 一致 (避免 lex compare
+  撞 SQLite shorter-string-sorts-first 行为).
+
+累计 fix 本轮: 30 tests 转 green + 1 production bug fix (entity_recall concept entity 漏召回).
+
+**CI baseline 已知** (跟本轮 PR 无关, 不修): 4 pre-existing ruff errors (`mcp_tool_dispatcher.py:227`,
+`memory_core.py:176/204`, `tests/test_audit_bug_fixes_p1_2026_08_16.py:136`) + 2 pre-existing test
+fails (`TestIdentityFactImmutability::test_identity_fact_update_blocked`,
+`TestExtraCoverageGaps::test_relate_evidence_chunk_id_validated`).
+
+注: 下文 v1.1.1 entry 在 v1.6.0 之前 — 这 entry 是 8/16 audit-driven backport (已 merged,
+commit 2e32bd1), pre-PR-D 已存在. 本 PR-D 不修历史 entry placement; 仅修 v1.7.0 顶部
+entry (validation.py + module docstring + DESIGN.md + AGENTS.md stale references).
+
 ## v1.1.1 — 2026-08-16
 
 fix: audit-drivenfix pain-point sweep (10 P1 fixes, 0 regressions)

@@ -8,7 +8,8 @@ validation.py — input sanitization for memory MCP tool arguments.
 边界设计:
 - chunk content: max 8 KB ( mnelo 平均 chunk < 500 B; 8 KB 是 backup 块大小)
 - query: max 1 KB (平均 50 B; 1 KB 已能容下任何 5+ token 多语种 query)
-- id (chunk/entity/relation): ^[a-zA-Z0-9_:.-]{1,256}$ (允许 . _ : -, 禁 / 反斜杠 单引号 双引号 分号 NUL 等)
+- id (chunk/entity/relation): 见 `_ID_RE` (validation.py:_ID_RE 定义) + `_ID_ALLOWED_DESC`
+  + `_ID_REJECTED_DESC` (单 source of truth, 改 docstring 后保持同步)
 - entity.name: max 200 chars (OCR 持仓名 + 多语种实体名都够)
 - entity.summary: max 1000 chars (足够放 hold reason / position summary)
 """
@@ -56,12 +57,24 @@ _BIDI_ZW_RE = re.compile(f"[{re.escape(_BIDI_ZERO_WIDTH)}]")
 
 # ID whitelist: 字母/数字/_/:/./- (覆盖 chunk_id, entity_id, relation id 全场景)
 # [8/16 patch] 扩到支持 unicode (中日韩) + / + 空格 — 主人清理 137 个 test fixture 时,
-# 4 个 entity 撞限制 (主人 / user 2026-07-01... / comfyanonymous/ComfyUI / ltdrdata/...).
+# 4 entity 撞限制 (主人 / user 2026-07-01... / comfyanonymous/ComfyUI / ltdrdata/...).
 # 仍拒: 反斜杠 \\ 单引号 ' 双引号 " 分号 ; 反引号 ` NUL \n \r \t (SQL/shell injection + HTTP injection).
+# [8/29 PR-D] update docstring + expose _ID_ALLOWED_DESC / _ID_REJECTED_DESC 给 error msg 单 source of truth
 _ID_RE = re.compile(
     r"^[\w \u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af/.\-:]{1,"
     + str(MAX_ID_LEN)
     + r"}$"
+)
+# [8/29 PR-D] 单 source of truth: allowed + rejected 字符描述, 避免 8/16 patch 后错误信息
+# 误导 (曾 hard-code `[a-zA-Z0-9_:.\\-]`). pattern 改时这两个常量同步 update.
+_ID_ALLOWED_DESC = (
+    f"word chars (a-z A-Z 0-9 _) + Unicode 4 ranges "
+    f"(中文 \\u4e00-\\u9fff, 日 \\u3040-\\u30ff, 韩 \\uac00-\\ud7af) "
+    f"+ space + / + . + : + -, max {MAX_ID_LEN} chars"
+)
+_ID_REJECTED_DESC = (
+    r"backslash \ single-quote ' double-quote \" semicolon ; backquote ` "
+    r"NUL \0 newline \n carriage-return \r tab \t"
 )
 
 
@@ -134,14 +147,15 @@ def validate_id(value: Any, field: str = "id") -> str:
     if not isinstance(value, str):
         raise ValidationError(field, "must be str or int")
     if not _ID_RE.match(value):
-        # [8/29 doc fix] 8/16 patch expanded _ID_RE to allow unicode + space + /,
-        # but error msg still listed the old ASCII-only whitelist. Users reading
-        # the stale msg (e.g. "valid: user/name") wasted time debugging. Sync
-        # error msg to match the actual regex whitelist.
-        raise ValidationError(field, (
-            f"format mismatch (allowed: ASCII alnum + _ : . - + space + "
-            f"CJK + /, max {MAX_ID_LEN} chars)"
-        ))
+        # [8/29 PR-D] 错误信息跟 _ID_RE pattern 同步, 不再 hard-code 过期的
+        # `[a-zA-Z0-9_:.\\-]` — 用户 hit 实际拒字符时拿到 actionable 信息.
+        # Constants `_ID_ALLOWED_DESC` / `_ID_REJECTED_DESC` (lines 70-78) are
+        # the single source of truth — if _ID_RE changes, update both desc
+        # constants in lockstep to avoid re-introducing a stale error msg.
+        raise ValidationError(
+            field,
+            f"format mismatch (allowed: {_ID_ALLOWED_DESC}; rejected: {_ID_REJECTED_DESC})",
+        )
     return value
 
 
