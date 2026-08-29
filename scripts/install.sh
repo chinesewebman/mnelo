@@ -76,6 +76,13 @@ fi
 log "复制 scripts/ ..."
 cp "$REPO_ROOT/scripts/"*.py "$LIVE_ROOT/scripts/" 2>/dev/null || true
 chmod 600 "$LIVE_ROOT/scripts/"*.py 2>/dev/null || true
+# [2026-08-29] wrapper scripts/mnelo_cli.py 复制过去后还要 +x (install 走 cp 默认保留
+# 来源权限, 但来源是 git checkout = 100644, install 完默认 600 — wrapper 需要 +x 才能
+# 直接当命令跑). 显式 chmod 755 让 install 后 wrapper 在 LIVE_ROOT/scripts/ 直接能跑.
+if [ -f "$LIVE_ROOT/scripts/mnelo_cli.py" ]; then
+    chmod 755 "$LIVE_ROOT/scripts/mnelo_cli.py"
+    log "wrapper 已装 +x: $LIVE_ROOT/scripts/mnelo_cli.py"
+fi
 
 # ---- 5. venv ----
 if [ ! -d "$VENV_DIR" ]; then
