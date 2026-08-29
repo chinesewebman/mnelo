@@ -134,7 +134,14 @@ def validate_id(value: Any, field: str = "id") -> str:
     if not isinstance(value, str):
         raise ValidationError(field, "must be str or int")
     if not _ID_RE.match(value):
-        raise ValidationError(field, f"format mismatch (allowed: [a-zA-Z0-9_:.\\-]{{1,{MAX_ID_LEN}}})")
+        # [8/29 doc fix] 8/16 patch expanded _ID_RE to allow unicode + space + /,
+        # but error msg still listed the old ASCII-only whitelist. Users reading
+        # the stale msg (e.g. "valid: user/name") wasted time debugging. Sync
+        # error msg to match the actual regex whitelist.
+        raise ValidationError(field, (
+            f"format mismatch (allowed: ASCII alnum + _ : . - + space + "
+            f"CJK + /, max {MAX_ID_LEN} chars)"
+        ))
     return value
 
 
