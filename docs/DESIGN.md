@@ -354,7 +354,7 @@ Letta 2026 年把记忆改成 git 版本化的文件系统。mnelo 移植为轻�
 | 保留 vs 任何 | **拒绝**（validate_id + 保留名单检查） |
 
 **规则**：
-1. **前缀保留**：`chunk_`、`entity:`、`identity:`、`master_`、`container:` 前缀禁止用作 SEMANTIC 实体 id 的其余含义（validate_id 已限 `[a-zA-Z0-9_:.-]`，再加前缀保留名单）
+1. **前缀保留**：`chunk_`、`entity:`、`identity:`、`master_`、`container:` 前缀禁止用作 SEMANTIC 实体 id 的其余含义（validate_id 字符 whitelist 见 `_ID_ALLOWED_DESC`，再加前缀保留名单）
 2. **重命名不物理改 id**：实体改名 = `correct()`/`merge` → 旧 id `superseded_by` 指向新 id（软迁移，历史引用仍可解析）
 3. **id 是身份不是标签**：id 一旦发布即稳定；显示名/别名是可变字段，id 语义变化走版本链
 
@@ -374,7 +374,7 @@ Letta 2026 年把记忆改成 git 版本化的文件系统。mnelo 移植为轻�
 - 大写 → 小写；空白/标点 → `_`；连续分隔符折叠
 - 例：`特变电工` → entity id 建议 `tebian_diangong` 或保留 `TBEA` 类官方代码；`sh600089` 本就是官方代码，直接作 id
 
-**validate_id 强制**：现有 `[a-zA-Z0-9_:.-]{1,256}` 之外，增加**保留前缀拒绝**（`chunk_`/`identity:`/`container:`/`master_` 只能出现在对应命名空间）——防 SEMANTIC 实体伪造 SYSTEM/RESERVED id。
+**validate_id 强制**：现有 `_ID_RE` (post-8/16 whitelist: unicode + `/` + space + `.` + `:` + `-`) 之外，增加**保留前缀拒绝**（`chunk_`/`identity:`/`container:`/`master_` 只能出现在对应命名空间）——防 SEMANTIC 实体伪造 SYSTEM/RESERVED id。
 
 #### 3.10.2 关系 id 与向量映射（实现要点）
 
