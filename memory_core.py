@@ -1568,12 +1568,14 @@ class MemoryCore:
 
         # [7/21 fix] asof: 只看 asof 时点仍有效的 chunk
         # [P0 2026-08-11] scoping: agent_id 走 json_extract SQL 过滤 (NULL 不误过滤)
+        # [bug fix P1 2026-08-29] ESCAPE '\\' 让 _escape_like() 的 % 和 _ 转义生效
         sql = """
             SELECT id, content, memory_type, source, timestamp, importance FROM chunks
             WHERE (valid_until IS NULL OR valid_until > ?)
-              AND content LIKE ?
+              AND content LIKE ? ESCAPE '\\'
         """
-        params = [asof, f"%{query}%"]
+        from memory import _escape_like  # [bug fix P1 2026-08-29] LIKE wildcard escape
+        params = [asof, f"%{_escape_like(query)}%"]
         if filters and "source" in filters:
             sql += " AND source = ?"
             params.append(filters["source"])
@@ -1621,7 +1623,7 @@ class MemoryCore:
         evidence_chunk_id=chunk_id, 见 3027 行). LEFT JOIN 让老 entity (无
         evidence relation) 保留 — c_meta NULL → 旧数据兼容.
         """
-        from memory import norm_memory_type, now  # lazy import — avoid circular at module load
+        from memory import norm_memory_type, now, _escape_like  # [bug fix P1 2026-08-29] _escape_like
 
         if " " in query.strip():
             tokens = query.strip().split()
@@ -1633,7 +1635,9 @@ class MemoryCore:
         for tok in tokens:
             if not tok or len(tok) < 2:
                 continue
-            like = f"%{tok}%"
+            # [bug fix P1 2026-08-29] escape LIKE wildcards (% _) so user's literal
+            # % and _ aren't interpreted as wildcards. ESCAPE '\\' must be in SQL.
+            like = f"%{_escape_like(tok)}%"
             # [7/21 fix] asof: entity 在 asof 时点有效 = valid_from <= asof AND (valid_until IS NULL OR > asof)
             # [P0 2026-08-11] LEFT JOIN relations (self-ref) → chunks 拿 metadata_json.
             sql = """
@@ -1643,7 +1647,7 @@ class MemoryCore:
                 LEFT JOIN chunks c ON c.id = r.evidence_chunk_id
                 WHERE (e.valid_from IS NULL OR e.valid_from <= ?)
                   AND (e.valid_until IS NULL OR e.valid_until > ?)
-                  AND (e.name LIKE ? OR e.aliases_json LIKE ?)
+                  AND (e.name LIKE ? ESCAPE '\\' OR e.aliases_json LIKE ? ESCAPE '\\')
             """
             params = [asof, asof, like, like]
             if filters and "type" in filters:
@@ -1817,16 +1821,17 @@ class MemoryCore:
         [P2 2026-08-11] temporal reasoning: 与 _meta_recall_with_conn 同语义.
         current_state / upcoming 加 SQL 约束; historical / soft_recency 默认.
         """
-        from memory import detect_query_intent, norm_memory_type, now  # lazy import — avoid circular at module load
+        from memory import detect_query_intent, norm_memory_type, now, _escape_like  # [bug fix P1 2026-08-29] _escape_like
 
         # [7/21 fix] asof: 只看 asof 时点仍有效的 chunk
         # [P0 2026-08-11] scoping: agent_id 走 json_extract SQL 过滤
+        # [bug fix P1 2026-08-29] ESCAPE '\\' 让 _escape_like() 的 % 和 _ 转义生效
         sql = """
             SELECT id, content, memory_type, source, timestamp, importance FROM chunks
             WHERE (valid_until IS NULL OR valid_until > ?)
-              AND content LIKE ?
+              AND content LIKE ? ESCAPE '\\'
         """
-        params = [asof, f"%{query}%"]
+        params = [asof, f"%{_escape_like(query)}%"]
         if filters and "source" in filters:
             sql += " AND source = ?"
             params.append(filters["source"])
@@ -1906,8 +1911,9 @@ class MemoryCore:
         )
         fts_params = [_fts_escape_query(query), asof, *fts_filter_params]
         # LIKE fallback 路：SELECT id, content, ..., 0.0 AS fts_score
-        like_sql = "SELECT id, content, memory_type, source, timestamp, importance, 0.0 AS fts_score FROM chunks WHERE " + like_where + " AND content LIKE ?"
-        like_params = [asof, *like_filter_params, f"%{query}%"]
+        # [bug fix P1 2026-08-29] ESCAPE '\' 让 _escape_like() 的 % 和 _ 转义生效
+        like_sql = "SELECT id, content, memory_type, source, timestamp, importance, 0.0 AS fts_score FROM chunks WHERE " + like_where + " AND content LIKE ? ESCAPE '\\'"
+        like_params = [asof, *like_filter_params, f"%{_escape_like(query)}%"]
 
         # UNION ALL 包 subquery (P1 #67/#69 避免) · 去重 (P1 #70 params 数量 严格匹配)
         union_sql = f"SELECT * FROM ({fts_sql} UNION ALL {like_sql}) ORDER BY 6 ASC, 5 DESC LIMIT ?"
@@ -1918,11 +1924,12 @@ class MemoryCore:
             rows = self._conn.execute(union_sql, union_params).fetchall()
         except Exception:
             # FTS5 不存在或 LIKE 单路 fallback (跨 schema 兼容)
+            # [bug fix P1 2026-08-29] ESCAPE '\' 让 _escape_like() 的 % 和 _ 转义生效
             rows = self._conn.execute(
                 "SELECT id, content, memory_type, source, timestamp, importance "
                 "FROM chunks WHERE (valid_until IS NULL OR valid_until > ?) "
-                "AND content LIKE ? ORDER BY importance DESC, timestamp DESC LIMIT ?",
-                (asof, f"%{query}%", top_k),
+                "AND content LIKE ? ESCAPE '\\' ORDER BY importance DESC, timestamp DESC LIMIT ?",
+                (asof, f"%{_escape_like(query)}%", top_k),
             ).fetchall()
 
         # 去重：同 id 优先 FTS5 (BM25 更智能排序) · 实际 LIMIT top_k
@@ -1956,7 +1963,7 @@ class MemoryCore:
         等任一时, 直接拉 user 所有 identity_fact 关系 (无需 query-token 重叠,
         这是关键 — '我住在哪里' token 与 '北京市大兴区亦庄镇' 无 2-gram 重叠).
         """
-        from memory import norm_memory_type, now  # lazy import — avoid circular at module load
+        from memory import norm_memory_type, now, _escape_like  # [bug fix P1 2026-08-29] _escape_like
 
         hits = []
         seen_ids = set()
@@ -2049,8 +2056,9 @@ class MemoryCore:
         params = []
         for t in tokens:
             # [P0 2026-08-11] 限定 e.id / e.name / e.summary — JOIN 后 'id' 歧义.
-            like_clauses.append("(e.name LIKE ? OR e.id LIKE ? OR e.summary LIKE ?)")
-            params.extend([f"%{t}%"] * 3)
+            # [bug fix P1 2026-08-29] ESCAPE '\' 让 _escape_like() 的 % 和 _ 转义生效
+            like_clauses.append("(e.name LIKE ? ESCAPE '\\' OR e.id LIKE ? ESCAPE '\\' OR e.summary LIKE ? ESCAPE '\\')")
+            params.extend([f"%{_escape_like(t)}%"] * 3)
 
         # 两轮: 高优先级 (强 fact), 后补 concept
         high_priority_kinds = ("identity_fact", "canonical_fact", "user")

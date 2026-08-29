@@ -78,6 +78,48 @@ def _fts_escape_query(query: str) -> str:
     return " ".join(cleaned.split())
 
 
+def _escape_like(query: str) -> str:
+    """[bug fix P1 2026-08-29] Escape SQLite LIKE wildcards in user query.
+
+    SQLite LIKE recognizes two wildcards:
+      - % = any sequence (including empty)
+      - _ = single character
+
+    Pre-fix: recall paths constructed `f"%{query}%"` and passed it as a LIKE
+    pattern parameter. SQLite then treated the user's literal `%` / `_` as
+    wildcards, causing:
+      - Over-recall (query='%' returns ALL chunks — effectively dumps DB)
+      - Missed matches (query='snake_case' = LIKE 'snakeXcase' misses content
+        where `_` is surrounded by characters that don't match the wildcard
+        position's exact semantics — e.g. multi-byte unicode adjacent to `_`)
+
+    Post-fix: escape `\\` first (so subsequent `%`/`_` aren't double-escaped),
+    then `%` and `_`. Caller MUST add `ESCAPE '\\'` to LIKE clauses that use
+    this helper's output, otherwise the escape chars are literal.
+
+    Examples:
+      "hello"             → "hello"
+      "100%"              → "100\\%"
+      "snake_case"        → "snake\\_case"
+      "foo_bar%baz"       → "foo\\_bar\\%baz"
+      "a\\%"              → "a\\\\\\%"  (literal backslash + literal percent)
+
+    Why this is necessary even though we already `_fts_escape_query` for FTS5:
+    FTS5 escape is strip-based (remove special chars), but LIKE escape is
+    escape-based (preserve chars but mark as literal). Different semantics.
+    """
+    if not query:
+        return ""
+    # Order matters: backslash first to avoid double-escaping the next step's
+    # added backslashes. (translate() processes chars independently so order
+    # of translation-table entries doesn't matter — but we still process in
+    # two passes for clarity / readability.)
+    escaped = query.replace("\\", "\\\\")  # literal \ → \\
+    escaped = escaped.replace("%", "\\%")  # literal % → \%
+    escaped = escaped.replace("_", "\\_")  # literal _ → \_
+    return escaped
+
+
 def _fts_sync_upsert(conn, chunk_rowid: int, content: str, source: str, session_id: str) -> None:
     """[8/16 E-2 重启 non-trigger] 手动 INSERT chunks_fts (跟随 chunks.rowid INTEGER).
 
