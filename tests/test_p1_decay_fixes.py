@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """test_p1_decay_fixes.py — F1+F2 fixes for P1 memory decay.
 
-[P1 2026-08-30] feat/p1-decay-fixes PR 配套测试, 修复 PR #23 cherry-pick 上
+[P1 2026-08-29] feat/p1-decay-fixes PR 配套测试, 修复 PR #23 cherry-pick 上
 defer 的两个 bug:
 
   F1 (BUG #4) — graph_only / meta_only / entity_only strategy 的 hit dict
