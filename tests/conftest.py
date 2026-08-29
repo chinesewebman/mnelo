@@ -85,6 +85,68 @@ if str(_TESTS_DIR) not in sys.path:
 import pytest  # noqa: E402
 
 
+# [8/29 PR-A Bundle 1] iso_now / iso_now_offset SQL functions 注册 helper.
+# 背景: schema.sql 用 `DEFAULT (iso_now())` / `DEFAULT (iso_now_offset(N))`,
+# 但 Memory.__init__ (memory_core.py:180-181) 才在 self._conn 上注册这两个函数.
+# 24 个 fail test (m29/m33/m34/m35/m36_*) 直接 sqlite3.connect(memory.DB_PATH)
+# 绕过 Memory(), conn 上没 iso_now → 任何 INSERT 触发 `unknown function: iso_now()`.
+# 修法: conftest 加 register_iso_now(conn) helper + session-scope autouse fixture
+# monkey-patch sqlite3.connect 让 raw connect 自动注册. pytest 跑完 patch 撤销, 不污染 prod.
+# [8/29 PR-A subagent review 修 P1-2] 用 memory.now("local") / now() 替代 datetime.now(),
+# 跟 memory_core.py:171-172/201-202 一致, 避免 MNELO_MEMORY_TIMEZONE 覆盖时 8h tz skew.
+def register_iso_now(conn) -> None:
+    """注册 iso_now / iso_now_offset SQL functions 到给定 sqlite3 conn.
+
+    Last-wins overwrite: 重复调用 sqlite3.create_function 会覆盖之前 impl
+    (不是 no-op, last-wins). 跟 memory_core.py:171-181 / 200-209 注册逻辑保持
+    一致 (memory.now + timedelta). 跨 timezone 安全: 跟随 prod memory.now() 解析.
+    """
+    from datetime import datetime, timedelta
+    from memory import now as _now
+
+    def _iso_now_local() -> str:
+        return _now("local")
+
+    def _iso_now_offset(days: int) -> str:
+        base = datetime.fromisoformat(_now("local"))
+        return (base + timedelta(days=days)).isoformat(timespec="seconds")
+
+    conn.create_function("iso_now", 0, _iso_now_local)
+    conn.create_function("iso_now_offset", 1, _iso_now_offset)
+
+
+@pytest.fixture(scope='session', autouse=True)
+def _patch_sqlite3_connect_for_iso_now():
+    """[8/29 PR-A Bundle 1] session 内 monkey-patch sqlite3.connect 让 raw connect
+    自动注册 iso_now. pytest session 跑完自动撤销 (session-scope fixture teardown).
+
+    Why autouse: 24 个 fail test 各自手动 sqlite3.connect(str(memory.DB_PATH)),
+    改每个 call site ~30 处量大易漏; autouse fixture session 内一次 patch 兜底.
+
+    Risk: 范围限定 session 内, pytest fixture teardown 自动 unpatch sqlite3.connect.
+    不会影响 live mnelo server / live DB / 任何 prod 代码 path.
+    """
+    import sqlite3 as _sqlite3
+    _orig_connect = _sqlite3.connect
+
+    def _patched_connect(*args, **kwargs):
+        conn = _orig_connect(*args, **kwargs)
+        # 默认 auto-register; last-wins overwrite
+        try:
+            register_iso_now(conn)
+        except _sqlite3.Error as exc:
+            # 注册失败给 warning, 避免下游 unknown function 错误信息淹没根因
+            import warnings
+            warnings.warn(f"register_iso_now failed: {exc}", RuntimeWarning, stacklevel=2)
+        return conn
+
+    _sqlite3.connect = _patched_connect
+    try:
+        yield
+    finally:
+        _sqlite3.connect = _orig_connect
+
+
 def pytest_collection_finish(session):
     """[Round 3 fix] collection 完后强制 rebind 每个 test 模块的 ValidationError attr.
 
