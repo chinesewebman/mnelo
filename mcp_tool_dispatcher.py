@@ -139,6 +139,7 @@ _TOOL_REGISTRY = {
     "memory_get_all": ("get_all", None),
     "memory_forget": ("forget", None),
     "memory_update": ("update", "new_chunk_id"),
+    "memory_update_entity": ("update_entity", "audit_id"),
     "memory_graph_query": ("graph_query", None),
     "memory_stats": ("stats", None),
     # === [8/15 E-3] Recall quality analytics (DESIGN Â§1.2 #6) ===
@@ -411,7 +412,20 @@ if _MCP_AVAILABLE:
             # handler returns {new_chunk_id, status}
             new_cid = data.get("new_chunk_id", "?") if isinstance(data, dict) else "?"
             old = args.get("old_id", "?")
-            return f"{_ECHO} {_ECHO_LABEL}    â»{new_cid}  (supersedes {old})"
+            return f"{_ECHO} {_ECHO_LABEL}    â{new_cid}  (supersedes {old})"
+        if name == "memory_update_entity":
+            # handler wraps {audit_id: result_dict, status: ok} where result_dict
+            # already contains target_id + status + updated_fields. So data["audit_id"]
+            # IS the result_dict — just print its summary fields.
+            inner = data.get("audit_id", {}) if isinstance(data, dict) else {}
+            if not isinstance(inner, dict):
+                inner = {}
+            tid = inner.get("target_id", "?")
+            status = inner.get("status", "?")
+            fields = inner.get("updated_fields", [])
+            audit_pk = inner.get("audit_id", "?")
+            tag = "[dry]" if status == "dry_run" else f"audit_pk={audit_pk}"
+            return f"{_ECHO} {_ECHO_LABEL}    ~{tid}  {status}  fields={fields}  {tag}"
         if name == "memory_relate":
             # handler returns {relation_id, status}
             src = args.get("source_id", "?")

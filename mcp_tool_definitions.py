@@ -230,6 +230,30 @@ TOOLS = [
         },
     },
     {
+        "name": "memory_update_entity",
+        "description": "In-place update of entity fields (name/summary/properties/aliases) by id. properties_json per-key MERGE; aliases_json REPLACE. Writes audit_log (pass_name=update_entity). dry_run=true by default — set false to commit.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_id": {"type": "string", "description": "Entity id (e.g. project:itmanager). Must exist + active."},
+                "name": {"type": "string", "description": "New display name. Omit = preserve."},
+                "summary": {"type": "string", "description": "New summary text. Omit = preserve."},
+                "properties": {
+                    "type": "object",
+                    "description": "Dict to MERGE per-key into existing properties_json. Omit = preserve. {} = no-op.",
+                },
+                "aliases": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "New aliases list — REPLACES aliases_json entirely. Omit = preserve.",
+                },
+                "reason": {"type": "string", "default": "updated", "description": "Audit log reason."},
+                "dry_run": {"type": "boolean", "default": True, "description": "If true, return plan without writing. Default true (safe)."},
+            },
+            "required": ["target_id"],
+        },
+    },
+    {
         "name": "memory_graph_query",
         "description": "图遍历: start_node 起 max_hops 跳内的子图.",
         "inputSchema": {

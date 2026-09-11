@@ -134,6 +134,7 @@ _TOOL_REGISTRY = {
     "memory_get_all": ("get_all", None),
     "memory_forget": ("forget", None),
     "memory_update": ("update", "new_chunk_id"),
+    "memory_update_entity": ("update_entity", "audit_id"),
     "memory_graph_query": ("graph_query", None),
     "memory_stats": ("stats", None),
     # === [8/15 E-3] Recall quality analytics (DESIGN §1.2 #6) ===

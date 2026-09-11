@@ -1308,6 +1308,224 @@ class MemoryCore:
         _metrics_registry().forget_total.inc(kind=target_kind or "unknown")
         return {"edges_invalidated": edges_invalidated, "queued_purge": 1}
 
+    # === [2026-09-11 E-route] memory_update_entity MCP tool ====================
+    # 修复 MCP 层 mutation gap: 之前只能 forget+remember 才能改 entity (会丢历史).
+    # 现在允许 in-place UPDATE entities 表的 name/summary/properties_json/aliases_json,
+    # 走 _txn() + 写 audit_log (pass_name='update_entity'). properties_json per-key MERGE.
+    # 别名数组是 REPLACE (一次性换名场景少见, caller 一次传完整新 list).
+
+    def update_entity(
+        self,
+        target_id: str,
+        name: Optional[str] = None,
+        summary: Optional[str] = None,
+        properties: Optional[Dict] = None,  # per-key MERGE into properties_json
+        aliases: Optional[List[str]] = None,  # REPLACE aliases_json list
+        reason: str = "updated",
+        dry_run: bool = True,
+    ) -> Dict:
+        """In-place update of entity fields by id. Writes audit_log. Dry-run by default.
+
+        [2026-09-11 E-route] New MCP tool to fix the property-update gap exposed when
+        registering 18 project_registry entities — properties_json was set at creation
+        but there was no way to amend without forget+remember (loses history + audit trail).
+
+        Args:
+            target_id: Entity id (e.g. 'project:itmanager'). Must exist + active.
+            name: New display name. None = preserve.
+            summary: New summary text. None = preserve.
+            properties: Dict to MERGE into existing properties_json (per-key, deep).
+                None = preserve. {} = no-op on properties (preserved).
+            aliases: New aliases list (REPLACES aliases_json entirely). None = preserve.
+            reason: Audit log reason string.
+            dry_run: If True, compute plan + return without writing. Default True (safe).
+
+        Returns:
+            Dict with keys: target_id, status ('updated' or 'dry_run'), updated_fields
+            (list of field names actually changed), before (snapshot of changed fields),
+            after (new snapshot), audit_id (only on real update), dry_run (bool).
+            Raises ValueError on invalid id / not found / no fields to update.
+        """
+        from memory import _enforce_entity_namespace_guard, _txn, now  # lazy import — P1 #63 circular avoid
+
+        # [7/19 P1-1] id 格式验证
+        target_id = validate_id(target_id, "target_id")
+
+        # Snapshot existing row BEFORE any change (for audit + dry_run reporting)
+        existing = self._conn.execute(
+            "SELECT id, kind, name, summary, properties_json, aliases_json, "
+            "updated_at, valid_until FROM entities WHERE id = ? AND valid_until IS NULL",
+            (target_id,),
+        ).fetchone()
+        if existing is None:
+            raise ValueError(
+                f"entity not found or already soft-deleted: target_id={target_id!r}"
+            )
+
+        # Validate at least one field provided
+        update_fields = []
+        if name is not None:
+            update_fields.append("name")
+        if summary is not None:
+            update_fields.append("summary")
+        if properties is not None:
+            update_fields.append("properties_json")
+        if aliases is not None:
+            update_fields.append("aliases_json")
+        if not update_fields:
+            raise ValueError(
+                "update_entity requires at least one of: name, summary, properties, aliases"
+            )
+
+        # [7/19 P1-2 + P1-5] Sanitize name/summary via validate_entity_payload so
+        # control chars / bidi overrides / size limits are enforced (same path as
+        # remember + _upsert_entity). Reuse existing kind + id from snapshot.
+        sanitized_name = name
+        sanitized_summary = summary
+        if name is not None or summary is not None:
+            synthetic = {
+                "id": target_id,
+                "kind": existing["kind"],
+                "name": name if name is not None else existing["name"],
+                "summary": summary if summary is not None else existing["summary"],
+                "importance": 0.5,  # not changed in update; placeholder for validate
+            }
+            cleaned = validate_entity_payload(synthetic)
+            sanitized_name = cleaned["name"] if name is not None else None
+            sanitized_summary = cleaned["summary"] if summary is not None else None
+            # [8/8 P1] namespace guard — defends against TOKEN_* / anno:* impersonation
+            # on name change (e.g. user passes name="TOKEN_C_xxx" hoping to alias a token).
+            # Kind + id unchanged, so guard only re-checks the new name for "concept +
+            # >50 chars" path (other namespace checks irrelevant since id stays same).
+            _enforce_entity_namespace_guard(
+                {
+                    "id": target_id,
+                    "kind": existing["kind"],
+                    "name": cleaned["name"],
+                }
+            )
+
+        # Build the change plan (using sanitized values, not raw input)
+        before = {"name": existing["name"], "summary": existing["summary"]}
+        if properties is not None:
+            try:
+                existing_props = (
+                    json.loads(existing["properties_json"])
+                    if existing["properties_json"]
+                    else {}
+                )
+            except (json.JSONDecodeError, TypeError):
+                existing_props = {}
+            merged_props = {**existing_props, **properties}
+            before["properties_json"] = existing_props
+            after_props = merged_props
+        else:
+            after_props = None
+
+        if aliases is not None:
+            try:
+                existing_aliases = (
+                    json.loads(existing["aliases_json"])
+                    if existing["aliases_json"]
+                    else []
+                )
+            except (json.JSONDecodeError, TypeError):
+                existing_aliases = []
+            before["aliases_json"] = existing_aliases
+            after_aliases = list(aliases)  # copy
+        else:
+            after_aliases = None
+
+        after = {
+            "name": sanitized_name if sanitized_name is not None else existing["name"],
+            "summary": (
+                sanitized_summary if sanitized_summary is not None else existing["summary"]
+            ),
+        }
+        if after_props is not None:
+            after["properties_json"] = after_props
+        if after_aliases is not None:
+            after["aliases_json"] = after_aliases
+
+        # Dry-run: return plan, no writes
+        if dry_run:
+            return {
+                "target_id": target_id,
+                "status": "dry_run",
+                "updated_fields": update_fields,
+                "before": before,
+                "after": after,
+                "dry_run": True,
+            }
+
+        # Real update path — _txn wrapped for atomicity
+        _now = now()
+        import uuid as _uuid
+
+        with _txn(self._conn):
+            # Build dynamic SET clause (only fields being updated). Use sanitized values.
+            set_clauses = []
+            params: List = []
+            if sanitized_name is not None:
+                set_clauses.append("name = ?")
+                params.append(sanitized_name)
+            if sanitized_summary is not None:
+                set_clauses.append("summary = ?")
+                params.append(sanitized_summary)
+            if properties is not None:
+                set_clauses.append("properties_json = ?")
+                params.append(json.dumps(after_props, ensure_ascii=False, sort_keys=True))
+            if aliases is not None:
+                set_clauses.append("aliases_json = ?")
+                params.append(json.dumps(after_aliases, ensure_ascii=False))
+            set_clauses.append("updated_at = iso_now()")
+            params.append(target_id)
+
+            self._conn.execute(
+                f"UPDATE entities SET {', '.join(set_clauses)} "
+                f"WHERE id = ? AND valid_until IS NULL",
+                params,
+            )
+
+            # audit_log entry — H-1 §3 schema compliance
+            run_id = f"update_entity-{_now}-{_uuid.uuid4().hex[:8]}"
+            before_json = json.dumps(before, ensure_ascii=False, sort_keys=True)
+            after_json = json.dumps(after, ensure_ascii=False, sort_keys=True)
+            self._conn.execute(
+                """
+                INSERT INTO audit_log
+                    (run_id, pass_name, action_type, ref_type, ref_id,
+                     before_json, after_json, confidence, llm_used, status,
+                     created_at, revert_sql)
+                VALUES (?, 'update_entity', 'update_fields', 'entity', ?,
+                        ?, ?, 1.0, 0, 'applied',
+                        ?, ?)
+                """,
+                (
+                    run_id,
+                    target_id,
+                    before_json,
+                    after_json,
+                    _now,
+                    # Revert SQL: reconstruct pre-image UPDATE
+                    f"UPDATE entities SET {', '.join(set_clauses)} "
+                    f"WHERE id = ? AND valid_until IS NULL",
+                ),
+            )
+            audit_id = self._conn.execute(
+                "SELECT last_insert_rowid() AS id"
+            ).fetchone()["id"]
+
+        return {
+            "target_id": target_id,
+            "status": "updated",
+            "updated_fields": update_fields,
+            "before": before,
+            "after": after,
+            "audit_id": audit_id,
+            "dry_run": False,
+        }
+
     # === R = Recall (4 路 + RRF) ===================
 
     # type: ignore
