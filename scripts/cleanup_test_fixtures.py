@@ -35,6 +35,7 @@ Exit codes:
   1 = script error
   2 = user cancelled
 """
+
 import argparse
 import json
 import sqlite3
@@ -50,21 +51,21 @@ sys.path.insert(0, str(REPO))
 # Source-prefix patterns that indicate test fixtures (NOT real production data)
 # Each pattern is matched as: source LIKE 'pattern%'
 TEST_SOURCE_PATTERNS = [
-    "test_cov",          # round6 test coverage work
-    "test:e2e_",         # end-to-end test logs
-    "update:test_",      # test_update fixtures
+    "test_cov",  # round6 test coverage work
+    "test:e2e_",  # end-to-end test logs
+    "update:test_",  # test_update fixtures
     "identity_fact_manager",  # identity_fact_manager test runs (lots of duplicate rows)
-    "upgrade-log:",      # one-off upgrade log entries
-    "r8_",               # r8 test pattern
+    "upgrade-log:",  # one-off upgrade log entries
+    "r8_",  # r8 test pattern
 ]
 
 # ID-prefix patterns
 TEST_ID_PATTERNS = [
-    "chunk:e2e-",        # e2e chunk fixtures
-    "host:test_crud",    # test CRUD entity hosts
-    "loop:m5-forget-",   # m5 forget-loop test fixtures (persistent since 8/24)
-    "loop:e2e-",         # e2e loop test fixtures (persistent since 8/24)
-    "loop:m5-",          # m5-* test loops
+    "chunk:e2e-",  # e2e chunk fixtures
+    "host:test_crud",  # test CRUD entity hosts
+    "loop:m5-forget-",  # m5 forget-loop test fixtures (persistent since 8/24)
+    "loop:e2e-",  # e2e loop test fixtures (persistent since 8/24)
+    "loop:m5-",  # m5-* test loops
 ]
 
 # ID-prefix patterns that ONLY match if kind matches expected test kind
@@ -110,56 +111,83 @@ def find_test_fixtures(conn) -> dict:
     # Also catch id-based patterns (host:test_crud, chunk:e2e-)
     id_clauses = " OR ".join(["id LIKE ?" for _ in TEST_ID_PATTERNS])
     id_params = [f"{p}%" for p in TEST_ID_PATTERNS]
-    more_entities = conn.execute(f"""
+    more_entities = (
+        conn.execute(
+            f"""
         SELECT id, kind, name, importance, source
         FROM entities
         WHERE valid_until IS NULL
           AND ({id_clauses})
-          AND id NOT IN ({','.join('?' * len(entities))})
-    """, id_params + [e[0] for e in entities]).fetchall() if entities else conn.execute(f"""
+          AND id NOT IN ({",".join("?" * len(entities))})
+    """,
+            id_params + [e[0] for e in entities],
+        ).fetchall()
+        if entities
+        else conn.execute(
+            f"""
         SELECT id, kind, name, importance, source
         FROM entities
         WHERE valid_until IS NULL
           AND ({id_clauses})
-    """, id_params).fetchall()
+    """,
+            id_params,
+        ).fetchall()
+    )
 
-    more_chunks = conn.execute(f"""
+    more_chunks = (
+        conn.execute(
+            f"""
         SELECT id, source, importance, memory_type
         FROM chunks
         WHERE valid_until IS NULL
           AND ({id_clauses})
-          AND id NOT IN ({','.join('?' * len(chunks))})
-    """, id_params + [c[0] for c in chunks]).fetchall() if chunks else conn.execute(f"""
+          AND id NOT IN ({",".join("?" * len(chunks))})
+    """,
+            id_params + [c[0] for c in chunks],
+        ).fetchall()
+        if chunks
+        else conn.execute(
+            f"""
         SELECT id, source, importance, memory_type
         FROM chunks
         WHERE valid_until IS NULL
           AND ({id_clauses})
-    """, id_params).fetchall()
+    """,
+            id_params,
+        ).fetchall()
+    )
 
     entities.extend(more_entities)
     chunks.extend(more_chunks)
 
     # Kind-gated patterns (only match if id pattern AND kind match)
     if TEST_ID_KIND_PATTERNS:
-        kind_clauses = " OR ".join([
-            "(id LIKE ? AND kind = ?)"
-            for _ in TEST_ID_KIND_PATTERNS
-        ])
+        kind_clauses = " OR ".join(["(id LIKE ? AND kind = ?)" for _ in TEST_ID_KIND_PATTERNS])
         kind_params = []
         for pat, kind in TEST_ID_KIND_PATTERNS:
             kind_params.extend([f"{pat}%", kind])
-        more_kind_entities = conn.execute(f"""
+        more_kind_entities = (
+            conn.execute(
+                f"""
             SELECT id, kind, name, importance, source
             FROM entities
             WHERE valid_until IS NULL
               AND ({kind_clauses})
-              AND id NOT IN ({','.join('?' * len(entities))})
-        """, kind_params + [e[0] for e in entities]).fetchall() if entities else conn.execute(f"""
+              AND id NOT IN ({",".join("?" * len(entities))})
+        """,
+                kind_params + [e[0] for e in entities],
+            ).fetchall()
+            if entities
+            else conn.execute(
+                f"""
             SELECT id, kind, name, importance, source
             FROM entities
             WHERE valid_until IS NULL
               AND ({kind_clauses})
-        """, kind_params).fetchall()
+        """,
+                kind_params,
+            ).fetchall()
+        )
         entities.extend(more_kind_entities)
 
     return {
@@ -179,33 +207,38 @@ def forget_entity(conn, entity_id: str, now_ts: str) -> None:
     conn.execute("UPDATE entities SET valid_until=? WHERE id=? AND valid_until IS NULL", (now_ts, entity_id))
 
     # Cascade to relations referencing this entity
-    conn.execute("""
+    conn.execute(
+        """
         UPDATE relations SET valid_until=?
         WHERE (source_id=? OR target_id=?) AND valid_until IS NULL
-    """, (now_ts, entity_id, entity_id))
+    """,
+        (now_ts, entity_id, entity_id),
+    )
 
     # Add to purged_queue (30-day grace)
-    conn.execute("INSERT INTO purged_queue (target_id, target_kind, purged_at, done) VALUES (?, 'entity', ?, 0)",
-                 (entity_id, now_ts))
+    conn.execute("INSERT INTO purged_queue (target_id, target_kind, purged_at, done) VALUES (?, 'entity', ?, 0)", (entity_id, now_ts))
 
     # Audit log
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO audit_log (
             run_id, pass_name, action_type, ref_type, ref_id,
             before_json, after_json, confidence, status, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        f"test_fixture_cleanup-{now_ts}",
-        "forced_forget",
-        "explicit_softdelete",
-        "entity",
-        entity_id,
-        json.dumps({"source": "test_fixture"}),
-        json.dumps({"reason": "test-fixture cleanup 2026-08-29", "forgotten_at": now_ts}),
-        1.0,
-        "applied",
-        now_ts,
-    ))
+    """,
+        (
+            f"test_fixture_cleanup-{now_ts}",
+            "forced_forget",
+            "explicit_softdelete",
+            "entity",
+            entity_id,
+            json.dumps({"source": "test_fixture"}),
+            json.dumps({"reason": "test-fixture cleanup 2026-08-29", "forgotten_at": now_ts}),
+            1.0,
+            "applied",
+            now_ts,
+        ),
+    )
 
 
 def forget_chunk(conn, chunk_id: str, now_ts: str) -> None:
@@ -216,26 +249,28 @@ def forget_chunk(conn, chunk_id: str, now_ts: str) -> None:
 
     conn.execute("UPDATE chunks SET valid_until=? WHERE id=? AND valid_until IS NULL", (now_ts, chunk_id))
 
-    conn.execute("INSERT INTO purged_queue (target_id, target_kind, purged_at, done) VALUES (?, 'chunk', ?, 0)",
-                 (chunk_id, now_ts))
+    conn.execute("INSERT INTO purged_queue (target_id, target_kind, purged_at, done) VALUES (?, 'chunk', ?, 0)", (chunk_id, now_ts))
 
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO audit_log (
             run_id, pass_name, action_type, ref_type, ref_id,
             before_json, after_json, confidence, status, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        f"test_fixture_cleanup-{now_ts}",
-        "forced_forget",
-        "explicit_softdelete",
-        "chunk",
-        chunk_id,
-        json.dumps({"source": "test_fixture"}),
-        json.dumps({"reason": "test-fixture cleanup 2026-08-29", "forgotten_at": now_ts}),
-        1.0,
-        "applied",
-        now_ts,
-    ))
+    """,
+        (
+            f"test_fixture_cleanup-{now_ts}",
+            "forced_forget",
+            "explicit_softdelete",
+            "chunk",
+            chunk_id,
+            json.dumps({"source": "test_fixture"}),
+            json.dumps({"reason": "test-fixture cleanup 2026-08-29", "forgotten_at": now_ts}),
+            1.0,
+            "applied",
+            now_ts,
+        ),
+    )
 
 
 def main() -> int:
@@ -252,6 +287,7 @@ def main() -> int:
     is_dry_run = not args.yes
 
     from config import config as _cfg
+
     DB_PATH = Path(_cfg.db_path)
     conn = sqlite3.connect(str(DB_PATH))
     conn.create_function("iso_now", 0, iso_now)

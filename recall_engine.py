@@ -11,7 +11,8 @@ import json
 import math
 import re
 import sqlite3
-from typing import Dict, List
+from datetime import datetime
+from typing import Dict, List, Optional
 
 from embedder import embed_bytes
 from metrics import get_registry as _metrics_registry
@@ -322,6 +323,20 @@ class RecallEngine:
                 _reg.recall_latency.observe(lane_ms / 1000.0, method=lane)
         _reg.recall_hits.inc(result="empty" if not results else "non_empty")
         _reg.recall_top_k.inc(k=str(top_k))
+
+        # [P1 2026-08-29] Memory decay — recency-aware scaling 在最终 results 上.
+        # 只动排序权重 (rrf_score 缩放), 不删 chunk, 不改 content.
+        # 共存: 与 agent_id filter 正交 — filter 已先一步筛过,
+        # decay 只对剩下的 chunk 应用排序权重. 用 timestamp (写入时间) 算 idle,
+        # 不用 last_recalled — last_recalled 每次 recall 都刷新, 会让所有 chunk
+        # 看起来都是 idle=0 → 全部拿 1.5× ceiling, 失去新旧语义.
+        # [P1-bugfix 2026-08-30] 修 PR #24 设计偏差: 原 `last_recalled or timestamp`
+        # fallback 链让 last_recalled 优先, 等价于"看 recall 时间不看写入时间", 违反
+        # recency 语义. 现统一用 timestamp — 内容创建时间 = decay 唯一基准.
+        # [cherry-pick 2026-08-29] 从 082a7f8 dirty 移植到 82ce284, call site
+        # 从 MemoryCore.recall() 移到 RecallEngine.recall() 末尾 (4-lane RRF
+        # 融合之后, metrics/_log_recall 之前 — 排序权重在 audit 落盘前确定).
+        results = self._apply_decay_to_hits(results, now_iso=now())
 
         #  recall audit
         self._log_recall(query, results, graph_hops, latency_ms)
@@ -1102,11 +1117,23 @@ class RecallEngine:
                 "method": r.get("method"),  # backward-compat: 第一路
                 "methods": r.get("methods", [r.get("method")] if r.get("method") else []),
                 "distance": r.get("distance"),  # 0.0-2.0 越小越相似 (vector_only)
-                "rrf_score": r.get("rrf_score"),  # RRF 融合分数 (rrf strategy)
+                "rrf_score": r.get("rrf_score"),  # RRF 融合分数 (decay 前, 来自 _rrf_fuse)
+                # [P1 2026-08-30 C2-A] decay_score: decay 后实际排序分 (base × _decay_factor).
+                # 跟 rrf_score 并存: analytics 可对比 'decay 前后' 变化.
+                "decay_score": r.get("decay_score"),
                 "importance": r.get("importance"),
+                # [P1 2026-08-29] F2 fix: decay 缩放因子写入 audit log, 让 analytics
+                # 能分析 '老记忆被衰减多少'. 配合下方 pop, hit dict 出 recall 时干净.
+                "_decay_factor": r.get("_decay_factor"),
             }
             for i, r in enumerate(results[:5])  # top-5
         ]
+        # [P1 2026-08-30 C2-A] F2 fix: pop 所有下划线前缀 debug 字段, 避免泄漏到
+        # MCP client / REST API 响应体. _decay_factor 是 _apply_decay_to_hits
+        # 注入的诊断字段, 仅 audit log 需要, hit dict 本身对外应干净.
+        # 注: decay_score 是 client-facing 字段 (无下划线), 不 pop.
+        for r in results:
+            r.pop("_decay_factor", None)
         self._conn.execute(
             """
             INSERT INTO recall_log (query, results_json, graph_hops, latency_ms, created_at, recall_details_json)
@@ -1146,3 +1173,151 @@ class RecallEngine:
             "method": method,
             **extra,
         }
+
+    # === [P1 2026-08-29 cherry-pick] Memory decay — recall-time recency scaling ===
+    # 从 082a7f8 dirty memory.py 移植; 4件套 + 调点全部搬到 RecallEngine 类上.
+    # constants 挂在 RecallEngine (而非 Memory), 让静态方法不依赖跨类 Memory.xxx 引用 —
+    # 也避开 recall_engine.py → memory.py 的循环 import 风险.
+
+    # 半衰期越长, idle 影响越小 (procedure 永久, half_life=inf → factor 恒为 1.5).
+    # 缺省 / 未知 memory_type → 168h (7d).
+    _MEMORY_TYPE_DECAY_HALF_LIFE_HOURS: Dict[str, float] = {
+        # ephemeral 24h: 草稿/临时 — 几小时没用就明显下沉
+        "ephemeral": 24.0,
+        # episode 336h (14d): 短期事件 — 两周内用就浮顶, 超一月自然下沉
+        "episode": 336.0,
+        # fact 720h (30d): 中长期事实 — 一月内多次提浮顶
+        "fact": 720.0,
+        # preference 2160h (90d): 主人偏好 — 季度级稳定
+        "preference": 2160.0,
+        # decision 2160h (90d): 决策 — 季度级稳定
+        "decision": 2160.0,
+        # procedure float('inf') → 衰减 factor 永远 = 1.5 (procedure 不衰减)
+        "procedure": float("inf"),
+    }
+    # 缺省 half-life (未知 / 未识别 memory_type) — 7d
+    _DEFAULT_DECAY_HALF_LIFE_HOURS: float = 168.0
+
+    @staticmethod
+    def _recency_decay_factor(idle_hours: float, memory_type: Optional[str]) -> float:
+        """[P1 2026-08-29] 软衰减因子 — recall 排序权重乘法器.
+
+        Formula: factor = 1 + 0.5 * exp(-idle_hours / half_life)
+          - idle_hours = 0 (刚 recall / 刚 remember)  → factor = 1.5 (浮顶)
+          - idle_hours → ∞                              → factor → 1.0 (基线)
+          - half_life = inf (e.g. procedure)            → factor = 1.5 (常数, 不衰减)
+
+        Args:
+            idle_hours: 距 last_recalled (fallback timestamp) 的小时数.
+                负数 (clock skew) → clamp 到 0, factor = 1.5.
+            memory_type: 已知 fact/preference/episode/decision/procedure/ephemeral;
+                None / 未知 / 非法值 → 用 _DEFAULT_DECAY_HALF_LIFE_HOURS.
+
+        Returns:
+            float ∈ [1.0, 1.5] — 排序权重乘法器.
+        """
+        if idle_hours < 0:
+            idle_hours = 0.0
+        half_life = RecallEngine._MEMORY_TYPE_DECAY_HALF_LIFE_HOURS.get(memory_type or "", RecallEngine._DEFAULT_DECAY_HALF_LIFE_HOURS)
+        if half_life == float("inf"):
+            # procedure / 永久: 不衰减, factor 恒为 1.5
+            return 1.5
+        # 数值边界: idle_hours/half_life 过大 → exp 趋近 0 → factor → 1.0
+        return 1.0 + 0.5 * math.exp(-idle_hours / half_life)
+
+    def _apply_decay_to_hits(self, results: List[Dict], now_iso: str) -> List[Dict]:
+        """[P1 2026-08-29] 给每条 hit 应用 recency-aware scaling, 重排 top_k.
+
+        公式: decay_score = rrf_score * _recency_decay_factor(idle_hours, memory_type)
+          - rrf_score: 路 1/3/4 (RRF 融合) / vector_only / graph_only 直接吃 raw_score
+          - 实体 hit (chunk_id 以 'entity:' 开头) → 不衰减 (实体本身没 timestamp/half_life 概念)
+          - chunk hit → 走 decay
+
+        Args:
+            results: 排序后的 hits (top_k 已切片).
+            now_iso: 当前时间 ISO 字符串 (用于算 idle_hours); 测试可注入 fake now.
+
+        Returns:
+            重排后的 hits (新加 decay_score 字段; 不覆写 rrf_score; 添加 _decay_factor 调试字段).
+            hit dict 字段语义:
+              - rrf_score: RRF 融合的原始分数 (decay 前), 来自 _rrf_fuse.
+                          没经过 decay 的 rrf_score 也保留 (向后兼容).
+              - decay_score: base_score * _recency_decay_factor(...), decay 后的实际排序分.
+              - _decay_factor: 缩放因子 [1.0, 1.5], 仅 audit log, F2 fix 会 pop.
+
+        边界:
+          - results 空 → 直接返回 []
+          - chunk 缺 last_recalled → fallback 到 timestamp
+          - chunk timestamp 解析失败 → factor=1.5 (安全 fallback, 不抛)
+          - memory_type 未知 / None → 走 _DEFAULT_DECAY_HALF_LIFE_HOURS
+        """
+        if not results:
+            return results
+        try:
+            now_dt = datetime.fromisoformat(now_iso)
+        except (ValueError, TypeError):
+            # 防御性: now_iso 解析失败 → 不衰减, 直接返回原序
+            return results
+
+        # [P1 2026-08-29] F1 fix: graph_only / meta_only / entity_only strategy
+        # 的 hit dict 不走 _rrf_fuse, 既无 rrf_score 也无 distance.
+        # 显式注入 base_score=importance, 让 decay 拿得到 base. 优先级:
+        # base_score > rrf_score > distance > 兜底 1.0 (见下方).
+        # vector_only 走 _vector_recall 注入 distance, rrf 走 _rrf_fuse 注入 rrf_score,
+        # 命中相应分支不需要再补 — 防御性 if 判断避免覆盖已有字段.
+        for r in results:
+            if "base_score" not in r and "rrf_score" not in r and "distance" not in r:
+                r["base_score"] = float(r.get("importance", 0.5))
+
+        scored = []
+        for r in results:
+            cid = r.get("chunk_id", "")
+            # 实体 hit: 'entity:<id>' — 无 timestamp 概念, 不衰减
+            if cid.startswith("entity:"):
+                factor = 1.0
+            else:
+                # chunk hit: 拿 last_recalled (fallback timestamp) + memory_type
+                row = self._conn.execute(
+                    "SELECT last_recalled, timestamp, memory_type FROM chunks WHERE id = ?",
+                    (cid,),
+                ).fetchone()
+                if not row:
+                    # chunk 已不存在 (RRF 残留) — 跳过衰减, factor=1.0
+                    factor = 1.0
+                else:
+                    last_iso = row["timestamp"]  # [P1-bugfix 2026-08-30] use timestamp (写入时间), not last_recalled — last_recalled 每次 recall 都刷新会 idempotent 全部变 idle=0
+                    memory_type = row["memory_type"]
+                    try:
+                        last_dt = datetime.fromisoformat(last_iso)
+                        idle_hours = (now_dt - last_dt).total_seconds() / 3600.0
+                    except (ValueError, TypeError):
+                        # timestamp 解析失败 → 安全 factor=1.5 (新写入不衰减)
+                        idle_hours = 0.0
+                    factor = self._recency_decay_factor(idle_hours, memory_type)
+            # 缩放 rrf_score / raw 评分
+            # [P1 2026-08-29] F1 fix: 优先级 base_score → rrf_score → distance.
+            # base_score 由 graph_only/meta_only/entity_only strategy 分支显式
+            # 注入 (值=importance, 范围 [0, 1]); rrf_score 由 _rrf_fuse 写入;
+            # distance 由 vector_recall 写入. 全部 ≥ 0 → decay 排序有效.
+            if "base_score" in r:
+                base_score = float(r["base_score"])
+            elif "rrf_score" in r:
+                base_score = float(r["rrf_score"])
+            elif "distance" in r:
+                # vector_only: distance ∈ [0, 2], 0 最好. 转成 score = 2 - distance, 然后缩放
+                base_score = max(0.0, 2.0 - float(r["distance"]))
+            else:
+                # 兜底: 入口已兜底注入 base_score=importance, 此处不应触发.
+                # 保留 1.0 作为防御性 (单元测试可构造 mock hit, 漏注入时让 sort 不退化).
+                base_score = 1.0
+            r["_decay_factor"] = factor
+            # [P1 2026-08-30 C2-A] 不再覆写 rrf_score — 保留原始 RRF 融合分 (decay 前),
+            # 写 decay_score 字段 decay 后的实际排序分. 这样:
+            #   (1) audit log 可以对比 rrf_score (前) vs decay_score (后)
+            #   (2) rrf_score 字段语义不变 (向前兼容 PR #23)
+            #   (3) sort key 用 decay_score
+            r["decay_score"] = base_score * factor
+            scored.append(r)
+        # 重新按 decay_score 降序排 (decay 后的实际排名)
+        scored.sort(key=lambda x: -x["decay_score"])
+        return scored
