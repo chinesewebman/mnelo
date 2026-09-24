@@ -595,6 +595,11 @@ class UsearchIndex(SearchIndex):
 
     # -------- [8/8 根因修复] 启动预检 + 自动重建 (替代盲 load) --------
 
+    # [9/24] 启动路径自动重建的代价上界. live 实测 276 条约 55s (含 bge 模型冷加载),
+    # 即 1000 条 ≈3 分钟启动阻塞. 索引文件缺失是异常状态, 大库上宁可降级 + 告警,
+    # 也不静默把启动卡住几分钟.
+    _MAX_STARTUP_REBUILD_CHUNKS = 1000
+
     def _init_from_disk(self) -> None:
         """加载磁盘索引前先校验, 校验不过自动重建.
 
@@ -608,6 +613,32 @@ class UsearchIndex(SearchIndex):
         由此启动永不因坏索引 abort, 也永不静默漏数据.
         """
         if not self._index_path.exists():
+            # [9/24 根因修复] "文件不在" ≠ "全新库". 旧实现一律 return, 于是索引文件
+            # 一旦丢失 (改名/误删/崩溃未落盘) 就地静默死亡 — SQLite 里几千个 chunk
+            # 在, 向量通道却是空的, 且启动无任何告警. 实测 8/12 索引路径改名后
+            # live 库哑了一个月, 今天重启才暴露.
+            # SQLite 有 active chunk 就说明该有索引 → 重建. 真·全新库仍是 no-op.
+            # 重建失败只降级不 abort: 本方法契约是"启动永不因坏索引 abort"(见 docstring),
+            # 因缺文件而拒绝启动, 比降级运行更糟.
+            n_active = self._active_chunk_count()
+            if n_active > self._MAX_STARTUP_REBUILD_CHUNKS:
+                # 代价上界: 大库全量重嵌入会把启动卡住几分钟且无人知晓. 宁可
+                # 降级 + 大声告警, 让运维用 rebuild_index.py 择机跑.
+                logger.error(
+                    f"[usearch] 索引文件缺失, {n_active} 个 active chunk 超过启动重建上界 "
+                    f"{self._MAX_STARTUP_REBUILD_CHUNKS} — 跳过自动重建以免阻塞启动, "
+                    f"本次以空索引启动 (向量召回不可用). 请择机手动: "
+                    f"scripts/rebuild_index.py --backend usearch --fresh"
+                )
+            elif n_active:
+                try:
+                    self._auto_rebuild(["索引文件缺失但 SQLite 仍有 active chunk"])
+                except Exception as e:
+                    logger.error(
+                        f"[usearch] 索引文件缺失且自动重建失败 ({type(e).__name__}: {e}) — "
+                        f"本次以空索引启动, 向量召回不可用. 手动兜底: "
+                        f"scripts/rebuild_index.py --backend usearch --fresh"
+                    )
             return  # 全新索引, 无磁盘状态
         problems = self._validate_index_header()
         stale = False if problems else self._is_stale()
@@ -664,6 +695,12 @@ class UsearchIndex(SearchIndex):
             return []
         return [r["id"] for r in self._conn.execute("SELECT id FROM chunks WHERE valid_until IS NULL ORDER BY id")]
 
+    def _active_chunk_count(self) -> int:
+        """SQLite 里 active chunk 条数 (启动路径用; 只 count, 不物化全表 id)."""
+        if not self._chunks_table_exists():
+            return 0
+        return int(self._conn.execute("SELECT count(*) FROM chunks WHERE valid_until IS NULL").fetchone()[0])
+
     def _chunks_table_exists(self) -> bool:
         row = self._conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chunks'").fetchone()
         return bool(row)
@@ -706,6 +743,8 @@ class UsearchIndex(SearchIndex):
         (无 chunks 表 / embedder 挂 / 全 0 向量) → 抛 RuntimeError 手动兜底."""
         import time as _t
 
+        # [9/24] 记录耗时: 缺文件触发的重建会阻塞启动路径, 运维要能看出代价.
+        t0 = _t.time()
         logger.warning(f"[usearch] 索引 {self._index_path} 预检不过 → 自动重建. 原因: {'; '.join(reasons)}")
         if self._index_path.exists():
             # with_suffix 会把 ".index" 当后缀替换掉 → 必须用 with_name 追加保留原名
@@ -741,10 +780,11 @@ class UsearchIndex(SearchIndex):
             raise RuntimeError(f"[usearch] 自动重建 0/{len(active)} 向量 — embedder 或 DB 异常. 请手动: scripts/rebuild_index.py --backend usearch --fresh")
         self._index.save(self._index_path)
         self._write_sidecar()
+        elapsed = _t.time() - t0
         if failed:
-            logger.warning(f"[usearch] 自动重建完成: added={added}, failed={failed}")
+            logger.warning(f"[usearch] 自动重建完成: added={added}, failed={failed}, 耗时 {elapsed:.1f}s")
         else:
-            logger.info(f"[usearch] 自动重建完成: {added} 向量 → {self._index_path.name}")
+            logger.info(f"[usearch] 自动重建完成: {added} 向量, 耗时 {elapsed:.1f}s → {self._index_path.name}")
 
 
 # ============================================================

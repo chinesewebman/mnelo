@@ -198,6 +198,127 @@ def test_no_chunks_table_tolerance(tmp_path):
         idx.close()
 
 
+def test_missing_index_file_with_chunks_auto_rebuilds(tmp_path):
+    """[9/24 fix] 索引文件丢失但 SQLite 有 active chunk → 重建.
+
+    回归: 旧实现 `if not self._index_path.exists(): return` 把"文件不在"当成
+    "全新库", 于是索引文件一旦丢失 (改名/误删/崩溃未落盘) 向量通道就永久静默
+    死亡 — live 库 8/12 改名后哑了一个月, 重启报 vectors=0 且无告警.
+    """
+    db = _make_db(tmp_path, chunk_ids=("a", "b"))
+    assert not (tmp_path / f"{db.stem}.usearch.index").exists()  # 前置: 文件本就不在
+
+    idx = _si.UsearchIndex(db, DIM)
+    try:
+        assert idx.size() == 2  # 旧行为: 0
+        assert (tmp_path / f"{db.stem}.usearch.index").exists()
+        assert (tmp_path / f"{db.stem}.usearch.index.verified.json").exists()
+        # 没有坏文件可备份 → 不该凭空产生 .corrupt-*
+        assert not list(tmp_path.glob(f"{db.stem}.usearch.index.corrupt-*"))
+    finally:
+        idx.close()
+
+
+def test_missing_index_file_on_empty_db_stays_noop(tmp_path):
+    """真·全新库 (无 chunk) → 不重建, 不产生任何索引文件 (防无谓重嵌入)."""
+    db = _make_db(tmp_path)
+
+    idx = _si.UsearchIndex(db, DIM)
+    try:
+        assert idx.size() == 0
+        assert not (tmp_path / f"{db.stem}.usearch.index").exists()
+        assert not (tmp_path / f"{db.stem}.usearch.index.verified.json").exists()
+    finally:
+        idx.close()
+
+
+def test_missing_index_file_ignores_soft_deleted_chunks(tmp_path):
+    """chunk 全部软删 (valid_until 非空) → active 为空 → 不重建.
+
+    钉死判据必须是 `valid_until IS NULL`: 把软删的算进来会让空库反复重嵌入.
+    """
+    db = _make_db(tmp_path, chunk_ids=("a",))
+    conn = sqlite3.connect(str(db))
+    conn.execute("UPDATE chunks SET valid_until = datetime('now')")
+    conn.commit()
+    conn.close()
+
+    idx = _si.UsearchIndex(db, DIM)
+    try:
+        assert idx.size() == 0
+        assert not (tmp_path / f"{db.stem}.usearch.index").exists()
+    finally:
+        idx.close()
+
+
+def test_missing_index_file_without_chunks_table_noop(tmp_path):
+    """无 chunks 表 (极简/损坏 db) + 无索引文件 → 不重建, 也不 abort."""
+    db = tmp_path / "empty.db"
+
+    idx = _si.UsearchIndex(db, DIM)
+    try:
+        assert idx.size() == 0
+    finally:
+        idx.close()
+
+
+def test_missing_index_file_over_startup_cap_degrades(tmp_path, monkeypatch, caplog):
+    """active chunk 数超过启动重建上界 → 不重建、不 abort, 记 ERROR 提示手动跑.
+
+    上界存在的原因: 大库全量重嵌入会把启动卡住几分钟. 索引文件缺失属异常状态,
+    宁可降级 + 大声告警.
+    """
+    import logging
+
+    db = _make_db(tmp_path, chunk_ids=("a", "b", "c"))
+    monkeypatch.setattr(_si.UsearchIndex, "_MAX_STARTUP_REBUILD_CHUNKS", 2)
+
+    with caplog.at_level(logging.ERROR, logger="mnelo.index"):
+        idx = _si.UsearchIndex(db, DIM)  # 不抛
+    try:
+        assert idx.size() == 0  # 降级: 空索引
+        assert not (tmp_path / f"{db.stem}.usearch.index").exists()  # 没重建
+        assert "超过启动重建上界" in caplog.text
+        assert "rebuild_index.py" in caplog.text
+    finally:
+        idx.close()
+
+
+def test_missing_index_file_at_cap_still_rebuilds(tmp_path, monkeypatch):
+    """恰好等于上界 → 仍重建 (边界: 判据是 `>` 不是 `>=`)."""
+    db = _make_db(tmp_path, chunk_ids=("a", "b"))
+    monkeypatch.setattr(_si.UsearchIndex, "_MAX_STARTUP_REBUILD_CHUNKS", 2)
+
+    idx = _si.UsearchIndex(db, DIM)
+    try:
+        assert idx.size() == 2
+    finally:
+        idx.close()
+
+
+def test_missing_index_file_rebuild_failure_degrades_not_aborts(tmp_path, monkeypatch, caplog):
+    """重建失败 (embedder 挂) → 记 ERROR 但构造成功, 以空索引降级启动.
+
+    契约: 本方法 docstring 承诺"启动永不因坏索引 abort", 缺文件触发的重建
+    也必须守着 — 拒绝启动比降级运行更糟.
+    """
+    import logging
+    import types
+
+    db = _make_db(tmp_path, chunk_ids=("a",))
+    broken = types.ModuleType("embedder")  # 无 embed attr → ImportError
+    monkeypatch.setitem(sys.modules, "embedder", broken)
+
+    with caplog.at_level(logging.ERROR, logger="mnelo.index"):
+        idx = _si.UsearchIndex(db, DIM)  # 不抛
+    try:
+        assert idx.size() == 0
+        assert "自动重建失败" in caplog.text
+        assert "rebuild_index.py" in caplog.text  # 留手动兜底线索
+    finally:
+        idx.close()
+
+
 def test_rebuild_without_embedder_raises(tmp_path, monkeypatch):
     """重建需要 embedder 但 import 不到 → RuntimeError 提示手动 rebuild_index."""
     import types
