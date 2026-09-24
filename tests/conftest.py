@@ -9,9 +9,31 @@ conftest.py — pytest 共享 fixture.
   cross-class 脏数据 (如 test_edge_cases TestUpdateEdgeCases 漏删 vectors)
 """
 
+import os
 import sys
+import tempfile
 from pathlib import Path
 import warnings
+
+# [2026-09-24 隔离修] 测试默认不再打 live 记忆库.
+#
+# 背景: live 环境把 MNELO_MEMORY_DIR=/root/work/mnelo-data 写进了 ~/.profile,
+# pytest 继承它 → 套件里所有裸 Memory() 全部开 live 库; 本文件下面的
+# _clean_test_data_session 更是对 live 直接执行硬 DELETE(chunks/entities/
+# task_states)。实测: 任跑一次 pytest, live 的 memory.db mtime 必变。
+# 这不是"测试残留", 是一条会删真实数据的写路径 —— 尤其
+# `DELETE FROM task_states WHERE task_id LIKE 'task:%' OR task_id LIKE 'loop:%'`
+# 会把**全部** task/loop 状态窗清空 (现在恰好是 0 行才没炸)。
+#
+# 修法: 未显式指定 MNELO_MEMORY_DB_PATH 时, 把 DB 指到本次 session 的临时目录。
+# 只动 DB 路径, 不碰 MNELO_MEMORY_DIR —— config.toml 仍在原目录解析, 后端
+# (usearch/f16) 与 embedding 模型配置不变。schema 由 Memory.__init__ 自动建。
+# 要打指定库: 跑测试前显式 export MNELO_MEMORY_DB_PATH=/path/to/memory.db。
+# 必须在 _load_from_repo("config") 之前执行 —— config 在 import 期读环境变量。
+_SESSION_TMP_DB = None
+if not os.environ.get("MNELO_MEMORY_DB_PATH"):
+    _SESSION_TMP_DB = str(Path(tempfile.mkdtemp(prefix="mnelo-tests-")) / "memory.db")
+    os.environ["MNELO_MEMORY_DB_PATH"] = _SESSION_TMP_DB
 
 # [G7] mcp SDK v1.26 still uses deprecated `content_item.content` access on
 # TextResourceContents (field is `text`); str-returning read_resource is the
@@ -225,8 +247,23 @@ def _clean_test_data_session():
     [8/9 issue-#3] zvec LOCK 抢不到时 (mnelo 服务在跑) 静默 skip — 该 fixture
     主要是清理 test 残留, LIVE 服务自带维护, 不抢 LOCK 也不影响后续 test (依赖 zvec
     的 test 自己会被 mnelo 服务挡). 纯文本 / schema test 不受任何影响.
+
+    [2026-09-24 隔离修] 只对本次 session 的临时库执行清理。显式指定了
+    MNELO_MEMORY_DB_PATH (可能是真实库) 时跳过 —— 这里的 DELETE 是硬删,
+    且第一条会清空**全部** task/loop 状态窗, 打在真库上不可逆。
     """
     from memory import Memory
+    from config import config as _cfg
+
+    if _SESSION_TMP_DB is None or str(Path(_cfg.db_path)) != _SESSION_TMP_DB:
+        warnings.warn(
+            f"[conftest] _clean_test_data_session skip: DB={_cfg.db_path} 不是本次 session 的临时库 "
+            f"({_SESSION_TMP_DB}); 跳过破坏性清理以免误删真实数据。",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        yield
+        return
 
     try:
         mem = Memory()

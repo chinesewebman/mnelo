@@ -14,11 +14,14 @@ import config
 from memory import Memory
 
 
-def _new_mem():
-    mem = Memory()
-    mem._conn.execute("DELETE FROM meta WHERE key IN ('digest_chunk_id', 'digest_dirty')")
-    mem._conn.commit()
-    return mem
+def _new_mem(tmp_path):
+    """隔离库 —— 必须显式传 db_path.
+
+    默认的 Memory() 会用 MNELO_MEMORY_DIR 指向的 **live 库**: 本文件会删 meta 键
+    并触发 digest 重建, 打在 live 上就是污染真实记忆 (2026-09-24 实测把 live 的
+    digest 重建了)。别去掉这个参数。
+    """
+    return Memory(db_path=tmp_path / "memory.db")
 
 
 def _backdate(mem, chunk_id, hours):
@@ -33,9 +36,9 @@ def _backdate(mem, chunk_id, hours):
     mem._conn.commit()
 
 
-def test_fresh_digest_is_not_rebuilt():
+def test_fresh_digest_is_not_rebuilt(tmp_path):
     """未过期 + 不脏 → 返回同一 chunk (TTL 不能变成每次都重建)."""
-    mem = _new_mem()
+    mem = _new_mem(tmp_path)
     try:
         first = mem.get_digest()
         assert first["chunk_id"]
@@ -44,9 +47,9 @@ def test_fresh_digest_is_not_rebuilt():
         mem.close()
 
 
-def test_stale_digest_is_rebuilt_even_when_not_dirty():
+def test_stale_digest_is_rebuilt_even_when_not_dirty(tmp_path):
     """核心回归: dirty=0 但 built_at 超过 TTL → 必须重建出新 chunk."""
-    mem = _new_mem()
+    mem = _new_mem(tmp_path)
     try:
         first = mem.get_digest()
         cid = first["chunk_id"]
@@ -63,9 +66,9 @@ def test_stale_digest_is_rebuilt_even_when_not_dirty():
         mem.close()
 
 
-def test_ttl_zero_disables_staleness_check():
+def test_ttl_zero_disables_staleness_check(tmp_path):
     """>0 未设时退化为纯 dirty 驱动 (max_age_hours<=0 = 关闭)."""
-    mem = _new_mem()
+    mem = _new_mem(tmp_path)
     original = config.config.digest_max_age_hours
     try:
         first = mem.get_digest()
@@ -79,9 +82,9 @@ def test_ttl_zero_disables_staleness_check():
         mem.close()
 
 
-def test_unreadable_built_at_fails_open_to_rebuild():
+def test_unreadable_built_at_fails_open_to_rebuild(tmp_path):
     """built_at 缺失/损坏 → 当作已过期 (宁可多重建一次, 不给陈旧数据)."""
-    mem = _new_mem()
+    mem = _new_mem(tmp_path)
     try:
         cid = mem.get_digest()["chunk_id"]
         mem._conn.execute(
