@@ -612,7 +612,30 @@ class UsearchIndex(SearchIndex):
           3) 任一不过 → 自动从 SQLite 重建, 坏文件改名 .corrupt-<ts> 留档.
         由此启动永不因坏索引 abort, 也永不静默漏数据.
         """
-        if not self._index_path.exists():
+        # [9/24 毒文件防护] 0 向量的索引文件是雷, 不能 load.
+        # usearch 2.x: 对一个"曾 add 过、又被 remove 到 0 条"的 f16 索引 save() 出的
+        # 文件, load() 正常报 size=0, 但紧接着的第一次 add() 直接 SIGSEGV. 纯 usearch
+        # 最小复现 (与 mnelo 无关): Index(f16) → add → remove → save → 新进程 load
+        # → add → 崩. 对照: 从没 add 过的空文件不崩, 非空文件也不崩 — 是"清空后存盘"
+        # 这个中间态有毒.
+        # 触发条件在真实库里很常见: 某轮维护/测试把 chunk 全部 forget 掉, close()
+        # 就写出这个空文件, 下个进程第一次 remember 即原生崩溃 (测试套件里表现为
+        # pytest 直接段错误, 见 test_digest.py / test_s1_digest_tool.py).
+        # 空索引不携带任何信息 → 直接丢弃, 按"文件不在"处理: SQLite 有 active chunk
+        # 走重建, 没有就当全新库. 两条路都不碰 load, 也就不会踩这个雷.
+        empty_file = self._index_path.exists() and self._index_file_is_empty()
+        if empty_file:
+            logger.warning(
+                f"[usearch] 索引文件 {self._index_path.name} 是 0 向量 (曾清空后落盘) — "
+                f"usearch 对该状态 load 后 add 会原生崩溃, 丢弃并按无索引处理"
+            )
+            try:
+                self._index_path.unlink()
+                self._meta_path.unlink(missing_ok=True)
+            except OSError as e:
+                # 删不掉也要跳过 load (empty_file 已置位) — 交给下面分支重建/全新库
+                logger.warning(f"[usearch] 丢弃空索引失败 ({e}) — 本次仍不加载它")
+        if empty_file or not self._index_path.exists():
             # [9/24 根因修复] "文件不在" ≠ "全新库". 旧实现一律 return, 于是索引文件
             # 一旦丢失 (改名/误删/崩溃未落盘) 就地静默死亡 — SQLite 里几千个 chunk
             # 在, 向量通道却是空的, 且启动无任何告警. 实测 8/12 索引路径改名后
@@ -700,6 +723,22 @@ class UsearchIndex(SearchIndex):
         if not self._chunks_table_exists():
             return 0
         return int(self._conn.execute("SELECT count(*) FROM chunks WHERE valid_until IS NULL").fetchone()[0])
+
+    def _index_file_is_empty(self) -> bool:
+        """磁盘索引是否"合法 f16 且 0 向量" (只读文件头, 不 load).
+
+        非 f16 / 读不出 (损坏、非 usearch、f32 混合精度) → False: 那些是精度或损坏
+        问题, 交给 _validate_index_header 的正常预检 (诊断更具体, 坏文件还要留档),
+        不在毒文件分支里抢它的活.
+        """
+        from usearch.index import Index
+
+        try:
+            meta = Index.metadata(self._index_path)
+            scalar = getattr(meta.get("kind_scalar"), "name", str(meta.get("kind_scalar")))
+            return scalar.upper() == "F16" and int(meta.get("count_present") or 0) == 0
+        except Exception:
+            return False
 
     def _chunks_table_exists(self) -> bool:
         row = self._conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chunks'").fetchone()

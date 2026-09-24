@@ -198,6 +198,97 @@ def test_no_chunks_table_tolerance(tmp_path):
         idx.close()
 
 
+def _write_sidecar_for(index_path, ids):
+    """按 _write_sidecar 的格式写一份"匹配"的 sidecar.
+
+    目的: 让无防护的实现在开库时判定 not stale → 走 load 而不是重建 — 那才是崩的路径.
+    格式若变, 这里退化成"sidecar 不匹配"(走重建分支), 用例仍能过, 只是鉴别力下降.
+    """
+    import hashlib
+    import json
+
+    sig = hashlib.md5(("|".join(ids) + f"|{len(ids)}").encode("utf-8"), usedforsecurity=False).hexdigest()
+    index_path.with_name(index_path.name + ".verified.json").write_text(
+        json.dumps({"signature": sig, "dtype": "f16", "dim": DIM, "built_at": "2026-09-24T00:00:00"}),
+        encoding="utf-8",
+    )
+
+
+def _write_poison_index(index_path):
+    """写出 usearch 的"毒文件": 曾 add 过、被 remove 到 0 条再 save 的 f16 索引.
+
+    文件头特征 = count_present=0 且 count_deleted>0. load() 它正常 (size=0), 但紧接着
+    第一次 add() 原生 SIGSEGV — usearch 自身行为, mnelo 只能不 load 它.
+    """
+    import numpy as np
+    import usearch.index as ui
+
+    poison = ui.Index(ndim=DIM, metric="cos", dtype="f16")
+    poison.add(np.array([1], dtype=np.uint64), np.zeros((1, DIM), dtype=np.float32))
+    poison.remove(np.array([1], dtype=np.uint64))
+    poison.save(str(index_path))
+
+
+def test_emptied_index_file_is_discarded(tmp_path):
+    """[9/24 毒文件] 清空后落盘的 0 向量索引 → 开库时丢弃, 按无索引处理 (不 load).
+
+    这里只断言丢弃行为: 无防护时该走 load (sidecar 匹配) → size=0, 断言 size=1 失败.
+    真·add 崩溃在子进程用例里验证 (原生崩溃会把 pytest 一起带走).
+    """
+    db = _make_db(tmp_path, chunk_ids=("a",))
+    index_path = tmp_path / f"{db.stem}.usearch.index"
+    _write_poison_index(index_path)
+    _write_sidecar_for(index_path, ["a"])
+
+    idx = _si.UsearchIndex(db, DIM)
+    try:
+        assert idx.size() == 1  # 从 SQLite 重建 (而非加载空的毒文件)
+        assert (tmp_path / f"{db.stem}.usearch.index.verified.json").exists()
+    finally:
+        idx.close()
+
+
+def test_emptied_index_file_does_not_crash_on_add(tmp_path):
+    """[9/24 毒文件] 回归真身: 毒文件 + 之后 add 不得原生崩溃.
+
+    用子进程跑 (原生 SIGSEGV 会把整个 pytest 进程带走, 那样测试是"消失"而不是"失败").
+    毒文件必须由 mnelo 自己的 add→remove→close(save) 写出, 维度也必须是真的 512 —
+    手搓的小维索引不触发该 bug, 用例会失去鉴别力 (已验证: 无防护时 rc=139).
+    """
+    import subprocess
+    import sys as _sys
+
+    db = _make_db(tmp_path, chunk_ids=("a",))
+
+    script = """
+import struct, sys, types
+ROOT, DB, DIM = sys.argv[1], sys.argv[2], 512
+sys.path.insert(0, ROOT)
+fake = types.ModuleType("embedder")          # 免 bge 加载, 也免网络
+fake.embed = lambda text: [0.001 * (i % 100) for i in range(DIM)]
+sys.modules["embedder"] = fake
+from pathlib import Path
+from search_index import UsearchIndex
+db = Path(DB)
+vec = struct.pack(f"{DIM}f", *([0.5] * DIM))
+i1 = UsearchIndex(db, DIM)
+i1.add("a", vec, conn=i1._conn)
+i1.remove("a", conn=i1._conn)
+i1.close()                                    # 落盘 count_present=0 且 count_deleted>0 的索引
+i2 = UsearchIndex(db, DIM)
+i2.add("a", vec, conn=i2._conn)
+print("OK size=%d" % i2.size())
+"""
+    proc = subprocess.run(
+        [_sys.executable, "-c", script, str(ROOT), str(db)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, f"子进程原生崩溃/失败 rc={proc.returncode}\n{proc.stderr[-800:]}"
+    assert "OK size=1" in proc.stdout
+
+
 def test_missing_index_file_with_chunks_auto_rebuilds(tmp_path):
     """[9/24 fix] 索引文件丢失但 SQLite 有 active chunk → 重建.
 
