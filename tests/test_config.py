@@ -17,18 +17,14 @@ import pytest
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
-import importlib.util as _ilu
-
-
-def _load_from_repo(mod_name: str):
-    spec = _ilu.spec_from_file_location(mod_name, _REPO / f"{mod_name}.py")
-    mod = _ilu.module_from_spec(spec)
-    sys.modules[mod_name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-config_mod = _load_from_repo("config")
+# [2026-09-24] 这里原本是 _load_from_repo("config"): 它会重新 exec 一份 config.py 并
+# 覆盖 sys.modules["config"]. 但 digest_mixin / memory_core 等模块早已 `import config`
+# 拿到旧对象 —— 于是本文件里设的 config_mod.config.xxx 对它们不可见.
+# 实测后果: 只要 test_config.py 先跑, test_digest.py 里
+# `config.config.digest_max_chars = 24` 就失效, test_truncated_digest_ref_still_expands_source
+# 假失败 (与是否隔离无关, live 库上同样复现).
+# conftest.py 已把 repo 版 config 装进 sys.modules, 直接 import 拿同一个对象即可.
+import config as config_mod  # noqa: E402
 
 
 class TestServerConfig:

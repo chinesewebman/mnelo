@@ -45,7 +45,13 @@ def _load_from_repo(mod_name: str):
     return mod
 
 
-_load_from_repo("config")
+# [2026-09-24] 这里原本是 _load_from_repo("config"). 重新 exec 会把
+# sys.modules["config"] 换成新模块对象, 而 digest_mixin / search_index 等早已
+# `import config` 拿到旧对象 → 测试里设的 config.config.xxx 对它们不生效
+# (实测: 本文件跑过之后 test_digest.py 的 digest_max_chars 设置失效, 假失败).
+# conftest.py 已把 repo 版 config 装进 sys.modules, 直接 import 即同一个对象.
+import config  # noqa: E402,F401
+
 _load_from_repo("embedder")
 # [8/29 P0 fix] Load validation FIRST so memory.py's `from validation import
 # ValidationError` at module top captures the SAME class object the test will
