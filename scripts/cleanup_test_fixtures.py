@@ -54,9 +54,20 @@ TEST_SOURCE_PATTERNS = [
     "test_cov",  # round6 test coverage work
     "test:e2e_",  # end-to-end test logs
     "update:test_",  # test_update fixtures
-    "identity_fact_manager",  # identity_fact_manager test runs (lots of duplicate rows)
     "upgrade-log:",  # one-off upgrade log entries
     "r8_",  # r8 test pattern
+]
+
+# [2026-09-24 修] source 前缀 → 必须同时命中的内容守卫.
+#
+# 原本这里有一条裸的 "identity_fact_manager". 但这个 source 同时承载**真实身份
+# 事实** (identity:display_name:燕如 / identity:lives_in:北京 / ...) 和测试跑出来的
+# `pytest_test_value` 垃圾 —— 按 source 裸匹配会 soft-delete 真实身份. 2026-09-24
+# 干跑实测: 命中 4 条真实身份实体 + 4 条真实身份 chunk. 真实身份又是每轮会话 digest
+# 的注入源, 误删代价极高.
+# 故改为「source + 内容」双重匹配: 只有内容里带 pytest_test_value 的才算测试垃圾.
+TEST_SOURCE_GUARDED_PATTERNS = [
+    ("identity_fact_manager", "%pytest_test_value%"),
 ]
 
 # ID-prefix patterns
@@ -159,6 +170,35 @@ def find_test_fixtures(conn) -> dict:
 
     entities.extend(more_entities)
     chunks.extend(more_chunks)
+
+    # guarded patterns: source 前缀 + 内容守卫双命中才算测试垃圾 (见上方注释)
+    seen_e = {e[0] for e in entities}
+    seen_c = {c[0] for c in chunks}
+    for src, guard in TEST_SOURCE_GUARDED_PATTERNS:
+        for e in conn.execute(
+            """
+            SELECT id, kind, name, importance, source FROM entities
+            WHERE valid_until IS NULL
+              AND source LIKE ?
+              AND (name LIKE ? OR summary LIKE ?)
+        """,
+            (f"{src}%", guard, guard),
+        ).fetchall():
+            if e[0] not in seen_e:
+                entities.append(e)
+                seen_e.add(e[0])
+        for c in conn.execute(
+            """
+            SELECT id, source, importance, memory_type FROM chunks
+            WHERE valid_until IS NULL
+              AND source LIKE ?
+              AND content LIKE ?
+        """,
+            (f"{src}%", guard),
+        ).fetchall():
+            if c[0] not in seen_c:
+                chunks.append(c)
+                seen_c.add(c[0])
 
     # Kind-gated patterns (only match if id pattern AND kind match)
     if TEST_ID_KIND_PATTERNS:
@@ -304,7 +344,10 @@ def main() -> int:
         "dry_run": is_dry_run,
         "entities_to_clean": len(entities),
         "chunks_to_clean": len(chunks),
-        "patterns": TEST_SOURCE_PATTERNS + TEST_ID_PATTERNS + [f"{p}+{k}" for p, k in TEST_ID_KIND_PATTERNS],
+        "patterns": TEST_SOURCE_PATTERNS
+        + TEST_ID_PATTERNS
+        + [f"{p}+{k}" for p, k in TEST_ID_KIND_PATTERNS]
+        + [f"{s}+{g}" for s, g in TEST_SOURCE_GUARDED_PATTERNS],
     }
 
     if is_dry_run:
@@ -315,6 +358,7 @@ def main() -> int:
             print(f"  entity patterns: {TEST_SOURCE_PATTERNS}")
             print(f"  id patterns:     {TEST_ID_PATTERNS}")
             print(f"  id+kind patterns:{TEST_ID_KIND_PATTERNS}")
+            print(f"  guarded patterns:{TEST_SOURCE_GUARDED_PATTERNS}  (source + 内容双命中)")
             print(f"  entities to clean: {len(entities)}")
             print(f"  chunks to clean:   {len(chunks)}")
             if entities:
