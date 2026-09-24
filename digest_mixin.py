@@ -128,6 +128,26 @@ class DigestMixin:
             logger.warning(f"[rebuild_digest] 实际 错误: {e}")
             return None
 
+    def _digest_expired(self, chunk_id: str) -> bool:
+        """[staleness bound 2026-09-24] 缓存 digest 是否超过 max_age_hours.
+
+        dirty 标志是「有写入 → 重建」的优化, 不是过期保证: 若没有任何写入触发
+        _mark_digest_dirty (例如日常写入 importance 全低于 digest_importance_threshold),
+        缓存会无限期存活。此 TTL 是兜底。读不到 built_at 一律当作已过期 (fail-open 重建).
+        """
+        max_age_h = config.config.digest_max_age_hours
+        if max_age_h <= 0:
+            return False  # <=0 = 关闭 TTL, 退化为纯 dirty 驱动
+        row = self._exec_clean("SELECT metadata_json FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
+        if not row or not row["metadata_json"]:
+            return True
+        try:
+            built_at = json.loads(row["metadata_json"]).get("built_at")
+            age = datetime.now() - datetime.strptime(built_at, "%Y-%m-%dT%H:%M:%S")
+        except Exception:
+            return True
+        return age > timedelta(hours=max_age_h)
+
     def get_digest(self, ref: Optional[str] = None) -> Dict[str, Any]:
         """[G5 8/4] TASKS_L2_DIGEST §3.5 — 双模式."""
         cfg = config.config
@@ -137,6 +157,8 @@ class DigestMixin:
         is_dirty = meta_dirty and meta_dirty["value"] == "1"
         chunk_id_row = self._conn.execute("SELECT value FROM meta WHERE key='digest_chunk_id'").fetchone()
         chunk_id = chunk_id_row["value"] if chunk_id_row else None
+        if not is_dirty and chunk_id and self._digest_expired(chunk_id):
+            is_dirty = True
         if is_dirty or not chunk_id:
             chunk_id = self._rebuild_digest()
         if not chunk_id:

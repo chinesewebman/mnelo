@@ -238,6 +238,11 @@ class Config:
         self.digest_importance_threshold = float(digest_imp_threshold_str)
         digest_inject_str = os.environ.get("MNELO_MEMORY_DIGEST_INJECT_ON_INITIALIZE") or str(digest_section.get("inject_on_initialize", False))
         self.digest_inject_on_initialize = digest_inject_str.lower() not in ("false", "0", "no", "off")
+        # [staleness bound 2026-09-24] 缓存 digest 的最长存活小时数; <=0 关闭 TTL.
+        # 只有 dirty 标志不够: 没有写入触发 _mark_digest_dirty 时缓存会无限期存活
+        # (实测 live 库 digest 从 2026-08-11 冻结到 09-24, 期间新增 140 chunk 未重建).
+        digest_max_age_str = os.environ.get("MNELO_MEMORY_DIGEST_MAX_AGE_HOURS") or str(digest_section.get("max_age_hours", 24))
+        self.digest_max_age_hours = float(digest_max_age_str)
 
         health_section = self._raw.get("health", {}) if isinstance(self._raw.get("health"), dict) else {}
 
