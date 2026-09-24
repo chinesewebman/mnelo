@@ -73,3 +73,6 @@ coverage.xml
 
 # local gh CLI state (created when HOME pointed here)
 .local/
+
+# codegraph 本地索引目录 (不进库)
+.codegraph/
