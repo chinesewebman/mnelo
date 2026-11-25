@@ -13,6 +13,7 @@ Model swap: edit [embedder] section in config.toml or set env vars
 $MNELO_MEMORY_EMBEDDER_MODEL / $MNELO_MEMORY_EMBEDDER_DIM (priority: env > file > default).
 """
 
+import os
 from typing import List, Optional
 
 # Embedder config is loaded lazily inside Embedder._init() to avoid
@@ -55,11 +56,23 @@ class Embedder:
         EMBED_MODEL_NAME = _config.embedder_model
         EMBED_DIM = _config.embedder_dim
 
-        # fastembed 不直接暴露 cache_dir 参数 — 它走 HF 生态, 落到
-        # $HF_HOME (默认 ~/.cache/huggingface), 具体在
-        # hub/models--{org}--{model}/blobs/ + snapshots/
-        print(f"[embedder] 加载 {EMBED_MODEL_NAME} (dim={EMBED_DIM})...")
-        self.model = TextEmbedding(model_name=EMBED_MODEL_NAME)
+        # cache_dir 显式传入 — 不依赖 FASTEMBED_CACHE_PATH 环境变量。
+        #
+        # 为什么不用默认值: fastembed 的默认是
+        # tempfile.gettempdir()/fastembed_cache (即 /tmp/fastembed_cache) —— 每个平台、
+        # 每个容器、每个用户都不同。本机的模型在
+        # ~/.hermes/cache/scratch/fastembed_cache 里 (由 FASTEMBED_CACHE_PATH 指定)。
+        # 依赖环境变量的后果是: 子进程的 env 如果是显式构造的
+        # (测试里 17 个文件都是), 它们不继承环境变量 → fastembed
+        # 找不到已下载的模型 → 去联网下载 → 有代理时报
+        # httpx.ConnectError: [Errno 104] Connection reset by peer。
+        # 显式传 cache_dir 后, 子进程也能找到本地模型。
+        _cache_dir = os.environ.get(
+            "FASTEMBED_CACHE_PATH",
+            os.path.join(os.path.expanduser("~"), ".cache", "fastembed"),
+        )
+        print(f"[embedder] 加载 {EMBED_MODEL_NAME} (dim={EMBED_DIM}) cache_dir={_cache_dir}...")
+        self.model = TextEmbedding(model_name=EMBED_MODEL_NAME, cache_dir=_cache_dir)
         print("[embedder] OK")
 
     def embed(self, text: str) -> List[float]:

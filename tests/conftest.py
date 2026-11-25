@@ -238,6 +238,31 @@ def _rebind_test_validation_error(request):
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _offline_hf_for_subprocesses():
+    """[CI fix 2026-11-25] 强制 fastembed/HF 离线，避免子进程联网下模型。
+
+    问题：17 个测试文件用 subprocess 起子进程跑 snippet，而它们的 env
+    是**显式构造的**（只给 PATH/HOME/三个 MNELO_*）—— 父进程的
+    HF_HUB_OFFLINE=1 传不下去。子进程里的 memory.Memory() 初始化 embedder 时
+    fastembed 会尝试从 HuggingFace 下模型，而当机若设了代理，就会报：
+
+        httpx.ConnectError: [Errno 104] Connection reset by peer
+
+    在有代理的环境里这会让整个文件失败（不是测试自身的问题）。
+    在 CI 的 macOS runner 上无代理，所以那里不复现；但本地有代理就会。
+
+    解法：在 conftest 里把 offline 标志写进 os.environ（测试进程的环境），
+    让所有显式构造 env 的子进程也能看到。模型必须在本地已缓存（CI 用
+    actions/cache 缓存 ~/.cache/huggingface）。
+    """
+    # 不覆盖调用者显式设的值
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _clean_test_data_session():
     """[7/19] session 开始前清空跨 class 残留的 test 数据.
 
@@ -257,8 +282,7 @@ def _clean_test_data_session():
 
     if _SESSION_TMP_DB is None or str(Path(_cfg.db_path)) != _SESSION_TMP_DB:
         warnings.warn(
-            f"[conftest] _clean_test_data_session skip: DB={_cfg.db_path} 不是本次 session 的临时库 "
-            f"({_SESSION_TMP_DB}); 跳过破坏性清理以免误删真实数据。",
+            f"[conftest] _clean_test_data_session skip: DB={_cfg.db_path} 不是本次 session 的临时库 ({_SESSION_TMP_DB}); 跳过破坏性清理以免误删真实数据。",
             RuntimeWarning,
             stacklevel=2,
         )
