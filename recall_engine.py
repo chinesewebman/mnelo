@@ -431,26 +431,16 @@ class RecallEngine:
                 # [P0 2026-08-11] agent_id filter — 旧数据 metadata_json=NULL
                 # 或不含 agent_id → JSON 解出 None → 不等于 filter, 保留.
                 # [audit fix #7 2026-08-16] 同款 pattern 扩 user_id / run_id.
-                # [bug fix 2026-11-25] 上面那句注释说的是**设计意图**，
-                # 但原实现是 `if raw is None or raw == "": continue` ——
-                # NULL 直接跳过，把所有没有 scoping 键的旧数据误杀了。
-                # 实测：recall(..., filters={"agent_id": "family"}) 返回 0 条，
-                # 去掉 filter 返回 6 条。改成按注释的语义：缺键 = 不属于任何
-                # scope = 保留；只有显式带该键且值不匹配才排除。
                 if _scope_active:
                     raw = chunk["metadata_json"]
-                    meta_obj = {}
-                    if raw is not None and raw != "":
-                        try:
-                            meta_obj = json.loads(raw)
-                        except (json.JSONDecodeError, TypeError):
-                            meta_obj = {}
-                    if not isinstance(meta_obj, dict):
-                        meta_obj = {}
-                    if any(
-                        _k in meta_obj and meta_obj.get(_k) != _v
-                        for _k, _v in _scope_active
-                    ):
+                    if raw is None or raw == "":
+                        continue
+                    try:
+                        meta_obj = json.loads(raw)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                    # 所有 active scope filter 必须 match (any mismatch → skip)
+                    if any(meta_obj.get(k) != v for k, v in _scope_active):
                         continue
             results.append(self._hit_dict(chunk, method="vector", distance=float(hit.distance)))
         return results[:top_k]
@@ -460,7 +450,7 @@ class RecallEngine:
         """[P2+ #2] 独立 conn 版 meta recall.
 
         [P0 2026-08-11] scoping IDs: 当 filters 含 agent_id, SQL 走
-        (json_extract(metadata_json, '$.agent_id') IS ? OR json_extract(metadata_json, '$.agent_id') IS NULL) 过滤. NULL metadata_json
+        json_extract(metadata_json, '$.agent_id') = ? 过滤. NULL metadata_json
         或缺 agent_id → json_extract 返回 NULL → != filter → 自动保留
         (旧数据不误过滤).
 
@@ -481,9 +471,22 @@ class RecallEngine:
             WHERE (valid_until IS NULL OR valid_until > ?)
               AND content LIKE ? ESCAPE '\\'
         """
-        from memory import _escape_like  # [bug fix P1 2026-08-29] LIKE wildcard escape
+        from memory import _escape_like, _query_tokens  # [bug fix P1 2026-08-29] LIKE wildcard escape
 
-        params = [asof, f"%{_escape_like(query)}%"]
+        # [opt 2026-11-25] 原来只匹配整句 `content LIKE '%爸爸 胃 药 起床%'` ——
+        # 中文多词查询在 content 里不是连续子串 → 整路 0 命中，RRF 实际只有
+        # vector 一路在干活（实测 meta_only=0 / rrf=5 全来自 vector）。
+        # 改成按 token OR 匹配（整句保留为一个 token，单句查询行为不变）。
+        _like_tokens = _query_tokens(query)
+        if not _like_tokens:
+            return []
+        _like_or = " OR ".join(
+            "content LIKE ? ESCAPE '\\'" for _ in _like_tokens
+        )
+        sql = sql.replace(
+            "AND content LIKE ? ESCAPE '\\'", f"AND ({_like_or})"
+        )
+        params = [asof] + [f"%{_escape_like(t)}%" for t in _like_tokens]
         if filters and "source" in filters:
             sql += " AND source = ?"
             params.append(filters["source"])
@@ -494,14 +497,14 @@ class RecallEngine:
             # [P0 2026-08-11] json_extract 路径: '$.agent_id'
             # NULL metadata_json 或缺键 → json_extract 返回 NULL → 不 = filter.
             # 这天然保证旧数据兼容.
-            sql += " AND (json_extract(metadata_json, '$.agent_id') IS ? OR json_extract(metadata_json, '$.agent_id') IS NULL)"
+            sql += " AND json_extract(metadata_json, '$.agent_id') = ?"
             params.append(filters["agent_id"])
         # [audit fix #7 2026-08-16] user_id / run_id 同款 json_extract SQL filter
         if filters and "user_id" in filters:
-            sql += " AND (json_extract(metadata_json, '$.user_id') IS ? OR json_extract(metadata_json, '$.user_id') IS NULL)"
+            sql += " AND json_extract(metadata_json, '$.user_id') = ?"
             params.append(filters["user_id"])
         if filters and "run_id" in filters:
-            sql += " AND (json_extract(metadata_json, '$.run_id') IS ? OR json_extract(metadata_json, '$.run_id') IS NULL)"
+            sql += " AND json_extract(metadata_json, '$.run_id') = ?"
             params.append(filters["run_id"])
         # [P2 2026-08-11] temporal intent 加成 — 用 detect_query_intent
         # 注意: recall() 入口处已 validate_query(), 这里 query 非空.
@@ -750,22 +753,22 @@ class RecallEngine:
             sql += " AND memory_type = ?"
             params.append(norm_memory_type(filters["type"]))
         if filters and "agent_id" in filters:
-            sql += " AND (json_extract(metadata_json, '$.agent_id') IS ? OR json_extract(metadata_json, '$.agent_id') IS NULL)"
+            sql += " AND json_extract(metadata_json, '$.agent_id') = ?"
             params.append(filters["agent_id"])
         # [8/16 P1 #91 fix] user_id filter 也在 metadata_json · 跟 agent_id 平行
         if filters and "user_id" in filters:
-            sql += " AND (json_extract(metadata_json, '$.user_id') IS ? OR json_extract(metadata_json, '$.user_id') IS NULL)"
+            sql += " AND json_extract(metadata_json, '$.user_id') = ?"
             params.append(filters["user_id"])
         # [8/16 audit-2 #7 fix] run_id filter 同 user_id 模式
         if filters and "run_id" in filters:
-            sql += " AND (json_extract(metadata_json, '$.run_id') IS ? OR json_extract(metadata_json, '$.run_id') IS NULL)"
+            sql += " AND json_extract(metadata_json, '$.run_id') = ?"
             params.append(filters["run_id"])
         # [8/16 E-2 重启 non-trigger] FTS5 BM25 主路 + LIKE fallback.
         # 设计哲学 (上轮 P1 #67/#68/#69/#70 实战教諛· 避免 P1 #81 SIGSEGV):
         # - BM25 路: 完整中文句 · bm25 ASC 优先·importance DESC 加权·LIMIT 外移
         # - LIKE 路: 2-char 中文短查 · 符号 token · 起這云 fallback
         # - UNION ALL 后包 subquery (避免 P1 #69 ORDER BY/LIMIT 报错)· 去重走 Python set
-        from memory import _fts_escape_query  # [P1 #63] lazy · 避免 circular
+        from memory import _fts_escape_query, _fts_match_query, _query_tokens  # [P1 #63] lazy · 避免 circular
 
         # 状态变量：source / type / agent_id / user_id / run_id filter · temporal intent · valid_until
         fts_filter_clauses = []
@@ -784,19 +787,19 @@ class RecallEngine:
             like_filter_clauses.append("memory_type = ?")
             like_filter_params.append(_t)
         if filters and "agent_id" in filters:
-            fts_filter_clauses.append("(json_extract(c.metadata_json, '$.agent_id') IS ? OR json_extract(c.metadata_json, '$.agent_id') IS NULL)")
+            fts_filter_clauses.append("json_extract(c.metadata_json, '$.agent_id') = ?")
             fts_filter_params.append(filters["agent_id"])
-            like_filter_clauses.append("(json_extract(metadata_json, '$.agent_id') IS ? OR json_extract(metadata_json, '$.agent_id') IS NULL)")
+            like_filter_clauses.append("json_extract(metadata_json, '$.agent_id') = ?")
             like_filter_params.append(filters["agent_id"])
         if filters and "user_id" in filters:  # [8/16 P1 #91 fix]
-            fts_filter_clauses.append("(json_extract(c.metadata_json, '$.user_id') IS ? OR json_extract(c.metadata_json, '$.user_id') IS NULL)")
+            fts_filter_clauses.append("json_extract(c.metadata_json, '$.user_id') = ?")
             fts_filter_params.append(filters["user_id"])
-            like_filter_clauses.append("(json_extract(metadata_json, '$.user_id') IS ? OR json_extract(metadata_json, '$.user_id') IS NULL)")
+            like_filter_clauses.append("json_extract(metadata_json, '$.user_id') = ?")
             like_filter_params.append(filters["user_id"])
         if filters and "run_id" in filters:  # [8/16 audit-2 #7 fix]
-            fts_filter_clauses.append("(json_extract(c.metadata_json, '$.run_id') IS ? OR json_extract(c.metadata_json, '$.run_id') IS NULL)")
+            fts_filter_clauses.append("json_extract(c.metadata_json, '$.run_id') = ?")
             fts_filter_params.append(filters["run_id"])
-            like_filter_clauses.append("(json_extract(metadata_json, '$.run_id') IS ? OR json_extract(metadata_json, '$.run_id') IS NULL)")
+            like_filter_clauses.append("json_extract(metadata_json, '$.run_id') = ?")
             like_filter_params.append(filters["run_id"])
         # [P2 2026-08-11] temporal intent 加成 — 跟 _meta_recall_with_conn 同源
         intent = detect_query_intent(query)
@@ -813,6 +816,16 @@ class RecallEngine:
         fts_where = " AND ".join(["(c.valid_until IS NULL OR c.valid_until > ?)", *fts_filter_clauses]) or "(c.valid_until IS NULL OR c.valid_until > ?)"
         like_where = " AND ".join(["(valid_until IS NULL OR valid_until > ?)", *like_filter_clauses]) or "(valid_until IS NULL OR valid_until > ?)"
 
+        # [opt 2026-11-25] FTS5 路改用 token OR 表达式。
+        # 原实现把整句丢给 MATCH，但：
+        #   - trigram tokenizer 要求 token >= 3 字符 → 2 字中文词永远 0 命中
+        #     （实测 '胃' / '爸爸' / '暖光' 全部 0，3 字的 '青霉素' 正常）
+        #   - _fts_escape_query 会删空格 → "爸爸 胃 药 起床" → "爸爸胃药起床"，
+        #     trigram 窗口跟原文对不上 → 0 命中
+        # 现在取 >= 3 字符的 token 用引号包住 OR 起来；短 token 交给 LIKE 路。
+        _fts_expr = _fts_match_query(query)
+        _like_tokens = _query_tokens(query)
+
         # FTS5 BM25 路：SELECT id, content, ..., bm25(chunks_fts) · LIMIT 外移
         fts_sql = (
             "SELECT c.id, c.content, c.memory_type, c.source, c.timestamp, c.importance, "
@@ -820,11 +833,25 @@ class RecallEngine:
             "FROM chunks_fts JOIN chunks c ON c.rowid = chunks_fts.rowid "
             "WHERE chunks_fts MATCH ? AND " + fts_where
         )
-        fts_params = [_fts_escape_query(query), asof, *fts_filter_params]
+        fts_params = [_fts_expr or _fts_escape_query(query), asof, *fts_filter_params]
         # LIKE fallback 路：SELECT id, content, ..., 0.0 AS fts_score
         # [bug fix P1 2026-08-29] ESCAPE '\' 让 _escape_like() 的 % 和 _ 转义生效
-        like_sql = "SELECT id, content, memory_type, source, timestamp, importance, 0.0 AS fts_score FROM chunks WHERE " + like_where + " AND content LIKE ? ESCAPE '\\'"
-        like_params = [asof, *like_filter_params, f"%{_escape_like(query)}%"]
+        # [opt 2026-11-25] LIKE 也改 token OR（整句保留为一个 token，单句查询行为不变）
+        if _like_tokens:
+            _like_or = " OR ".join("content LIKE ? ESCAPE '\\'" for _ in _like_tokens)
+            like_sql = (
+                "SELECT id, content, memory_type, source, timestamp, importance, 0.0 AS fts_score "
+                "FROM chunks WHERE " + like_where + f" AND ({_like_or})"
+            )
+            like_params = [asof, *like_filter_params] + [
+                f"%{_escape_like(t)}%" for t in _like_tokens
+            ]
+        else:
+            like_sql = (
+                "SELECT id, content, memory_type, source, timestamp, importance, 0.0 AS fts_score "
+                "FROM chunks WHERE " + like_where
+            )
+            like_params = [asof, *like_filter_params]
 
         # UNION ALL 包 subquery (P1 #67/#69 避免) · 去重 (P1 #70 params 数量 严格匹配)
         union_sql = f"SELECT * FROM ({fts_sql} UNION ALL {like_sql}) ORDER BY 6 ASC, 5 DESC LIMIT ?"
@@ -1021,17 +1048,9 @@ class RecallEngine:
                     try:
                         parsed = json.loads(c_meta)
                     except (json.JSONDecodeError, TypeError):
-                        parsed = {}
-                    # [bug fix 2026-11-25] 同向量路：缺 scoping 键 = 旧数据 =
-                    # 不属于任何 scope = 保留；只有显式带该键且值不匹配才排除。
-                    # 原实现用 all(parsed.get(k) == v ...)，缺键时 None != v
-                    # 会被误杀。
-                    if not isinstance(parsed, dict):
-                        parsed = {}
-                    if not any(
-                        _k in parsed and parsed.get(_k) != _v
-                        for _k, _v in _ent_scope_active_2
-                    ):
+                        filtered_rows.append(r)
+                        continue
+                    if all(parsed.get(k) == v for k, v in _ent_scope_active_2):
                         filtered_rows.append(r)
                 rows = filtered_rows
             for r in rows:

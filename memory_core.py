@@ -1150,6 +1150,25 @@ class MemoryCore:
         # 失败时老 chunk 已被 superseded, 新 chunk 已入库但 vector 缺席,
         # 召回断裂. 修复: 改用 _txn() 让 SQLite 数据回滚, 异常正常上抛供
         # 调用方感知.
+        # [bug fix 2026-11-25] 新版本必须**继承老 chunk 的 metadata_json**。
+        # 原来写死 {"supersedes":..., "reason":...} —— agent_id / user_id /
+        # run_id / tags 全部丢失，导致：
+        #   1) 更新过的记忆对任何 scoping filter 都不可见（按人召回直接查不到）
+        #   2) 标签丢失，按 tags 过滤/审计也查不到
+        # 实测：remember(..., agent_id="family", user_id="爸爸") 之后 update()，
+        # 新 chunk 的 metadata_json 变成 {"supersedes":..., "reason":"updated"}，
+        # 按 user_id 召回（爸爸和妈妈）都是 0 条 —— 记忆相当于消失了。
+        # 现在：继承老 metadata，再叠加 supersedes / reason。
+        try:
+            old_meta_raw = old["metadata_json"]
+            new_meta = json.loads(old_meta_raw) if old_meta_raw else {}
+            if not isinstance(new_meta, dict):
+                new_meta = {}
+        except (json.JSONDecodeError, TypeError):
+            new_meta = {}
+        new_meta["supersedes"] = old_id
+        new_meta["reason"] = reason
+
         with _txn(self._conn):
             self._conn.execute(
                 """
@@ -1163,7 +1182,7 @@ class MemoryCore:
                     old["session_id"],
                     now(),
                     importance_value,
-                    json.dumps({"supersedes": old_id, "reason": reason}, ensure_ascii=False),
+                    json.dumps(new_meta, ensure_ascii=False),
                 ),
             )
             # [8/16 E-2] 手动 FTS5 sync 新 chunk (老 chunk valid_until 设为 now · stale row 过滤)

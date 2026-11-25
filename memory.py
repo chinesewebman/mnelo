@@ -78,6 +78,81 @@ def _fts_escape_query(query: str) -> str:
     return " ".join(cleaned.split())
 
 
+def _query_tokens(query: str, min_len: int = 2) -> list:
+    """把 query 拆成用于字面匹配的 token 列表。
+
+    [opt 2026-11-25] meta 路原来直接 `content LIKE '%<整句>%'`，中文多词查询
+    （如 "爸爸 胃 药 起床"）在 content 里根本不是连续子串 → 整路 0 命中，
+    RRF 融合实际只有 vector 一路在干活（实测 meta_only=0 / entity_only=0 /
+    graph_only=0 / rrf=5 全来自 vector）。
+
+    现在按空白/标点切词 + 中文 2-gram 补召，返回去重后的 token 列表，
+    供 LIKE OR / FTS5 OR 两条路共用。
+
+    注意 min_len 的语义：
+      - LIKE 路用 min_len=2（"爸爸"/"胃药" 这类 2 字词要能命中）
+      - FTS5 trigram 要求 >= 3 字符，单独一个参数控制
+    单字符 ASCII（"a"/"_"）按 LIKE 字面量处理，交给调用方的
+    _escape_like 走 —— 保持"query='_' 只匹配含字面下划线的内容"这个语义。
+    """
+    import re as _re
+
+    if not query:
+        return []
+    tokens = []
+    seen = set()
+
+    def _add(tok):
+        if tok and len(tok) >= min_len and tok not in seen:
+            seen.add(tok)
+            tokens.append(tok)
+
+    # 1) 按空白 + 常见标点切分
+    for w in _re.split(r"[\s,;.!?\(\)\[\]\{\}\"'`]+", query):
+        w = w.strip()
+        if not w:
+            continue
+        if len(w) >= min_len:
+            _add(w)
+        elif len(w) == 1 and w.isascii():
+            # 单字符 ASCII：保留（LIKE 路需要它做字面量匹配）
+            if w not in seen:
+                seen.add(w)
+                tokens.append(w)
+
+    # 2) 连续中文片段 → 2-gram（"爸爸胃药起床" → 爸爸/爸胃/胃药/药起/起床）
+    #    整句 LIKE 匹配不到时，靠这些 2-gram 命中原文里的连续 2 字
+    for seg in _re.findall(r"[\u4e00-\u9fff]{2,}", query):
+        for i in range(len(seg) - 1):
+            _add(seg[i : i + 2])
+
+    return tokens
+
+
+def _fts_match_query(query: str, min_len: int = 3) -> str:
+    """构造 FTS5 MATCH 表达式：token OR 连接，每个 token 用双引号包住。
+
+    [opt 2026-11-25] 两个原因不能直接把整句丢给 MATCH：
+
+    1) FTS5 trigram tokenizer 要求查询 token **至少 3 个字符**。
+       2 字中文词（"爸爸"/"胃"/"药"）单独 MATCH 时永远 0 命中
+       （实测 '胃'/'爸爸'/'暖光' 全部 0，而 3 字的 '青霉素'/'最近胃' 正常）。
+    2) `_fts_escape_query` 会把空格删掉，"爸爸 胃 药 起床" → "爸爸胃药起床"，
+       trigram 窗口跟原文对不上 → 0 命中。
+
+    所以这里只取 >= min_len(默认 3) 的 token，用引号包住后 OR 连接。
+    引号是必要的：token 里可能出现 FTS5 语法字符。
+
+    短 token（< 3 字符）交给 LIKE 路兜底 —— LIKE '%药%' 能命中。
+    返回空串表示没有可用 token，调用方应跳过 FTS 路。
+    """
+    tokens = [t for t in _query_tokens(query) if len(t) >= min_len]
+    safe = [t.replace('"', "") for t in tokens if t.replace('"', "")]
+    if not safe:
+        return ""
+    return " OR ".join(f'"{t}"' for t in safe)
+
+
 def _escape_like(query: str) -> str:
     """[bug fix P1 2026-08-29] Escape SQLite LIKE wildcards in user query.
 
