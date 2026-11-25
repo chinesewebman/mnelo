@@ -567,6 +567,9 @@ TOOL_METADATA = {
     "memory_update": {"tier": "core", "hidden_by_default": False},
     "memory_get_digest": {"tier": "core", "hidden_by_default": False},
     "memory_forget": {"tier": "core", "hidden_by_default": False},
+    # [A3 fix 2026-11-25] entity 的原地更新——与 memory_update 同级（核心能力，默认露出）。
+    # 它在 503829f（9/11）被加进 TOOLS 但漏了本条目，导致 A3 的 tool 数量断言全挂。
+    "memory_update_entity": {"tier": "core", "hidden_by_default": False},
     # === audit (default exposed, \u8c03\u8bd5 + \u5ba1\u8ba1) ===
     "memory_recall_stats": {"tier": "audit", "hidden_by_default": False},
     "memory_list_entities": {"tier": "audit", "hidden_by_default": False},
