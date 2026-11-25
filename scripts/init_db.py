@@ -57,6 +57,23 @@ def init():
     conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute("PRAGMA foreign_keys = ON")
 
+    # [bug fix 2026-11-25] schema.sql 用 iso_now() / iso_now_offset(days) 做列默认值，
+    # 但 memory_core.py 才会注册这两个 SQL 函数 —— init_db.py 是直连 sqlite3 建表的，
+    # 从没注册过，于是 executescript 直接报 "no such function: iso_now"，
+    # 全新安装 100% 失败（upstream 的 install.sh 在这里就断了）。
+    # 这里补上注册：格式与 memory_core.py 一致（本地时间、ISO 8601、T 分隔符）。
+    # 少了 T 分隔符，字符串比较会把同一天的记录判成"未来"，L2 老化查询会漏。
+    from datetime import datetime, timedelta
+
+    def _iso_now_local() -> str:
+        return datetime.now().isoformat(timespec="seconds")
+
+    def _iso_now_offset(days: int) -> str:
+        return (datetime.now() + timedelta(days=int(days))).isoformat(timespec="seconds")
+
+    conn.create_function("iso_now", 0, _iso_now_local)
+    conn.create_function("iso_now_offset", 1, _iso_now_offset)
+
     print("=== 3. 执行 schema.sql (含 dim 占位符替换) ===")
     with open(SCHEMA_PATH) as f:
         sql = f.read()
