@@ -47,7 +47,10 @@ import hashlib
 
 def _slug(topic: str) -> str:
     """ASCII-safe slug derived from a CJK topic. Stable across runs."""
-    h = hashlib.md5(topic.encode("utf-8")).hexdigest()[:8]
+    # usedforsecurity=False: MD5 here is a non-cryptographic slug (grouping chunks
+    # by scenario), not a security primitive. Without the flag bandit (B324) flags
+    # it as a weak hash and fails CI.
+    h = hashlib.md5(topic.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
     return f"scn_{h}"
 
 
