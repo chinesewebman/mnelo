@@ -438,8 +438,12 @@ def _check_port_available(host: str, port: int) -> bool:
         OSError: 非 port-in-use 的其他 socket error (向上传播)
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
+        # 不设 SO_REUSEADDR: Linux 上 SO_REUSEADDR 允许对同一端口重复 bind ——
+        # 带上它的后果是端口已被占用时 bind 仍然成功 → 探测误报
+        # "端口空闲" → run_sse 继续启动 uvicorn → 测试失败 (且真实环境里
+        # 会隐藏端口冲突)。macOS 上无此行为 → 只在 Linux 失现。
+        # 探测用 socket 无需要复用，去掉它才能真正判断"端口被占。
         sock.bind((host, port))
         sock.close()
         return True

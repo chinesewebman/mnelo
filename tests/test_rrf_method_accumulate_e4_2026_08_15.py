@@ -209,6 +209,8 @@ class TestRecallStatsMultiMethod:
 
     def test_recall_stats_counts_multi_method_per_method(self, mem):
         """[E-4.7] 同 chunk 在 vector+graph 召回 → recall_stats 各 method +1."""
+        from datetime import datetime, timedelta
+
         # 直接构造 recall_details_json: 1 条 recall, 1 个 chunk methods=[vector, graph]
         mem._conn.execute(
             """
@@ -221,7 +223,10 @@ class TestRecallStatsMultiMethod:
                 json.dumps(["c1"]),
                 2,
                 10.0,
-                "2026-08-15T06:00:00",
+                # [A3 fix 2026-11-25] 用相对时间而不是硬编码日期：
+                # recall_stats(days=30) 按 created_at 过滤近 30 天，硬编码的
+                # "2026-08-15" 会随着时间推移落出窗口外，让这个测试永久失效。
+                (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S"),
                 json.dumps(
                     [
                         {

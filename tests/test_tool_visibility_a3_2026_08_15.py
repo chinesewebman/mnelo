@@ -19,8 +19,8 @@ import pytest
 import json as _json
 
 
-def test_default_exposes_13_tools():
-    """[A3.1] \u9ed8\u8ba4\u65d7\u65b0\u542f\u52a8 \u2192 13 tools (7 core + 4 audit + 2 advanced)."""
+def test_default_exposes_14_tools():
+    """[A3.1] \u9ed8\u8ba4\u65d7\u65b0\u542f\u52a8 \u2192 14 tools (8 core + 4 audit + 2 advanced)."""
     from mcp_tool_definitions import get_exposed_tools, TOOL_METADATA
 
     flags = {"audit_tools": False, "l2_tools": False, "all_tools": False}
@@ -28,15 +28,15 @@ def test_default_exposes_13_tools():
     exposed_names = {t["name"] for t in exposed}
 
     expected = set()
-    expected.update(["memory_remember", "memory_recall", "memory_relate", "memory_get_all", "memory_update", "memory_get_digest", "memory_forget"])
+    expected.update(["memory_remember", "memory_recall", "memory_relate", "memory_get_all", "memory_update", "memory_get_digest", "memory_update_entity", "memory_forget"])
     expected.update(["memory_recall_stats", "memory_list_entities", "memory_search_relations", "memory_entity_resolve"])
     expected.update(["memory_graph_query", "memory_stats"])
 
-    assert exposed_names == expected, f"\u9ed8\u8ba4\u66b4\u9732\u5e94\u4e3a 13 tools. \u5b9e\u9645 {len(exposed_names)}.\n\u5dee\u5f02: {exposed_names.symmetric_difference(expected)}"
+    assert exposed_names == expected, f"\u9ed8\u8ba4\u66b4\u9732\u5e94\u4e3a 14 tools. \u5b9e\u9645 {len(exposed_names)}.\n\u5dee\u5f02: {exposed_names.symmetric_difference(expected)}"
 
 
-def test_audit_tools_exposes_16():
-    """[A3.2] --audit-tools \u542f\u7528 \u2192 13 + 3 admin = 16."""
+def test_audit_tools_exposes_17():
+    """[A3.2] --audit-tools \u542f\u7528 \u2192 14 + 3 admin = 17."""
     from mcp_tool_definitions import get_exposed_tools
 
     flags = {"audit_tools": True, "l2_tools": False, "all_tools": False}
@@ -48,11 +48,11 @@ def test_audit_tools_exposes_16():
     assert "memory_maintenance" in exposed_names
     assert "memory_task_create" not in exposed_names
     assert "memory_loop_create" not in exposed_names
-    assert len(exposed_names) == 16
+    assert len(exposed_names) == 17
 
 
-def test_l2_tools_exposes_20():
-    """[A3.3] --l2-tools \u542f\u7528 \u2192 13 + 8 l2 = 21."""
+def test_l2_tools_exposes_22():
+    """[A3.3] --l2-tools \u542f\u7528 \u2192 14 + 8 l2 = 22."""
     from mcp_tool_definitions import get_exposed_tools
 
     flags = {"audit_tools": False, "l2_tools": True, "all_tools": False}
@@ -69,22 +69,22 @@ def test_l2_tools_exposes_20():
     assert "memory_loop_list" in exposed_names
     assert "memory_audit_undo" not in exposed_names
     assert "memory_maintenance" not in exposed_names
-    # 7 core + 4 audit + 2 advanced + 8 l2 = 21 (NOT 20)
-    assert len(exposed_names) == 21
+    # 8 core + 4 audit + 2 advanced + 8 l2 = 22
+    assert len(exposed_names) == 22
 
 
-def test_all_tools_exposes_all_24():
-    """[A3.4] --all-tools \u2192 24 tools."""
+def test_all_tools_exposes_all_25():
+    """[A3.4] --all-tools \u2192 25 tools."""
     from mcp_tool_definitions import get_exposed_tools, TOOLS
 
     flags = {"audit_tools": True, "l2_tools": True, "all_tools": True}
     exposed = get_exposed_tools(flags)
-    assert len(exposed) == 24
+    assert len(exposed) == 25
     assert {t["name"] for t in exposed} == {t["name"] for t in TOOLS}
 
 
 def test_tool_tier_metadata():
-    """[A3.5] TOOL_METADATA \u8986\u76d6\u6240\u6709 24 tools (\u9632\u4ef6\u8bef\u907d tool)."""
+    """[A3.5] TOOL_METADATA \u8986\u76d6\u6240\u6709 25 tools (\u9632\u4ef6\u8bef\u907d tool)."""
     from mcp_tool_definitions import TOOL_METADATA, TOOLS
 
     tool_names = {t["name"] for t in TOOLS}
@@ -97,7 +97,7 @@ def test_tool_tier_metadata():
         t = meta.get("tier")
         tiers.setdefault(t, []).append(name)
 
-    assert len(tiers.get("core", [])) == 7
+    assert len(tiers.get("core", [])) == 8
     assert len(tiers.get("audit", [])) == 4
     assert len(tiers.get("advanced", [])) == 2
     assert len(tiers.get("l2", [])) == 8

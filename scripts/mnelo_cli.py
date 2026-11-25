@@ -31,6 +31,7 @@ Auth:
 Remote mode:
     --remote USER@HOST spawns ssh -L 18086:127.0.0.1:8086 and connects to localhost:18086
 """
+
 import argparse
 import json as json_lib
 import os
@@ -81,12 +82,14 @@ except ImportError as e:
 # CLI wrapper 自身保留本地副本, 避免在 client 里堆兼容代码.
 class MneloError(RuntimeError):
     """CLI 内部错误类型 — 与老 mnelo_client.MneloError 等价."""
+
     pass
 
 
 def read_token(path: str = "~/.config/mnelo/token") -> str:
     """读 token 文件 — 老 mnelo_client.read_token 的 CLI 本地副本."""
     from pathlib import Path
+
     p = Path(os.path.expanduser(path))
     if not p.is_file():
         raise MneloError(f"token file not found: {p}")
@@ -196,10 +199,14 @@ def tunnel_up(remote: str, port: int):
     cmd = [
         "ssh",
         "-N",
-        "-o", "ExitOnForwardFailure=yes",
-        "-o", "ServerAliveInterval=30",
-        "-o", "ServerAliveCountMax=3",
-        "-L", f"{port}:127.0.0.1:8086",
+        "-o",
+        "ExitOnForwardFailure=yes",
+        "-o",
+        "ServerAliveInterval=30",
+        "-o",
+        "ServerAliveCountMax=3",
+        "-L",
+        f"{port}:127.0.0.1:8086",
         remote,
     ]
     log = open("/tmp/mnelo-tunnel.log", "ab")
@@ -209,6 +216,7 @@ def tunnel_up(remote: str, port: int):
     while time.time() < deadline:
         try:
             import urllib.request
+
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1) as r:
                 if r.status == 200:
                     with open(pid_file, "w") as f:
@@ -251,6 +259,7 @@ def tunnel_status(port: int):
         os.kill(pid, 0)
         # check port responds
         import urllib.request
+
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2) as r:
             print(f"tunnel alive (pid={pid}, port={port}, status={r.status})")
     except (OSError, urllib.error.URLError) as e:
@@ -269,22 +278,18 @@ def cmd_tunnel(args: argparse.Namespace):
 
 # ===== main =====
 
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mnelo",
         description="MCP-SSE client for mnelo memory server.",
     )
-    p.add_argument("--endpoint", default=None,
-                   help="mnelo endpoint (default http://127.0.0.1:8086/mcp — streamable-http transport)")
+    p.add_argument("--endpoint", default=None, help="mnelo endpoint (default http://127.0.0.1:8086/mcp — streamable-http transport)")
     p.add_argument("--token", default=None, help="Bearer token (else $MNELO_AUTH_TOKEN or --token-file)")
-    p.add_argument("--token-file", default="~/.config/mnelo/token",
-                   help="Path to token file (default ~/.config/mnelo/token)")
-    p.add_argument("--remote", default=None,
-                   help="USER@HOST for auto ssh tunnel mode (uses --ssh-port)")
-    p.add_argument("--ssh-port", type=int, default=8086,
-                   help="Remote mnelo port (default 8086)")
-    p.add_argument("--timeout", type=float, default=30.0,
-                   help="Request timeout seconds (default 30)")
+    p.add_argument("--token-file", default="~/.config/mnelo/token", help="Path to token file (default ~/.config/mnelo/token)")
+    p.add_argument("--remote", default=None, help="USER@HOST for auto ssh tunnel mode (uses --ssh-port)")
+    p.add_argument("--ssh-port", type=int, default=8086, help="Remote mnelo port (default 8086)")
+    p.add_argument("--timeout", type=float, default=30.0, help="Request timeout seconds (default 30)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     p_ls = sub.add_parser("ls", help="List all 22 tools")
@@ -307,8 +312,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_tun_sub = p_tun.add_subparsers(dest="action", required=True)
     p_tun_up = p_tun_sub.add_parser("up", help="Start ssh tunnel")
     p_tun_up.add_argument("remote", help="USER@HOST (e.g. apple@100.83.50.99)")
-    p_tun_up.add_argument("--port", type=int, default=TUNNEL_DEFAULT_PORT,
-                          help=f"Local port (default {TUNNEL_DEFAULT_PORT})")
+    p_tun_up.add_argument("--port", type=int, default=TUNNEL_DEFAULT_PORT, help=f"Local port (default {TUNNEL_DEFAULT_PORT})")
     p_tun_down = p_tun_sub.add_parser("down", help="Stop ssh tunnel")
     p_tun_status = p_tun_sub.add_parser("status", help="Check tunnel status")
     p_tun_status.add_argument("--port", type=int, default=TUNNEL_DEFAULT_PORT)

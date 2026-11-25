@@ -344,10 +344,7 @@ def main() -> int:
         "dry_run": is_dry_run,
         "entities_to_clean": len(entities),
         "chunks_to_clean": len(chunks),
-        "patterns": TEST_SOURCE_PATTERNS
-        + TEST_ID_PATTERNS
-        + [f"{p}+{k}" for p, k in TEST_ID_KIND_PATTERNS]
-        + [f"{s}+{g}" for s, g in TEST_SOURCE_GUARDED_PATTERNS],
+        "patterns": TEST_SOURCE_PATTERNS + TEST_ID_PATTERNS + [f"{p}+{k}" for p, k in TEST_ID_KIND_PATTERNS] + [f"{s}+{g}" for s, g in TEST_SOURCE_GUARDED_PATTERNS],
     }
 
     if is_dry_run:
