@@ -113,9 +113,7 @@ def _seed_scenario(memory, scenario: dict, source_prefix: str) -> None:
 
 def _cleanup_scenario(memory, source_prefix: str) -> int:
     """Remove all locomo-prefixed chunks. Returns count deleted."""
-    rows = memory._conn.execute(
-        "SELECT rowid FROM chunks WHERE source LIKE ?", (f"{source_prefix}%",)
-    ).fetchall()
+    rows = memory._conn.execute("SELECT rowid FROM chunks WHERE source LIKE ?", (f"{source_prefix}%",)).fetchall()
     if rows:
         rowids = [r["rowid"] for r in rows]
         placeholders = ",".join("?" * len(rowids))
@@ -173,9 +171,7 @@ def run_locomo(args) -> dict:
         print("\n[2/3] measuring recall coverage per scenario...")
         per_scenario = {}
         for scenario in LOCOMO_SCENARIOS:
-            cov = recall_coverage(
-                memory, scenario["queries"], scenario["topic_keys"], top_k=args.top_k
-            )
+            cov = recall_coverage(memory, scenario["queries"], scenario["topic_keys"], top_k=args.top_k)
             per_scenario[scenario["topic"]] = round(cov, 4)
             print(f"    {scenario['topic']}: coverage={cov:.2f}")
 

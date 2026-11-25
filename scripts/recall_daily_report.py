@@ -38,9 +38,10 @@ def call_mcp_recall_stats(days: int, group_by: str) -> dict | None:
     """调 mnelo MCP memory_recall_stats. 返回 None = MCP 不通."""
     try:
         proc = subprocess.run(
-            ["mnelo", "call", "memory_recall_stats", "--json",
-             json.dumps({"days": days, "group_by": group_by})],
-            capture_output=True, text=True, timeout=15,
+            ["mnelo", "call", "memory_recall_stats", "--json", json.dumps({"days": days, "group_by": group_by})],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         if proc.returncode != 0:
             log(f"MCP call failed rc={proc.returncode}: {proc.stderr.strip()[:200]}")
@@ -61,21 +62,26 @@ def query_recall_log_raw(days: int) -> dict:
     conn = sqlite3.connect(str(MEMORY_DB), timeout=5.0)
     try:
         cur = conn.cursor()
-        total = cur.execute(
-            "SELECT COUNT(*) FROM recall_log WHERE created_at >= ?", (cutoff,)
-        ).fetchone()[0]
-        slow = cur.execute("""
+        total = cur.execute("SELECT COUNT(*) FROM recall_log WHERE created_at >= ?", (cutoff,)).fetchone()[0]
+        slow = cur.execute(
+            """
             SELECT query, latency_ms FROM recall_log
             WHERE created_at >= ? AND latency_ms > ?
             ORDER BY latency_ms DESC LIMIT 5
-        """, (cutoff, SLOW_THRESHOLD_MS)).fetchall()
-        empty = cur.execute("""
+        """,
+            (cutoff, SLOW_THRESHOLD_MS),
+        ).fetchall()
+        empty = cur.execute(
+            """
             SELECT query FROM recall_log
             WHERE created_at >= ? AND (results_json IS NULL OR results_json = '[]'
                   OR json_array_length(results_json) = 0)
             ORDER BY created_at DESC LIMIT 5
-        """, (cutoff,)).fetchall()
-        by_day = cur.execute("""
+        """,
+            (cutoff,),
+        ).fetchall()
+        by_day = cur.execute(
+            """
             SELECT substr(created_at, 1, 10) AS day,
                    COUNT(*) AS cnt,
                    SUM(CASE WHEN results_json IS NULL OR results_json = '[]'
@@ -83,7 +89,9 @@ def query_recall_log_raw(days: int) -> dict:
             FROM recall_log
             WHERE created_at >= ?
             GROUP BY day ORDER BY day DESC LIMIT 30
-        """, (cutoff,)).fetchall()
+        """,
+            (cutoff,),
+        ).fetchall()
         return {
             "total": total,
             "slow": [{"query": r[0], "latency_ms": r[1]} for r in slow],
@@ -120,14 +128,10 @@ def build_report(days: int = 1) -> tuple[str, bool]:
         ctx["p95_latency_ms"] = round(latency.get("p95", 0), 1)
         ctx["empty_rate"] = round(totals.get("empty_rate", 0) * 100, 1)
         ctx["by_method"] = [
-            {"method": m, "hits": v.get("hit_count", 0),
-             "avg_rank": v.get("avg_rank", "—"),
-             "avg_score": v.get("avg_rrf_score", v.get("avg_distance", "—"))}
-            for m, v in methods.items()
+            {"method": m, "hits": v.get("hit_count", 0), "avg_rank": v.get("avg_rank", "—"), "avg_score": v.get("avg_rrf_score", v.get("avg_distance", "—"))} for m, v in methods.items()
         ]
         by_day_data = (by_day_stats or {}).get("by_day", [])
-        ctx["by_day"] = [{"date": d.get("day"), "count": d.get("count", 0),
-                          "empty": d.get("empty", 0)} for d in by_day_data]
+        ctx["by_day"] = [{"date": d.get("day"), "count": d.get("count", 0), "empty": d.get("empty", 0)} for d in by_day_data]
         raw_anomalies = query_recall_log_raw(days)
         ctx["slow_count"] = len(raw_anomalies["slow"])
         ctx["empty_count"] = len(raw_anomalies["empty"])
@@ -154,8 +158,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="mnelo 召回日报生成器")
     parser.add_argument("--days", type=int, default=int(os.environ.get("RECALL_REPORT_DAYS", "1")))
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--deliver", choices=["telegram", "local", "stdout"],
-                        default=os.environ.get("RECALL_REPORT_OUTPUT", "stdout"))
+    parser.add_argument("--deliver", choices=["telegram", "local", "stdout"], default=os.environ.get("RECALL_REPORT_OUTPUT", "stdout"))
     args = parser.parse_args()
 
     log(f"start days={args.days} deliver={args.deliver} dry_run={args.dry_run}")

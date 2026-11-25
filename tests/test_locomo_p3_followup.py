@@ -53,9 +53,7 @@ class TestLocomoDispatcher:
     def test_locomo_is_a_known_subcommand(self):
         """python -m benchmarks locomo --help should NOT exit 2."""
         result = run_cli("locomo", "--help", timeout=30)
-        assert result.returncode == 0, (
-            f"locomo not registered: rc={result.returncode}, stderr={result.stderr}"
-        )
+        assert result.returncode == 0, f"locomo not registered: rc={result.returncode}, stderr={result.stderr}"
         assert "--top-k" in result.stdout
 
     def test_unknown_subcommand_still_fails(self):

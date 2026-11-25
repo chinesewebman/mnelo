@@ -625,10 +625,7 @@ class UsearchIndex(SearchIndex):
         # 走重建, 没有就当全新库. 两条路都不碰 load, 也就不会踩这个雷.
         empty_file = self._index_path.exists() and self._index_file_is_empty()
         if empty_file:
-            logger.warning(
-                f"[usearch] 索引文件 {self._index_path.name} 是 0 向量 (曾清空后落盘) — "
-                f"usearch 对该状态 load 后 add 会原生崩溃, 丢弃并按无索引处理"
-            )
+            logger.warning(f"[usearch] 索引文件 {self._index_path.name} 是 0 向量 (曾清空后落盘) — usearch 对该状态 load 后 add 会原生崩溃, 丢弃并按无索引处理")
             try:
                 self._index_path.unlink()
                 self._meta_path.unlink(missing_ok=True)
@@ -657,11 +654,7 @@ class UsearchIndex(SearchIndex):
                 try:
                     self._auto_rebuild(["索引文件缺失但 SQLite 仍有 active chunk"])
                 except Exception as e:
-                    logger.error(
-                        f"[usearch] 索引文件缺失且自动重建失败 ({type(e).__name__}: {e}) — "
-                        f"本次以空索引启动, 向量召回不可用. 手动兜底: "
-                        f"scripts/rebuild_index.py --backend usearch --fresh"
-                    )
+                    logger.error(f"[usearch] 索引文件缺失且自动重建失败 ({type(e).__name__}: {e}) — 本次以空索引启动, 向量召回不可用. 手动兜底: scripts/rebuild_index.py --backend usearch --fresh")
             return  # 全新索引, 无磁盘状态
         problems = self._validate_index_header()
         stale = False if problems else self._is_stale()

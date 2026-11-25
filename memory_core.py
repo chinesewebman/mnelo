@@ -1372,14 +1372,11 @@ class MemoryCore:
 
         # Snapshot existing row BEFORE any change (for audit + dry_run reporting)
         existing = self._conn.execute(
-            "SELECT id, kind, name, summary, properties_json, aliases_json, "
-            "updated_at, valid_until FROM entities WHERE id = ? AND valid_until IS NULL",
+            "SELECT id, kind, name, summary, properties_json, aliases_json, updated_at, valid_until FROM entities WHERE id = ? AND valid_until IS NULL",
             (target_id,),
         ).fetchone()
         if existing is None:
-            raise ValueError(
-                f"entity not found or already soft-deleted: target_id={target_id!r}"
-            )
+            raise ValueError(f"entity not found or already soft-deleted: target_id={target_id!r}")
 
         # Validate at least one field provided
         update_fields = []
@@ -1392,9 +1389,7 @@ class MemoryCore:
         if aliases is not None:
             update_fields.append("aliases_json")
         if not update_fields:
-            raise ValueError(
-                "update_entity requires at least one of: name, summary, properties, aliases"
-            )
+            raise ValueError("update_entity requires at least one of: name, summary, properties, aliases")
 
         # [7/19 P1-2 + P1-5] Sanitize name/summary via validate_entity_payload so
         # control chars / bidi overrides / size limits are enforced (same path as
@@ -1428,11 +1423,7 @@ class MemoryCore:
         before = {"name": existing["name"], "summary": existing["summary"]}
         if properties is not None:
             try:
-                existing_props = (
-                    json.loads(existing["properties_json"])
-                    if existing["properties_json"]
-                    else {}
-                )
+                existing_props = json.loads(existing["properties_json"]) if existing["properties_json"] else {}
             except (json.JSONDecodeError, TypeError):
                 existing_props = {}
             merged_props = {**existing_props, **properties}
@@ -1443,11 +1434,7 @@ class MemoryCore:
 
         if aliases is not None:
             try:
-                existing_aliases = (
-                    json.loads(existing["aliases_json"])
-                    if existing["aliases_json"]
-                    else []
-                )
+                existing_aliases = json.loads(existing["aliases_json"]) if existing["aliases_json"] else []
             except (json.JSONDecodeError, TypeError):
                 existing_aliases = []
             before["aliases_json"] = existing_aliases
@@ -1457,9 +1444,7 @@ class MemoryCore:
 
         after = {
             "name": sanitized_name if sanitized_name is not None else existing["name"],
-            "summary": (
-                sanitized_summary if sanitized_summary is not None else existing["summary"]
-            ),
+            "summary": (sanitized_summary if sanitized_summary is not None else existing["summary"]),
         }
         if after_props is not None:
             after["properties_json"] = after_props
@@ -1501,8 +1486,7 @@ class MemoryCore:
             params.append(target_id)
 
             self._conn.execute(
-                f"UPDATE entities SET {', '.join(set_clauses)} "
-                f"WHERE id = ? AND valid_until IS NULL",
+                f"UPDATE entities SET {', '.join(set_clauses)} WHERE id = ? AND valid_until IS NULL",
                 params,
             )
 
@@ -1527,13 +1511,10 @@ class MemoryCore:
                     after_json,
                     _now,
                     # Revert SQL: reconstruct pre-image UPDATE
-                    f"UPDATE entities SET {', '.join(set_clauses)} "
-                    f"WHERE id = ? AND valid_until IS NULL",
+                    f"UPDATE entities SET {', '.join(set_clauses)} WHERE id = ? AND valid_until IS NULL",
                 ),
             )
-            audit_id = self._conn.execute(
-                "SELECT last_insert_rowid() AS id"
-            ).fetchone()["id"]
+            audit_id = self._conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
 
         return {
             "target_id": target_id,

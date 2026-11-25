@@ -10,16 +10,17 @@
 
 注意: 本脚本不依赖 L2 自主层 (l2.enabled 可保持 false).
 """
+
 import json
 import sys
 from datetime import datetime
 from pathlib import Path
 
-REPO = Path('/root/work/mnelo')
+REPO = Path("/root/work/mnelo")
 sys.path.insert(0, str(REPO))
 
-DATA_DIR = Path('/root/work/mnelo-data')
-DB_PATH = DATA_DIR / 'memory.db'
+DATA_DIR = Path("/root/work/mnelo-data")
+DB_PATH = DATA_DIR / "memory.db"
 
 from memory import Memory  # noqa: E402
 
@@ -34,7 +35,7 @@ def main() -> int:
     }
     out = json.dumps(summary, ensure_ascii=False, indent=2)
 
-    out_dir = DATA_DIR / 'cron-output'
+    out_dir = DATA_DIR / "cron-output"
     out_dir.mkdir(exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = out_dir / f"purge_worker_{stamp}.json"
