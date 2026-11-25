@@ -431,16 +431,26 @@ class RecallEngine:
                 # [P0 2026-08-11] agent_id filter — 旧数据 metadata_json=NULL
                 # 或不含 agent_id → JSON 解出 None → 不等于 filter, 保留.
                 # [audit fix #7 2026-08-16] 同款 pattern 扩 user_id / run_id.
+                # [bug fix 2026-11-25] 上面那句注释说的是**设计意图**，
+                # 但原实现是 `if raw is None or raw == "": continue` ——
+                # NULL 直接跳过，把所有没有 scoping 键的旧数据误杀了。
+                # 实测：recall(..., filters={"agent_id": "family"}) 返回 0 条，
+                # 去掉 filter 返回 6 条。改成按注释的语义：缺键 = 不属于任何
+                # scope = 保留；只有显式带该键且值不匹配才排除。
                 if _scope_active:
                     raw = chunk["metadata_json"]
-                    if raw is None or raw == "":
-                        continue
-                    try:
-                        meta_obj = json.loads(raw)
-                    except (json.JSONDecodeError, TypeError):
-                        continue
-                    # 所有 active scope filter 必须 match (any mismatch → skip)
-                    if any(meta_obj.get(k) != v for k, v in _scope_active):
+                    meta_obj = {}
+                    if raw is not None and raw != "":
+                        try:
+                            meta_obj = json.loads(raw)
+                        except (json.JSONDecodeError, TypeError):
+                            meta_obj = {}
+                    if not isinstance(meta_obj, dict):
+                        meta_obj = {}
+                    if any(
+                        _k in meta_obj and meta_obj.get(_k) != _v
+                        for _k, _v in _scope_active
+                    ):
                         continue
             results.append(self._hit_dict(chunk, method="vector", distance=float(hit.distance)))
         return results[:top_k]
@@ -450,7 +460,7 @@ class RecallEngine:
         """[P2+ #2] 独立 conn 版 meta recall.
 
         [P0 2026-08-11] scoping IDs: 当 filters 含 agent_id, SQL 走
-        json_extract(metadata_json, '$.agent_id') = ? 过滤. NULL metadata_json
+        (json_extract(metadata_json, '$.agent_id') IS ? OR json_extract(metadata_json, '$.agent_id') IS NULL) 过滤. NULL metadata_json
         或缺 agent_id → json_extract 返回 NULL → != filter → 自动保留
         (旧数据不误过滤).
 
@@ -484,14 +494,14 @@ class RecallEngine:
             # [P0 2026-08-11] json_extract 路径: '$.agent_id'
             # NULL metadata_json 或缺键 → json_extract 返回 NULL → 不 = filter.
             # 这天然保证旧数据兼容.
-            sql += " AND json_extract(metadata_json, '$.agent_id') = ?"
+            sql += " AND (json_extract(metadata_json, '$.agent_id') IS ? OR json_extract(metadata_json, '$.agent_id') IS NULL)"
             params.append(filters["agent_id"])
         # [audit fix #7 2026-08-16] user_id / run_id 同款 json_extract SQL filter
         if filters and "user_id" in filters:
-            sql += " AND json_extract(metadata_json, '$.user_id') = ?"
+            sql += " AND (json_extract(metadata_json, '$.user_id') IS ? OR json_extract(metadata_json, '$.user_id') IS NULL)"
             params.append(filters["user_id"])
         if filters and "run_id" in filters:
-            sql += " AND json_extract(metadata_json, '$.run_id') = ?"
+            sql += " AND (json_extract(metadata_json, '$.run_id') IS ? OR json_extract(metadata_json, '$.run_id') IS NULL)"
             params.append(filters["run_id"])
         # [P2 2026-08-11] temporal intent 加成 — 用 detect_query_intent
         # 注意: recall() 入口处已 validate_query(), 这里 query 非空.
@@ -740,15 +750,15 @@ class RecallEngine:
             sql += " AND memory_type = ?"
             params.append(norm_memory_type(filters["type"]))
         if filters and "agent_id" in filters:
-            sql += " AND json_extract(metadata_json, '$.agent_id') = ?"
+            sql += " AND (json_extract(metadata_json, '$.agent_id') IS ? OR json_extract(metadata_json, '$.agent_id') IS NULL)"
             params.append(filters["agent_id"])
         # [8/16 P1 #91 fix] user_id filter 也在 metadata_json · 跟 agent_id 平行
         if filters and "user_id" in filters:
-            sql += " AND json_extract(metadata_json, '$.user_id') = ?"
+            sql += " AND (json_extract(metadata_json, '$.user_id') IS ? OR json_extract(metadata_json, '$.user_id') IS NULL)"
             params.append(filters["user_id"])
         # [8/16 audit-2 #7 fix] run_id filter 同 user_id 模式
         if filters and "run_id" in filters:
-            sql += " AND json_extract(metadata_json, '$.run_id') = ?"
+            sql += " AND (json_extract(metadata_json, '$.run_id') IS ? OR json_extract(metadata_json, '$.run_id') IS NULL)"
             params.append(filters["run_id"])
         # [8/16 E-2 重启 non-trigger] FTS5 BM25 主路 + LIKE fallback.
         # 设计哲学 (上轮 P1 #67/#68/#69/#70 实战教諛· 避免 P1 #81 SIGSEGV):
@@ -774,19 +784,19 @@ class RecallEngine:
             like_filter_clauses.append("memory_type = ?")
             like_filter_params.append(_t)
         if filters and "agent_id" in filters:
-            fts_filter_clauses.append("json_extract(c.metadata_json, '$.agent_id') = ?")
+            fts_filter_clauses.append("(json_extract(c.metadata_json, '$.agent_id') IS ? OR json_extract(c.metadata_json, '$.agent_id') IS NULL)")
             fts_filter_params.append(filters["agent_id"])
-            like_filter_clauses.append("json_extract(metadata_json, '$.agent_id') = ?")
+            like_filter_clauses.append("(json_extract(metadata_json, '$.agent_id') IS ? OR json_extract(metadata_json, '$.agent_id') IS NULL)")
             like_filter_params.append(filters["agent_id"])
         if filters and "user_id" in filters:  # [8/16 P1 #91 fix]
-            fts_filter_clauses.append("json_extract(c.metadata_json, '$.user_id') = ?")
+            fts_filter_clauses.append("(json_extract(c.metadata_json, '$.user_id') IS ? OR json_extract(c.metadata_json, '$.user_id') IS NULL)")
             fts_filter_params.append(filters["user_id"])
-            like_filter_clauses.append("json_extract(metadata_json, '$.user_id') = ?")
+            like_filter_clauses.append("(json_extract(metadata_json, '$.user_id') IS ? OR json_extract(metadata_json, '$.user_id') IS NULL)")
             like_filter_params.append(filters["user_id"])
         if filters and "run_id" in filters:  # [8/16 audit-2 #7 fix]
-            fts_filter_clauses.append("json_extract(c.metadata_json, '$.run_id') = ?")
+            fts_filter_clauses.append("(json_extract(c.metadata_json, '$.run_id') IS ? OR json_extract(c.metadata_json, '$.run_id') IS NULL)")
             fts_filter_params.append(filters["run_id"])
-            like_filter_clauses.append("json_extract(metadata_json, '$.run_id') = ?")
+            like_filter_clauses.append("(json_extract(metadata_json, '$.run_id') IS ? OR json_extract(metadata_json, '$.run_id') IS NULL)")
             like_filter_params.append(filters["run_id"])
         # [P2 2026-08-11] temporal intent 加成 — 跟 _meta_recall_with_conn 同源
         intent = detect_query_intent(query)
@@ -1011,9 +1021,17 @@ class RecallEngine:
                     try:
                         parsed = json.loads(c_meta)
                     except (json.JSONDecodeError, TypeError):
-                        filtered_rows.append(r)
-                        continue
-                    if all(parsed.get(k) == v for k, v in _ent_scope_active_2):
+                        parsed = {}
+                    # [bug fix 2026-11-25] 同向量路：缺 scoping 键 = 旧数据 =
+                    # 不属于任何 scope = 保留；只有显式带该键且值不匹配才排除。
+                    # 原实现用 all(parsed.get(k) == v ...)，缺键时 None != v
+                    # 会被误杀。
+                    if not isinstance(parsed, dict):
+                        parsed = {}
+                    if not any(
+                        _k in parsed and parsed.get(_k) != _v
+                        for _k, _v in _ent_scope_active_2
+                    ):
                         filtered_rows.append(r)
                 rows = filtered_rows
             for r in rows:

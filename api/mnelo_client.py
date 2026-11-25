@@ -176,8 +176,17 @@ class MneloClient:
         tags: List[str] = None,
         session_id: str = "default",
         timestamp: str = None,
+        memory_type: Optional[str] = None,
+        # [P0 2026-11-25] scoping IDs — 服务端 memory_core.remember() 早就支持
+        # 这三个字段（写进 chunks.metadata_json），但这个封装一直没透传，导致
+        # 按人/按 agent 隔离的记忆在客户端做不到（爸爸和妈妈的记忆混在一起）。
+        # 语义与 memory_core 一致：None = 不指定（不写入，兼容旧数据）；
+        # 空串 = 显式选择 "no scoping"。
+        agent_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> str:
-        """: 写入 memory. 返回 chunk_id."""
+        """写入 memory. 返回 chunk_id."""
         args = {"content": content, "source": source, "importance": importance}
         if entities:
             args["entities"] = entities
@@ -189,6 +198,14 @@ class MneloClient:
             args["session_id"] = session_id
         if timestamp:
             args["timestamp"] = timestamp
+        if memory_type:
+            args["memory_type"] = memory_type
+        if agent_id is not None:
+            args["agent_id"] = agent_id
+        if user_id is not None:
+            args["user_id"] = user_id
+        if run_id is not None:
+            args["run_id"] = run_id
         result = self._call("memory_remember", args)
         if isinstance(result, dict) and "chunk_id" in result:
             return result["chunk_id"]
