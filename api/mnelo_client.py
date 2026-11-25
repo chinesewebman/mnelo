@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -31,6 +32,104 @@ if not logger.handlers:
 DEFAULT_MCP_URL = "http://127.0.0.1:8086/mcp"
 # legacy SSE endpoint (back-compat; URL 含 /sse 时自动用 sse transport)
 DEFAULT_SSE_URL = "http://127.0.0.1:8086/sse"
+
+
+def _http_client_factory():
+    """返回 (module, AsyncClient_cls, Timeout_cls) — 造 MCP http_client 用。
+
+    [bug fix 2026-11-25] mcp 2.3.0 的 SDK 内部用的是 **httpx2**（2.16.2），
+    而 httpx v0（0.28.1）是另一个独立的包。SDK 的
+    `streamable_http_client(url, http_client=...)` 会把传进来的 client 当成
+    httpx2.AsyncClient 用：
+      - `client.send(request, stream=True, follow_redirects=False)`
+      - `mcp.shared._httpx_utils.stream_within_origin` 里用 httpx2.URL / Response
+      - `from httpx2 import EventSource, ServerSentEvent` 解析 SSE
+    传一个 httpx v0 的 client 进去 → SDK 走到 httpx 独有的代码路径 →
+    服务端明明返回 200，客户端却抛 `httpx.ReadError` / TaskGroup 里的
+    `ExceptionGroup: unhandled errors in a TaskGroup`，最终被 mcp 包装成
+    `MCPError: Server returned an error response`（-32603）。
+
+    实测：换成 httpx2.AsyncClient 后同一条 recall 立刻正常返回 3 条 hits。
+
+    所以这里按「装了哪个用哪个」的顺序取，并且**优先 httpx2** —— 因为装了
+    mcp 2.x 的环境必然有 httpx2，而 httpx v0 只是历史遗留。
+
+    另外强制 **trust_env=False**（见调用点）：httpx 默认 trust_env=True，会
+    读 HTTP_PROXY / HTTPS_PROXY 环境变量**以及 macOS 系统代理设置**。
+    macOS 的 `scutil --proxy` 例外列表（ExceptionsList）里虽然有 127.0.0.1，
+    但 httpx 的例外匹配规则跟它对不上 —— 实测 uvicorn 进程里
+    trust_env=True → 走代理 → 502 / ReadError；trust_env=False → 200 正常。
+    mnelo 的 MCP 端点默认在 127.0.0.1，永远不该走代理。
+    """
+    try:
+        import httpx2  # mcp 2.x SDK 用的就是这个
+
+        return httpx2, httpx2.AsyncClient, httpx2.Timeout
+    except ImportError:
+        import httpx  # 老 mcp / 老环境
+
+        return httpx, httpx.AsyncClient, httpx.Timeout
+
+
+class _LoopRunner:
+    """在一条专用线程里跑一个**持久**的 event loop。
+
+    [bug fix 2026-11-25] 之前用 ThreadPoolExecutor + asyncio.run(coro)：
+    每次调用建一个新 loop、跑完就关。mcp 2.x 的 streamable_http_client 用
+    anyio TaskGroup 管理后台任务，在「协程在 A 线程创建、在 B 线程的新 loop
+    里跑」这种情况下会抛
+        ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+    —— 同样的调用在纯脚本里有时能过、有时炸，服务进程里必炸。
+
+    改成一个常驻线程 + 一个常驻 loop：协程通过 run_coroutine_threadsafe
+    投递过去，loop 一直活着，anyio 的后台任务有稳定的宿主。
+    这是「同步 API 包 async 实现」的标准做法。
+    """
+
+    def __init__(self) -> None:
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(
+            target=self._run_loop, name="mnelo-mcp-loop", daemon=True
+        )
+        self._started = threading.Event()
+        self._thread.start()
+        self._started.wait(timeout=5)
+
+    def _run_loop(self) -> None:
+        asyncio.set_event_loop(self._loop)
+        self._started.set()
+        self._loop.run_forever()
+
+    def run(self, coro):
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return future.result()
+
+
+_LOOP_RUNNER: Optional[_LoopRunner] = None
+_LOOP_LOCK = threading.Lock()
+
+
+def _get_loop_runner() -> _LoopRunner:
+    global _LOOP_RUNNER
+    with _LOOP_LOCK:
+        if _LOOP_RUNNER is None:
+            _LOOP_RUNNER = _LoopRunner()
+        return _LOOP_RUNNER
+
+
+def _run_coroutine_sync(coro):
+    """在专用线程的持久 event loop 里跑协程并返回结果。
+
+    [bug fix 2026-11-25] 原来这里直接 asyncio.run(coro)。但 asyncio.run 在
+    已有 running loop 的线程里会抛
+        RuntimeError: asyncio.run() cannot be called from a running event loop
+    —— 只要调用方在 async 上下文里就行（FastAPI 端点、asyncio 任务、任何
+    嵌在 async 框架里的同步调用）。这让这个客户端在 async 场景下完全不可用。
+
+    现在统一走专用线程的持久 loop：不管调用方是不是在 async 上下文里，
+    都能安全调用，也不会踩 mcp anyio TaskGroup 的跨线程问题。
+    """
+    return _get_loop_runner().run(coro)
 
 
 class MneloClient:
@@ -96,14 +195,14 @@ class MneloClient:
             raise RuntimeError(f"MCP 客户端库不可用: {e}; 请先: pip install mcp[cli]")
 
     def _call(self, tool_name: str, arguments: Dict) -> Any:
-        """: MCP 连接 + 调用 + 关闭, [P2+ #5 7/18] 加重试防 cold-start race."""
+        """MCP 连接 + 调用 + 关闭, [P2+ #5 7/18] 加重试防 cold-start race."""
         ClientSession, client_factory = self._ensure_mcp()
         last_err = None
         # [P2+ #5] 重试 2 次: 失败后退避 0.3s, 再次尝试
         #  race: MCP server 启动后 1 秒内有人调 (warm-up 时) 可能拒绝
         for attempt in range(2):
             try:
-                return asyncio.run(self._async_call(tool_name, arguments, ClientSession, client_factory))
+                return _run_coroutine_sync(self._async_call(tool_name, arguments, ClientSession, client_factory))
             except Exception as e:
                 last_err = e
                 if attempt == 0:
@@ -120,10 +219,13 @@ class MneloClient:
         headers = {"Authorization": f"Bearer {self._auth_token}"} if self._auth_token else None
         if self.transport == "streamable-http":
             # 新 SDK API: streamable_http_client(url, http_client=...) — 不收 headers/timeout,
-            # 需传配置好的 httpx.AsyncClient (Bearer + timeout 注入).
-            import httpx
+            # 需传配置好的 AsyncClient (Bearer + timeout 注入).
+            # [bug fix 2026-11-25] 必须用 SDK 同款的 httpx2 —— 见 _http_client_factory().
+            _mod, _AsyncClient, _Timeout = _http_client_factory()
 
-            async with httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(self.timeout)) as http_client:
+            async with _AsyncClient(
+                headers=headers, timeout=_Timeout(self.timeout), trust_env=False
+            ) as http_client:
                 # [v0.81.7 P2-4 review fix] 新 streamable_http_client 严格 yield 2 元组
                 # (read_stream, write_stream); 旧版本 yield 3 含 session_id_fn.
                 # 不需要 star-unpack 防御.
@@ -312,14 +414,19 @@ class MneloClient:
     def list_tools(self) -> List[Dict]:
         """: MCP tools/list → [{name, description, inputSchema}, ...]."""
         ClientSession, client_factory = self._ensure_mcp()
-        return asyncio.run(self._async_list_tools(ClientSession, client_factory))
+        # [bug fix 2026-11-25] 不能用裸 asyncio.run —— 调用方在 async 上下文里
+        # 会抛 RuntimeError: asyncio.run() cannot be called from a running event loop
+        return _run_coroutine_sync(self._async_list_tools(ClientSession, client_factory))
 
     async def _async_list_tools(self, ClientSession, client_factory):
         headers = {"Authorization": f"Bearer {self._auth_token}"} if self._auth_token else None
         if self.transport == "streamable-http":
-            # mcp 2.x streamable_http_client(url, http_client=...) — 不收 headers kwarg, 走 httpx.
-            import httpx
-            async with httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(self.timeout)) as http_client:
+            # mcp 2.x streamable_http_client(url, http_client=...) — 不收 headers kwarg, 走 http_client.
+            # [bug fix 2026-11-25] 必须用 SDK 同款的 httpx2 —— 见 _http_client_factory().
+            _mod, _AsyncClient, _Timeout = _http_client_factory()
+            async with _AsyncClient(
+                headers=headers, timeout=_Timeout(self.timeout), trust_env=False
+            ) as http_client:
                 async with client_factory(self.url, http_client=http_client) as (r, w):
                     async with ClientSession(r, w) as session:
                         await session.initialize()
