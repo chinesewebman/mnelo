@@ -480,12 +480,8 @@ class RecallEngine:
         _like_tokens = _query_tokens(query)
         if not _like_tokens:
             return []
-        _like_or = " OR ".join(
-            "content LIKE ? ESCAPE '\\'" for _ in _like_tokens
-        )
-        sql = sql.replace(
-            "AND content LIKE ? ESCAPE '\\'", f"AND ({_like_or})"
-        )
+        _like_or = " OR ".join("content LIKE ? ESCAPE '\\'" for _ in _like_tokens)
+        sql = sql.replace("AND content LIKE ? ESCAPE '\\'", f"AND ({_like_or})")
         params = [asof] + [f"%{_escape_like(t)}%" for t in _like_tokens]
         if filters and "source" in filters:
             sql += " AND source = ?"
@@ -839,18 +835,10 @@ class RecallEngine:
         # [opt 2026-11-25] LIKE 也改 token OR（整句保留为一个 token，单句查询行为不变）
         if _like_tokens:
             _like_or = " OR ".join("content LIKE ? ESCAPE '\\'" for _ in _like_tokens)
-            like_sql = (
-                "SELECT id, content, memory_type, source, timestamp, importance, 0.0 AS fts_score "
-                "FROM chunks WHERE " + like_where + f" AND ({_like_or})"
-            )
-            like_params = [asof, *like_filter_params] + [
-                f"%{_escape_like(t)}%" for t in _like_tokens
-            ]
+            like_sql = "SELECT id, content, memory_type, source, timestamp, importance, 0.0 AS fts_score FROM chunks WHERE " + like_where + f" AND ({_like_or})"
+            like_params = [asof, *like_filter_params] + [f"%{_escape_like(t)}%" for t in _like_tokens]
         else:
-            like_sql = (
-                "SELECT id, content, memory_type, source, timestamp, importance, 0.0 AS fts_score "
-                "FROM chunks WHERE " + like_where
-            )
+            like_sql = "SELECT id, content, memory_type, source, timestamp, importance, 0.0 AS fts_score FROM chunks WHERE " + like_where
             like_params = [asof, *like_filter_params]
 
         # UNION ALL 包 subquery (P1 #67/#69 避免) · 去重 (P1 #70 params 数量 严格匹配)
